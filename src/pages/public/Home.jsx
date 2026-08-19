@@ -8,9 +8,9 @@ export default function Home() {
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [activeTab, setActiveTab] = useState("all"); // 'all', 'video', o 'image'
 
-  // 🎯 DITO PALITAN ANG IYONG AD LINKS
-  const AD_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"; // Sample Ad Video MP4
-  const AD_DIRECT_LINK = "https://your-ad-network-direct-link.com"; // Monetag / Adsterra Direct Link
+// 🟢 PINALITAN ANG DUMMY AD LINK NG TOTOONG ADSTERRA LINK
+const AD_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
   useEffect(() => {
     fetchMedia();

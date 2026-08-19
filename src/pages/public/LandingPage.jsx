@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+// 🟢 ADSTERRA DIRECT LINK
+const ADSTERRA_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
+
 export default function LandingPage() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const navigate = useNavigate();
@@ -10,7 +13,10 @@ export default function LandingPage() {
   };
 
   const handleConfirmAge = () => {
-    // Kapag 18+ na, papuntahin sila sa Login/Signup page
+    // 1. Bubukas ang Adsterra Ad sa bagong tab
+    window.open(ADSTERRA_DIRECT_LINK, '_blank');
+
+    // 2. Pupunta sila sa Login/Signup page
     navigate('/login');
   };
 
