@@ -7,8 +7,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
-  // 🟡 ADSTERRA & PRE-ROLL AD CONFIGURATION
-  const AD_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+  // 🟢 EXOCLICK VAST PRE-ROLL & ADSTERRA DIRECT LINK
+  const AD_VIDEO_URL = "https://s.magsrv.com/v1/vast.php?idz=6007592";
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
   useEffect(() => {
@@ -144,7 +144,7 @@ export default function Home() {
             <div className="bg-black w-full flex-1 flex flex-col items-center justify-center overflow-y-auto p-2 md:p-4 min-h-[300px] md:min-h-[480px]">
               <div className="w-full h-full max-w-4xl flex items-center justify-center">
                 <VIPVideoPlayer
-                  key={selectedMedia.id} // 🔑 Tinitiyak na nagre-reset ang Ad para sa BAWAT video!
+                  key={selectedMedia.id}
                   mainVideoUrl={selectedMedia.media_url}
                   adVideoUrl={AD_VIDEO_URL}
                   adDirectLink={AD_DIRECT_LINK}
