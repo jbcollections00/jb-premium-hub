@@ -99,8 +99,7 @@ export default function AdminDashboard() {
             title: cleanTitle,
             media_url: videoPublicUrl,
             category: 'Vault Content',
-            type: detectedType,
-            media_type: detectedType
+            type: detectedType
           }
         ]);
 
