@@ -20,7 +20,6 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Security check: kung hindi naka-login as Admin, ibalik sa Admin Login
     const isAdmin = localStorage.getItem('isAdminAuthenticated');
     if (!isAdmin) {
       navigate('/admin-login');
@@ -57,14 +56,14 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  // Cloudflare R2 Bulk Upload Function (With Detailed Error Feedback)
+  // Cloudflare R2 Bulk Upload Function (Fixed with Uint8Array Buffer & Detailed Error Catching)
   const handleBulkUploadToCloudflare = async (e) => {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
 
     setLoading(true);
     let successCount = 0;
-    let lastError = null;
+    let errorDetails = [];
 
     for (let i = 0; i < uploadFiles.length; i++) {
       const file = uploadFiles[i];
@@ -74,11 +73,14 @@ export default function AdminDashboard() {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
       try {
+        // Convert File to ArrayBuffer for Browser AWS SDK compatibility
+        const fileArrayBuffer = await file.arrayBuffer();
+
         // 1. Upload File sa Cloudflare R2 Bucket
         const command = new PutObjectCommand({
           Bucket: 'jb-collections-hub',
           Key: fileName,
-          Body: file,
+          Body: new Uint8Array(fileArrayBuffer),
           ContentType: file.type || 'video/mp4',
         });
 
@@ -88,11 +90,10 @@ export default function AdminDashboard() {
         const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
         const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
         
-        // Anti-bug: Tukuyin kung Video o Image
         const isVideoFile = file.type.startsWith('video') || ['mp4', 'mov', 'webm', 'mkv'].includes(fileExt);
         const detectedType = isVideoFile ? 'video' : 'image';
 
-        // 3. I-save sa Supabase 'media' table
+        // 3. Save sa Supabase DB
         const { error: dbError } = await supabase.from('media').insert([
           {
             title: cleanTitle,
@@ -104,14 +105,14 @@ export default function AdminDashboard() {
         ]);
 
         if (dbError) {
-          throw new Error(`Database error: ${dbError.message}`);
+          throw new Error(`Database Error: ${dbError.message}`);
         }
 
         successCount++;
 
       } catch (err) {
-        console.error(`Error uploading ${file.name}:`, err);
-        lastError = err.message || err.toString();
+        console.error(`Failed uploading ${file.name}:`, err);
+        errorDetails.push(`${file.name}: ${err.message || err}`);
       }
     }
 
@@ -123,11 +124,11 @@ export default function AdminDashboard() {
       setUploadFiles([]);
       fetchData();
     } else {
-      alert(` Upload Failed!\n\nError details: ${lastError || 'Network/CORS Error. Please check Cloudflare R2 settings.'}`);
+      const mainError = errorDetails.length > 0 ? errorDetails[0] : 'Missing R2 Environment Variables on Vercel';
+      alert(` Upload Failed!\n\nReason: ${mainError}`);
     }
   };
 
-  // Delete Media Function
   const handleDeleteMedia = async (id) => {
     if (!window.confirm("Sigurado ka bang gusto mong burahin ang media na ito?")) return;
     const { error } = await supabase.from('media').delete().eq('id', id);
@@ -209,7 +210,6 @@ export default function AdminDashboard() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-8 overflow-y-auto">
-        {/* DASHBOARD TAB */}
         {activeTab === 'dashboard' && (
           <div>
             <h1 className="text-3xl font-bold mb-6 text-white">System Dashboard</h1>
@@ -234,7 +234,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* SUPPORT TICKETS TAB */}
         {activeTab === 'tickets' && (
           <div>
             <h1 className="text-3xl font-bold mb-6 text-white">Support Tickets Management</h1>
@@ -242,7 +241,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* USERS TAB */}
         {activeTab === 'users' && (
           <div>
             <h1 className="text-3xl font-bold mb-6 text-white">Registered Accounts</h1>
@@ -268,10 +266,8 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ACCESS CODES TAB */}
         {activeTab === 'codes' && <AccessCodesTab />}
 
-        {/* UPLOAD MEDIA & MANAGER TAB */}
         {activeTab === 'upload' && (
           <div className="space-y-8">
             <div>
@@ -331,7 +327,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* LIVE MEDIA LIST MANAGER */}
             <div>
               <h2 className="text-2xl font-bold mb-4 text-white">Uploaded Vault Media ({mediaList.length})</h2>
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
