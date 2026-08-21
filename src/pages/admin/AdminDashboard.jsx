@@ -57,13 +57,14 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  // Cloudflare R2 Bulk Upload Function (Fixed DB Insert)
+  // Cloudflare R2 Bulk Upload Function (With Detailed Error Feedback)
   const handleBulkUploadToCloudflare = async (e) => {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
 
     setLoading(true);
     let successCount = 0;
+    let lastError = null;
 
     for (let i = 0; i < uploadFiles.length; i++) {
       const file = uploadFiles[i];
@@ -78,7 +79,7 @@ export default function AdminDashboard() {
           Bucket: 'jb-collections-hub',
           Key: fileName,
           Body: file,
-          ContentType: file.type,
+          ContentType: file.type || 'video/mp4',
         });
 
         await r2Client.send(command);
@@ -91,7 +92,7 @@ export default function AdminDashboard() {
         const isVideoFile = file.type.startsWith('video') || ['mp4', 'mov', 'webm', 'mkv'].includes(fileExt);
         const detectedType = isVideoFile ? 'video' : 'image';
 
-        // 3. I-save sa Supabase 'media' table kasama ang media_type
+        // 3. I-save sa Supabase 'media' table
         const { error: dbError } = await supabase.from('media').insert([
           {
             title: cleanTitle,
@@ -103,22 +104,27 @@ export default function AdminDashboard() {
         ]);
 
         if (dbError) {
-          console.error('Supabase DB Insert Error:', dbError);
-          alert(`File uploaded to R2, but failed in Supabase DB: ${dbError.message}`);
-        } else {
-          successCount++;
+          throw new Error(`Database error: ${dbError.message}`);
         }
 
+        successCount++;
+
       } catch (err) {
-        console.error('Error uploading file to Cloudflare R2:', err);
+        console.error(`Error uploading ${file.name}:`, err);
+        lastError = err.message || err.toString();
       }
     }
 
-    alert(`Successfully processed ${successCount} file(s)!`);
-    setUploadFiles([]);
-    setUploadProgress('');
     setLoading(false);
-    fetchData();
+    setUploadProgress('');
+
+    if (successCount > 0) {
+      alert(` Successfully uploaded ${successCount} out of ${uploadFiles.length} file(s)!`);
+      setUploadFiles([]);
+      fetchData();
+    } else {
+      alert(` Upload Failed!\n\nError details: ${lastError || 'Network/CORS Error. Please check Cloudflare R2 settings.'}`);
+    }
   };
 
   // Delete Media Function
