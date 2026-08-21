@@ -57,7 +57,7 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  // Cloudflare R2 Bulk Upload Function
+  // Cloudflare R2 Bulk Upload Function (Fixed DB Insert)
   const handleBulkUploadToCloudflare = async (e) => {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
@@ -69,11 +69,11 @@ export default function AdminDashboard() {
       const file = uploadFiles[i];
       setUploadProgress(`Uploading (${i + 1}/${uploadFiles.length}): ${file.name}`);
 
-      const fileExt = file.name.split('.').pop();
+      const fileExt = file.name.split('.').pop().toLowerCase();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
       try {
-        // 1. Upload File sa Cloudflare R2 Bucket 'jb-collections-hub'
+        // 1. Upload File sa Cloudflare R2 Bucket
         const command = new PutObjectCommand({
           Bucket: 'jb-collections-hub',
           Key: fileName,
@@ -85,28 +85,51 @@ export default function AdminDashboard() {
 
         // 2. Buuin ang Public Video Link
         const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
-
-        // 3. I-save sa Supabase 'media' table
         const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
-        await supabase.from('media').insert([
+        
+        // Anti-bug: Tukuyin kung Video o Image
+        const isVideoFile = file.type.startsWith('video') || ['mp4', 'mov', 'webm', 'mkv'].includes(fileExt);
+        const detectedType = isVideoFile ? 'video' : 'image';
+
+        // 3. I-save sa Supabase 'media' table kasama ang media_type
+        const { error: dbError } = await supabase.from('media').insert([
           {
             title: cleanTitle,
             media_url: videoPublicUrl,
-            category: 'Vault Content'
+            category: 'Vault Content',
+            type: detectedType,
+            media_type: detectedType
           }
         ]);
 
-        successCount++;
+        if (dbError) {
+          console.error('Supabase DB Insert Error:', dbError);
+          alert(`File uploaded to R2, but failed in Supabase DB: ${dbError.message}`);
+        } else {
+          successCount++;
+        }
+
       } catch (err) {
         console.error('Error uploading file to Cloudflare R2:', err);
       }
     }
 
-    alert(`Successfully uploaded ${successCount} file(s) to jb-collections-hub!`);
+    alert(`Successfully processed ${successCount} file(s)!`);
     setUploadFiles([]);
     setUploadProgress('');
     setLoading(false);
     fetchData();
+  };
+
+  // Delete Media Function
+  const handleDeleteMedia = async (id) => {
+    if (!window.confirm("Sigurado ka bang gusto mong burahin ang media na ito?")) return;
+    const { error } = await supabase.from('media').delete().eq('id', id);
+    if (error) {
+      alert("Error deleting media: " + error.message);
+    } else {
+      fetchData();
+    }
   };
 
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
@@ -165,7 +188,7 @@ export default function AdminDashboard() {
                 activeTab === 'upload' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
               }`}
             >
-              📤 Bulk Upload
+              📤 Bulk Upload & Media
             </button>
           </nav>
         </div>
@@ -242,62 +265,89 @@ export default function AdminDashboard() {
         {/* ACCESS CODES TAB */}
         {activeTab === 'codes' && <AccessCodesTab />}
 
-        {/* UPLOAD MEDIA TAB (CLOUDFLARE R2 BULK) */}
+        {/* UPLOAD MEDIA & MANAGER TAB */}
         {activeTab === 'upload' && (
-          <div>
-            <h1 className="text-3xl font-bold mb-6 text-white">Cloudflare R2 Bulk Uploader</h1>
-            <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-2xl shadow-xl">
-              <form onSubmit={handleBulkUploadToCloudflare} className="flex flex-col gap-6">
-                <div className="border-2 border-dashed border-gray-700 hover:border-red-500/50 bg-gray-800/40 rounded-2xl p-8 text-center transition-all cursor-pointer">
-                  <input
-                    type="file"
-                    multiple
-                    accept="video/*,image/*"
-                    id="file-upload"
-                    onChange={(e) => setUploadFiles(Array.from(e.target.files))}
-                    className="hidden"
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                    <span className="text-4xl mb-3">📁</span>
-                    <span className="text-lg font-semibold text-white mb-1">
-                      Click to select or drag videos here
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      Uploading to bucket: <strong className="text-red-400">jb-collections-hub</strong>
-                    </span>
-                  </label>
-                </div>
-
-                {uploadFiles.length > 0 && (
-                  <div className="bg-gray-800/60 p-4 rounded-xl border border-gray-700">
-                    <p className="text-sm font-bold text-gray-300 mb-2">
-                      Selected Files ({uploadFiles.length}):
-                    </p>
-                    <div className="max-h-40 overflow-y-auto space-y-1 text-xs text-gray-400">
-                      {uploadFiles.map((file, idx) => (
-                        <div key={idx} className="flex justify-between items-center py-1 border-b border-gray-700/50">
-                          <span className="truncate max-w-xs text-white">{file.name}</span>
-                          <span>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
-                        </div>
-                      ))}
-                    </div>
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold mb-6 text-white">Cloudflare R2 Bulk Uploader</h1>
+              <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-2xl shadow-xl">
+                <form onSubmit={handleBulkUploadToCloudflare} className="flex flex-col gap-6">
+                  <div className="border-2 border-dashed border-gray-700 hover:border-red-500/50 bg-gray-800/40 rounded-2xl p-8 text-center transition-all cursor-pointer">
+                    <input
+                      type="file"
+                      multiple
+                      accept="video/*,image/*"
+                      id="file-upload"
+                      onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+                      className="hidden"
+                    />
+                    <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                      <span className="text-4xl mb-3">📁</span>
+                      <span className="text-lg font-semibold text-white mb-1">
+                        Click to select or drag videos here
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        Uploading to bucket: <strong className="text-red-400">jb-collections-hub</strong>
+                      </span>
+                    </label>
                   </div>
-                )}
 
-                {uploadProgress && (
-                  <p className="text-center text-sm font-semibold text-yellow-400 animate-pulse">
-                    {uploadProgress}
-                  </p>
-                )}
+                  {uploadFiles.length > 0 && (
+                    <div className="bg-gray-800/60 p-4 rounded-xl border border-gray-700">
+                      <p className="text-sm font-bold text-gray-300 mb-2">
+                        Selected Files ({uploadFiles.length}):
+                      </p>
+                      <div className="max-h-40 overflow-y-auto space-y-1 text-xs text-gray-400">
+                        {uploadFiles.map((file, idx) => (
+                          <div key={idx} className="flex justify-between items-center py-1 border-b border-gray-700/50">
+                            <span className="truncate max-w-xs text-white">{file.name}</span>
+                            <span>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                <button
-                  type="submit"
-                  disabled={loading || uploadFiles.length === 0}
-                  className="bg-red-600 hover:bg-red-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20"
-                >
-                  {loading ? 'Uploading Files...' : `Upload ${uploadFiles.length} File(s) to Cloudflare`}
-                </button>
-              </form>
+                  {uploadProgress && (
+                    <p className="text-center text-sm font-semibold text-yellow-400 animate-pulse">
+                      {uploadProgress}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading || uploadFiles.length === 0}
+                    className="bg-red-600 hover:bg-red-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20"
+                  >
+                    {loading ? 'Uploading Files...' : `Upload ${uploadFiles.length} File(s) to Cloudflare`}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* LIVE MEDIA LIST MANAGER */}
+            <div>
+              <h2 className="text-2xl font-bold mb-4 text-white">Uploaded Vault Media ({mediaList.length})</h2>
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+                {mediaList.length === 0 ? (
+                  <p className="text-gray-500 text-sm p-4 text-center">Wala pang nakaupload na videos sa database.</p>
+                ) : (
+                  mediaList.map((item) => (
+                    <div key={item.id} className="bg-gray-800/50 p-4 rounded-xl flex justify-between items-center border border-gray-800 gap-4">
+                      <div className="truncate flex-1">
+                        <p className="font-bold text-white text-sm truncate">{item.title}</p>
+                        <p className="text-xs text-gray-500 truncate">{item.media_url}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMedia(item.id)}
+                        className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-red-600/30 shrink-0"
+                      >
+                        Delete 🗑️
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         )}
