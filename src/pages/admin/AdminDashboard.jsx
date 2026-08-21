@@ -10,9 +10,10 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [users, setUsers] = useState([]);
   const [mediaList, setMediaList] = useState([]);
+  const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [tickets, setTickets] = useState([]);
   
-  // Forms states
+  // File upload state with status tracking
   const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,12 +37,14 @@ export default function AdminDashboard() {
       .order('created_at', { ascending: false });
     if (usersData) setUsers(usersData);
 
-    // 2. Vault Media Videos
-    const { data: mediaData } = await supabase
+    // 2. Vault Media Videos & Exact Database Count
+    const { data: mediaData, count: mediaCount } = await supabase
       .from('media')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false });
+      
     if (mediaData) setMediaList(mediaData);
+    if (mediaCount !== null) setTotalMediaCount(mediaCount);
 
     // 3. Support Tickets
     const { data: ticketsData } = await supabase
@@ -56,7 +59,63 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  // Cloudflare R2 Bulk Upload Function (Fixed with Uint8Array Buffer & Detailed Error Catching)
+  // Toggle user between VIP and Standard Tier
+  const handleToggleUserTier = async (userId, currentType) => {
+    const isVip = currentType?.toLowerCase() === 'vip';
+    const newType = isVip ? 'standard' : 'vip';
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ 
+        account_type: newType,
+        is_activated: newType === 'vip'
+      })
+      .eq('id', userId);
+
+    if (error) {
+      alert('Failed to update user tier: ' + error.message);
+    } else {
+      fetchData();
+    }
+  };
+
+  // Helper to update specific file status in real-time
+  const updateFileState = (id, updates) => {
+    setUploadFiles((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  };
+
+  // Handle file selection - Strictly enforce video formats only
+  const handleFileSelect = (e) => {
+    const selected = Array.from(e.target.files || []);
+
+    // 🎥 Filter strictly for video extensions and MIME types (Exclude Images)
+    const validVideoFiles = selected.filter((file) => {
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const isVideoMime = file.type.startsWith('video/');
+      const isVideoExt = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'm4v', 'flv', 'wmv', '3gp', 'ts', 'm2ts', '3g2'].includes(fileExt);
+      return isVideoMime || isVideoExt;
+    });
+
+    if (validVideoFiles.length < selected.length) {
+      const rejectedCount = selected.length - validVideoFiles.length;
+      alert(`⚠️ ${rejectedCount} non-video file(s) were ignored. Only video formats are allowed!`);
+    }
+
+    const formattedFiles = validVideoFiles.map((file, idx) => ({
+      id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      file,
+      name: file.name,
+      size: file.size,
+      progress: 0,
+      status: 'pending', // 'pending' | 'uploading' | 'saving' | 'completed' | 'error'
+      errorMsg: ''
+    }));
+    setUploadFiles(formattedFiles);
+  };
+
+  // Cloudflare R2 Bulk Upload with Dependency-Free Per-File Signal
   const handleBulkUploadToCloudflare = async (e) => {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
@@ -66,17 +125,32 @@ export default function AdminDashboard() {
     let errorDetails = [];
 
     for (let i = 0; i < uploadFiles.length; i++) {
-      const file = uploadFiles[i];
-      setUploadProgress(`Uploading (${i + 1}/${uploadFiles.length}): ${file.name}`);
+      const fileObj = uploadFiles[i];
+      const file = fileObj.file;
+      setUploadProgress(`Processing (${i + 1}/${uploadFiles.length}): ${file.name}`);
+
+      // Step 1: Mark as uploading and start reading
+      updateFileState(fileObj.id, { status: 'uploading', progress: 15 });
 
       const fileExt = file.name.split('.').pop().toLowerCase();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
+      // Live progress simulation while transmitting bytes to Cloudflare R2
+      const progressTimer = setInterval(() => {
+        setUploadFiles((prev) =>
+          prev.map((item) => {
+            if (item.id === fileObj.id && item.status === 'uploading' && item.progress < 85) {
+              return { ...item, progress: item.progress + 15 };
+            }
+            return item;
+          })
+        );
+      }, 300);
+
       try {
-        // Convert File to ArrayBuffer for Browser AWS SDK compatibility
         const fileArrayBuffer = await file.arrayBuffer();
 
-        // 1. Upload File sa Cloudflare R2 Bucket
+        // Send video file to R2 Bucket
         const command = new PutObjectCommand({
           Bucket: 'jb-collections-hub',
           Key: fileName,
@@ -85,21 +159,20 @@ export default function AdminDashboard() {
         });
 
         await r2Client.send(command);
+        clearInterval(progressTimer);
 
-        // 2. Buuin ang Public Video Link
+        // Step 2: R2 Upload Complete, now inserting record into Supabase
+        updateFileState(fileObj.id, { status: 'saving', progress: 92 });
+
         const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
         const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
-        
-        const isVideoFile = file.type.startsWith('video') || ['mp4', 'mov', 'webm', 'mkv'].includes(fileExt);
-        const detectedType = isVideoFile ? 'video' : 'image';
 
-        // 3. Save sa Supabase DB
         const { error: dbError } = await supabase.from('media').insert([
           {
             title: cleanTitle,
             media_url: videoPublicUrl,
             category: 'Vault Content',
-            type: detectedType
+            type: 'video' // Hardcoded as video only
           }
         ]);
 
@@ -107,11 +180,16 @@ export default function AdminDashboard() {
           throw new Error(`Database Error: ${dbError.message}`);
         }
 
+        // Step 3: Finished successfully
+        updateFileState(fileObj.id, { status: 'completed', progress: 100 });
         successCount++;
 
       } catch (err) {
+        clearInterval(progressTimer);
         console.error(`Failed uploading ${file.name}:`, err);
-        errorDetails.push(`${file.name}: ${err.message || err}`);
+        const errMsg = err.message || 'Upload failed';
+        errorDetails.push(`${file.name}: ${errMsg}`);
+        updateFileState(fileObj.id, { status: 'error', progress: 0, errorMsg: errMsg });
       }
     }
 
@@ -119,12 +197,11 @@ export default function AdminDashboard() {
     setUploadProgress('');
 
     if (successCount > 0) {
-      alert(` Successfully uploaded ${successCount} out of ${uploadFiles.length} file(s)!`);
-      setUploadFiles([]);
+      alert(`Successfully uploaded ${successCount} out of ${uploadFiles.length} video(s)!`);
       fetchData();
     } else {
       const mainError = errorDetails.length > 0 ? errorDetails[0] : 'Missing R2 Environment Variables on Vercel';
-      alert(` Upload Failed!\n\nReason: ${mainError}`);
+      alert(`Upload Failed!\n\nReason: ${mainError}`);
     }
   };
 
@@ -138,6 +215,50 @@ export default function AdminDashboard() {
     }
   };
 
+  // Render Status Badge & Symbol for File Upload List
+  const renderStatusBadge = (fileItem) => {
+    switch (fileItem.status) {
+      case 'uploading':
+        return (
+          <span className="flex items-center gap-1 text-xs font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded animate-pulse">
+            <span className="animate-spin">🔄</span>
+            <span>Uploading {fileItem.progress}%</span>
+          </span>
+        );
+      case 'saving':
+        return (
+          <span className="flex items-center gap-1 text-xs font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded animate-pulse">
+            <span>💾</span>
+            <span>Saving DB...</span>
+          </span>
+        );
+      case 'completed':
+        return (
+          <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+            <span>✅</span>
+            <span>Uploaded</span>
+          </span>
+        );
+      case 'error':
+        return (
+          <span className="flex items-center gap-1 text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded">
+            <span>❌</span>
+            <span>Failed</span>
+          </span>
+        );
+      default:
+        return (
+          <span className="flex items-center gap-1 text-xs font-semibold text-gray-400 bg-gray-800 border border-gray-700 px-2 py-0.5 rounded">
+            <span>⏳</span>
+            <span>Ready</span>
+          </span>
+        );
+    }
+  };
+
+  // Stats Calculations
+  const vipUsersCount = users.filter((u) => u.account_type?.toLowerCase() === 'vip' || u.is_activated).length;
+  const standardUsersCount = users.length - vipUsersCount;
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
   return (
@@ -212,22 +333,30 @@ export default function AdminDashboard() {
         {activeTab === 'dashboard' && (
           <div>
             <h1 className="text-3xl font-bold mb-6 text-white">System Dashboard</h1>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
               <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-sm">Total Registered Users</p>
-                <p className="text-4xl font-bold text-purple-400 mt-2">{users.length}</p>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Users</p>
+                <p className="text-3xl font-black text-purple-400 mt-2">{users.length}</p>
               </div>
+
               <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-sm">Active VIP Members</p>
-                <p className="text-4xl font-bold text-green-400 mt-2">{users.filter((u) => u.is_activated).length}</p>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Active VIP Members</p>
+                <p className="text-3xl font-black text-emerald-400 mt-2">{vipUsersCount}</p>
               </div>
+
               <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-sm">Total Vault Videos</p>
-                <p className="text-4xl font-bold text-blue-400 mt-2">{mediaList.length}</p>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Standard Users</p>
+                <p className="text-3xl font-black text-blue-400 mt-2">{standardUsersCount}</p>
               </div>
+
               <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-sm">Pending Support Tickets</p>
-                <p className="text-4xl font-bold text-amber-400 mt-2">{pendingTicketsCount}</p>
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Vault Videos</p>
+                <p className="text-3xl font-black text-sky-400 mt-2">{totalMediaCount}</p>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Pending Support Tickets</p>
+                <p className="text-3xl font-black text-amber-400 mt-2">{pendingTicketsCount}</p>
               </div>
             </div>
           </div>
@@ -242,25 +371,38 @@ export default function AdminDashboard() {
 
         {activeTab === 'users' && (
           <div>
-            <h1 className="text-3xl font-bold mb-6 text-white">Registered Accounts</h1>
+            <h1 className="text-3xl font-bold mb-6 text-white">Registered Accounts ({users.length})</h1>
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-3">
-              {users.map((u) => (
-                <div key={u.id} className="bg-gray-800/50 p-4 rounded-xl flex justify-between items-center border border-gray-800">
-                  <div>
-                    <p className="font-bold text-white">{u.full_name || 'No Name'}</p>
-                    <p className="text-xs text-gray-500">ID: {u.id}</p>
+              {users.map((u) => {
+                const isVip = u.account_type?.toLowerCase() === 'vip' || u.is_activated;
+                return (
+                  <div key={u.id} className="bg-gray-800/50 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center border border-gray-800 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-white">{u.full_name || u.email || 'No Name'}</p>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${isVip ? 'bg-amber-500 text-black' : 'bg-blue-600/30 text-blue-400 border border-blue-500/30'}`}>
+                          {isVip ? 'VIP' : 'STANDARD'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">ID: {u.id}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Watch Tokens: <b className="text-amber-400">{u.watch_tokens || 0}</b> | Daily Views Used: <b className="text-white">{u.daily_views_count || 0}/{u.daily_views_limit || 5}</b>
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleToggleUserTier(u.id, u.account_type)}
+                      className={`text-xs px-4 py-2 rounded-xl font-bold cursor-pointer transition-all ${
+                        isVip
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white'
+                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white'
+                      }`}
+                    >
+                      {isVip ? 'Demote to Standard' : 'Promote to VIP 👑'}
+                    </button>
                   </div>
-                  <span
-                    className={`text-xs px-3 py-1 rounded-full font-bold ${
-                      u.is_activated
-                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                        : 'bg-gray-700 text-gray-400'
-                    }`}
-                  >
-                    {u.is_activated ? 'ACTIVE VIP' : 'PENDING'}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -270,39 +412,81 @@ export default function AdminDashboard() {
         {activeTab === 'upload' && (
           <div className="space-y-8">
             <div>
-              <h1 className="text-3xl font-bold mb-6 text-white">Cloudflare R2 Bulk Uploader</h1>
+              <h1 className="text-3xl font-bold mb-6 text-white">Cloudflare R2 Bulk Video Uploader</h1>
               <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-2xl shadow-xl">
                 <form onSubmit={handleBulkUploadToCloudflare} className="flex flex-col gap-6">
                   <div className="border-2 border-dashed border-gray-700 hover:border-red-500/50 bg-gray-800/40 rounded-2xl p-8 text-center transition-all cursor-pointer">
                     <input
                       type="file"
                       multiple
-                      accept="video/*,image/*"
+                      accept="video/*,.mp4,.mkv,.mov,.avi,.webm,.m4v,.flv,.wmv,.3gp"
                       id="file-upload"
-                      onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+                      onChange={handleFileSelect}
                       className="hidden"
                     />
                     <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                      <span className="text-4xl mb-3">📁</span>
+                      <span className="text-4xl mb-3">🎬</span>
                       <span className="text-lg font-semibold text-white mb-1">
                         Click to select or drag videos here
                       </span>
                       <span className="text-xs text-gray-400">
-                        Uploading to bucket: <strong className="text-red-400">jb-collections-hub</strong>
+                        Uploading to bucket: <strong className="text-red-400">jb-collections-hub</strong> (Video Formats Only)
                       </span>
                     </label>
                   </div>
 
                   {uploadFiles.length > 0 && (
                     <div className="bg-gray-800/60 p-4 rounded-xl border border-gray-700">
-                      <p className="text-sm font-bold text-gray-300 mb-2">
-                        Selected Files ({uploadFiles.length}):
-                      </p>
-                      <div className="max-h-40 overflow-y-auto space-y-1 text-xs text-gray-400">
-                        {uploadFiles.map((file, idx) => (
-                          <div key={idx} className="flex justify-between items-center py-1 border-b border-gray-700/50">
-                            <span className="truncate max-w-xs text-white">{file.name}</span>
-                            <span>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                      <div className="flex justify-between items-center mb-3">
+                        <p className="text-sm font-bold text-gray-300">
+                          Selected Videos ({uploadFiles.length}):
+                        </p>
+                        {!loading && (
+                          <button
+                            type="button"
+                            onClick={() => setUploadFiles([])}
+                            className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                          >
+                            Clear list
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
+                        {uploadFiles.map((item) => (
+                          <div 
+                            key={item.id} 
+                            className="bg-gray-900/80 p-3 rounded-xl border border-gray-700/60 flex flex-col gap-2"
+                          >
+                            <div className="flex justify-between items-center gap-2 text-xs">
+                              <span className="truncate max-w-xs text-white font-medium">
+                                {item.name}
+                              </span>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-gray-400">
+                                  {(item.size / (1024 * 1024)).toFixed(2)} MB
+                                </span>
+                                {renderStatusBadge(item)}
+                              </div>
+                            </div>
+
+                            {/* Signal / Progress Bar for Every File */}
+                            <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-gray-700/50">
+                              <div
+                                className={`h-full transition-all duration-300 rounded-full ${
+                                  item.status === 'completed'
+                                    ? 'bg-emerald-500'
+                                    : item.status === 'error'
+                                    ? 'bg-red-500'
+                                    : 'bg-gradient-to-r from-red-600 via-amber-500 to-emerald-400'
+                                }`}
+                                style={{ width: `${item.progress}%` }}
+                              />
+                            </div>
+
+                            {item.errorMsg && (
+                              <p className="text-[11px] text-red-400 truncate">{item.errorMsg}</p>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -320,14 +504,14 @@ export default function AdminDashboard() {
                     disabled={loading || uploadFiles.length === 0}
                     className="bg-red-600 hover:bg-red-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20"
                   >
-                    {loading ? 'Uploading Files...' : `Upload ${uploadFiles.length} File(s) to Cloudflare`}
+                    {loading ? 'Uploading Videos...' : `Upload ${uploadFiles.length} Video(s) to Cloudflare`}
                   </button>
                 </form>
               </div>
             </div>
 
             <div>
-              <h2 className="text-2xl font-bold mb-4 text-white">Uploaded Vault Media ({mediaList.length})</h2>
+              <h2 className="text-2xl font-bold mb-4 text-white">Uploaded Vault Media ({totalMediaCount})</h2>
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
                 {mediaList.length === 0 ? (
                   <p className="text-gray-500 text-sm p-4 text-center">Wala pang nakaupload na videos sa database.</p>

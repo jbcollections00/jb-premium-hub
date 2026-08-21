@@ -1,23 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 
-export default function VIPVideoPlayer({ mainVideoUrl, adVideoUrl, adDirectLink }) {
+export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink }) {
   const [isPlayingAd, setIsPlayingAd] = useState(true);
-  const [timeLeft, setTimeLeft] = useState(5); // 5 seconds countdown
+  const [timeLeft, setTimeLeft] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
-  const [isMuted, setIsMuted] = useState(true); // Default Muted para pumasa sa browser Autoplay policy
-  
-  const adVideoRef = useRef(null);
+
   const mainVideoRef = useRef(null);
 
-  // 1️⃣ Reset ang Ad Player kapag pinalitan ng user ang pinapanood na VIP Video
+  // 1️⃣ Reset state when user selects a new video
   useEffect(() => {
     setIsPlayingAd(true);
     setTimeLeft(5);
     setCanSkip(false);
-    setIsMuted(true);
   }, [mainVideoUrl]);
 
-  // 2️⃣ Countdown Timer para sa Skip Ad button
+  // 2️⃣ 5-Second Countdown Timer for Skip Ad button
   useEffect(() => {
     if (!isPlayingAd) return;
 
@@ -35,92 +32,102 @@ export default function VIPVideoPlayer({ mainVideoUrl, adVideoUrl, adDirectLink 
     return () => clearInterval(timer);
   }, [isPlayingAd]);
 
-  // ⏩ Skip Ad Handler
-  const handleSkipAd = (e) => {
-    e.stopPropagation(); // Iwasan ang pag-click sa ad background
-    setIsPlayingAd(false);
-  };
-
-  // 🎬 Kapag natapos ang Ad
-  const handleAdEnded = () => {
-    setIsPlayingAd(false);
-  };
-
-  // 🔊 Sound Toggle Handler
-  const toggleMute = (e) => {
-    e.stopPropagation(); // Iwasan ang pag-click sa ad background
-    setIsMuted((prev) => !prev);
-  };
-
-  // 💰 Ad Background Click Handler (Ad Network / Direct Link)
-  const handleAdClick = () => {
+  // 💰 Open Adsterra Direct Link in a new tab
+  const openAdsterra = (e) => {
+    if (e) e.stopPropagation();
     if (adDirectLink) {
       window.open(adDirectLink, '_blank', 'noopener,noreferrer');
     }
   };
 
+  // ⏩ Skip Ad Handler: Triggers Adsterra ad & starts main video
+  const handleSkipAd = (e) => {
+    e.stopPropagation();
+    if (!canSkip) return;
+
+    openAdsterra();
+    setIsPlayingAd(false);
+  };
+
+  // 🎯 Screen Click Handler: Triggers Adsterra ad & plays video if countdown finished
+  const handleOverlayClick = () => {
+    openAdsterra();
+    if (canSkip) {
+      setIsPlayingAd(false);
+    }
+  };
+
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80">
+    <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
       {isPlayingAd ? (
-        /* ==================== 📢 IN-STREAM VIDEO AD PLAYER ==================== */
+        /* ==================== 📢 ADSTERRA MONETIZED OVERLAY ==================== */
         <div 
-          className="relative w-full h-full flex items-center justify-center cursor-pointer select-none" 
-          onClick={handleAdClick}
+          className="relative w-full h-full min-h-[320px] md:min-h-[420px] flex flex-col justify-between p-4 md:p-6 bg-slate-950/90 cursor-pointer backdrop-blur-sm"
+          onClick={handleOverlayClick}
         >
-          {/* Ad Video Stream */}
-          <video
-            ref={adVideoRef}
-            src={adVideoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"} // Fallback test ad
-            autoPlay
-            playsInline
-            muted={isMuted} // Muted default para gumana ang autoplay
-            className="w-full h-full max-h-[65vh] object-contain"
-            onEnded={handleAdEnded}
-          />
-
-          {/* Top Left: Ad Badge & Unmute Button */}
-          <div className="absolute top-3 left-3 flex items-center gap-2 z-20">
+          {/* Top Bar: Ad Badge & Countdown Status */}
+          <div className="flex items-center justify-between z-20">
             <div className="flex items-center gap-1.5 bg-yellow-500 text-black px-2.5 py-1 rounded-md font-extrabold text-[11px] tracking-wider uppercase shadow-md">
               <span>📢 Ad</span>
-              <span className="text-[9px] opacity-80">• Sponsored</span>
+              <span className="text-[9px] opacity-80">• Sponsored Stream</span>
             </div>
 
-            {/* 🔊 Unmute/Mute Toggle Button */}
-            <button
-              onClick={toggleMute}
-              className="bg-black/80 hover:bg-black text-white text-xs font-semibold px-2.5 py-1 rounded-md border border-white/20 backdrop-blur-md transition-all flex items-center gap-1 cursor-pointer"
-            >
-              {isMuted ? '🔇 Unmute' : '🔊 Mute'}
-            </button>
+            <div className="bg-black/80 text-slate-300 px-3 py-1 rounded-lg text-xs font-medium border border-slate-700/50 backdrop-blur-md">
+              {canSkip ? (
+                <span className="text-emerald-400 font-bold">✓ Stream Ready!</span>
+              ) : (
+                <span>Unlocking in <b className="text-yellow-400">{timeLeft}s</b></span>
+              )}
+            </div>
           </div>
 
-          {/* Bottom Right: Skip Ad / Countdown Button */}
-          <div className="absolute bottom-3 right-3 z-20">
+          {/* Center Call-to-Action */}
+          <div className="my-auto text-center flex flex-col items-center justify-center gap-3 z-10">
+            <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center border border-red-500/30 animate-pulse shadow-lg">
+              <svg className="w-8 h-8 fill-current ml-1" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+            <h3 className="text-white text-base md:text-lg font-bold">
+              Click anywhere to start video & support high-speed server
+            </h3>
+            <p className="text-slate-400 text-xs">
+              (Opens sponsor offer in new tab)
+            </p>
+          </div>
+
+          {/* Bottom Bar Controls */}
+          <div className="flex items-center justify-between z-20 gap-2">
+            {/* Visit Advertiser Button */}
+            <button
+              type="button"
+              onClick={openAdsterra}
+              className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl border border-slate-600/50 backdrop-blur-md transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <span>🔗 Visit Advertiser</span>
+            </button>
+
+            {/* Skip Ad / Countdown Button */}
             {canSkip ? (
               <button
+                type="button"
                 onClick={handleSkipAd}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl border border-blue-400/30 text-xs md:text-sm shadow-lg transition-all cursor-pointer flex items-center gap-1.5 hover:scale-105 active:scale-95"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl border border-blue-400/30 text-xs md:text-sm shadow-lg shadow-blue-600/30 transition-all cursor-pointer flex items-center gap-1.5 hover:scale-105 active:scale-95"
               >
-                <span>Skip Ad</span>
+                <span>Skip Ad & Play</span>
                 <span className="text-base">➔</span>
               </button>
             ) : (
-              <div className="bg-black/80 text-gray-200 px-3 py-1.5 rounded-xl text-xs font-medium border border-white/10 backdrop-blur-md flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-                You can skip ad in <span className="text-yellow-400 font-bold">{timeLeft}s</span>
-              </div>
+              <button
+                type="button"
+                disabled
+                className="bg-slate-800/80 text-slate-500 px-4 py-2 rounded-xl text-xs font-medium border border-slate-700/50 cursor-not-allowed"
+              >
+                Wait {timeLeft}s to skip...
+              </button>
             )}
           </div>
-
-          {/* Bottom Left: Visit Advertiser */}
-          {adDirectLink && (
-            <div className="absolute bottom-3 left-3 z-10 hidden sm:block">
-              <span className="bg-black/70 hover:bg-black/90 text-white/90 text-[11px] px-2.5 py-1 rounded-md border border-white/20 backdrop-blur-md">
-                🔗 Visit Advertiser
-              </span>
-            </div>
-          )}
         </div>
       ) : (
         /* ==================== 🎥 MAIN VIP VIDEO PLAYER ==================== */
@@ -129,7 +136,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adVideoUrl, adDirectLink 
           src={mainVideoUrl}
           controls
           autoPlay
-          controlsList="nodownload" // Proteksyon para hindi madaling ma-download ang VIP video
+          controlsList="nodownload"
           className="w-full h-full max-h-[65vh] object-contain"
         />
       )}

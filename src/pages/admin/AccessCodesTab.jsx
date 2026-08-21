@@ -4,6 +4,7 @@ import { supabase } from '../../services/supabaseClient';
 export default function AccessCodesTab() {
   const [codes, setCodes] = useState([]);
   const [newCode, setNewCode] = useState('');
+  const [codeType, setCodeType] = useState('VIP'); // 'VIP' or 'STANDARD'
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -11,19 +12,18 @@ export default function AccessCodesTab() {
   }, []);
 
   const fetchCodes = async () => {
-    // 1. Kuhanin ang lahat ng access codes
+    // 1. Fetch all access codes
     const { data: codesData, error: codesError } = await supabase
       .from('access_codes')
       .select('*')
       .order('created_at', { ascending: false });
 
-    // 2. Kuhanin ang profiles table para ma-match ang User ID sa Email
+    // 2. Fetch profiles table to match user ID to Email/Name
     const { data: profilesData } = await supabase
       .from('profiles')
       .select('*');
 
     if (!codesError && codesData) {
-      // Gawa ng ID -> Email lookup table
       const userMap = {};
       if (profilesData) {
         profilesData.forEach((profile) => {
@@ -31,7 +31,6 @@ export default function AccessCodesTab() {
         });
       }
 
-      // Isalin ang User ID patungong Email
       const updatedCodes = codesData.map((item) => ({
         ...item,
         used_by_email: userMap[item.used_by] || item.used_by || 'Unknown User'
@@ -45,13 +44,14 @@ export default function AccessCodesTab() {
     e.preventDefault();
     setLoading(true);
 
+    const prefix = codeType === 'VIP' ? 'VIP' : 'STD';
     const codeToCreate = newCode.trim()
       ? newCode.trim().toUpperCase()
-      : `VIP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      : `${prefix}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     const { error } = await supabase
       .from('access_codes')
-      .insert([{ code: codeToCreate, is_used: false }]);
+      .insert([{ code: codeToCreate, type: codeType, is_used: false }]);
 
     if (error) {
       alert("Error: " + error.message);
@@ -85,18 +85,29 @@ export default function AccessCodesTab() {
 
       {/* Generator Form */}
       <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-xl mb-8">
-        <form onSubmit={handleGenerateCode} className="flex gap-3">
+        <form onSubmit={handleGenerateCode} className="flex flex-col sm:flex-row gap-3">
+          {/* Code Type Selector */}
+          <select
+            value={codeType}
+            onChange={(e) => setCodeType(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-white font-bold focus:outline-none focus:border-red-500 cursor-pointer"
+          >
+            <option value="VIP">👑 VIP Code</option>
+            <option value="STANDARD">👤 STANDARD Code</option>
+          </select>
+
           <input
             type="text"
             value={newCode}
             onChange={(e) => setNewCode(e.target.value)}
-            placeholder="e.g. VIP-GOLD-99 (or leave blank to auto-generate)"
+            placeholder="e.g. VIP-GOLD-99 (or leave blank)"
             className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white uppercase focus:outline-none focus:border-red-500"
           />
+
           <button
             type="submit"
             disabled={loading}
-            className="bg-red-600 hover:bg-red-500 disabled:bg-gray-800 text-white font-semibold px-6 py-3 rounded-xl transition-all cursor-pointer"
+            className="bg-red-600 hover:bg-red-500 disabled:bg-gray-800 text-white font-semibold px-6 py-3 rounded-xl transition-all cursor-pointer shrink-0"
           >
             {loading ? 'Generating...' : 'Generate'}
           </button>
@@ -116,7 +127,12 @@ export default function AccessCodesTab() {
               className="bg-gray-800/50 p-4 rounded-xl flex justify-between items-center border border-gray-800 hover:border-gray-700 transition-all"
             >
               <div>
-                <p className="font-mono font-bold text-yellow-400 text-lg tracking-wider">{c.code}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-mono font-bold text-yellow-400 text-lg tracking-wider">{c.code}</p>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded ${c.type === 'STANDARD' ? 'bg-blue-900/60 text-blue-400 border border-blue-800' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                    {c.type || 'VIP'}
+                  </span>
+                </div>
                 
                 {c.is_used && (
                   <p className="text-xs text-gray-400 mt-1">
