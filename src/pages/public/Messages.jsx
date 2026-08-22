@@ -7,24 +7,30 @@ export default function Messages() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchAdminMessages();
+    fetchUserMessages();
   }, []);
 
-  const fetchAdminMessages = async () => {
+  const fetchUserMessages = async () => {
     setLoading(true);
     
-    // Kukuha ng admin messages mula sa Supabase table (e.g. 'admin_messages' o 'announcements')
-    const { data, error } = await supabase
-      .from("admin_messages")
-      .select("*")
-      .order("created_at", { ascending: false });
+    // 1. Kukunin muna natin ang current logged-in user
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session?.user) {
+      // 2. Kukunin LANG ang mga mensahe na para sa user na ito gamit ang .eq("user_id", session.user.id)
+      const { data, error } = await supabase
+        .from("admin_messages")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching messages:", error.message);
-    } else {
-      setMessages(data || []);
-      if (data && data.length > 0) {
-        setSelectedMessage(data[0]); // Awtomatikong ipapakita ang pinakabagong mensahe
+      if (error) {
+        console.error("Error fetching messages:", error.message);
+      } else {
+        setMessages(data || []);
+        if (data && data.length > 0) {
+          setSelectedMessage(data[0]); // Awtomatikong ipapakita ang pinakabagong mensahe
+        }
       }
     }
     setLoading(false);
@@ -50,7 +56,7 @@ export default function Messages() {
         <div className="mb-6">
           <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
             <span className="p-2 bg-red-600/10 border border-red-600/20 rounded-xl text-red-500">
-              📩
+              📥
             </span>
             Admin Announcements
           </h1>
@@ -78,7 +84,7 @@ export default function Messages() {
           /* Main Inbox Layout */
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-h-[60vh]">
             
-            {/* 📜 Message List (Kaliwa) */}
+            {/* 📝 Message List (Kaliwa) */}
             <div className="md:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex flex-col">
               <div className="p-4 border-b border-slate-800 bg-slate-900/50">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -116,7 +122,7 @@ export default function Messages() {
               </div>
             </div>
 
-            {/* 📄 Full Message Reader (Kanan) */}
+            {/* 📖 Full Message Reader (Kanan) */}
             <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
               {selectedMessage ? (
                 <div className="flex-1 flex flex-col">
@@ -153,7 +159,7 @@ export default function Messages() {
 
                   {/* Reader Footer Notice */}
                   <div className="pt-4 border-t border-slate-800/80 text-xs text-slate-500 flex items-center gap-2">
-                    <span>ℹ️ Ang mensaheng ito ay direktang abiso mula sa System Admin.</span>
+                    <span>⚠️ Ang mensaheng ito ay direktang abiso mula sa System Admin.</span>
                   </div>
                 </div>
               ) : (

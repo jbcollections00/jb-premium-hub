@@ -5,6 +5,8 @@ import { supabase } from '../../services/supabaseClient';
 import { r2Client, r2PublicDomain } from '../../services/r2Client';
 import SupportTicketsTab from './SupportTicketsTab';
 import AccessCodesTab from './AccessCodesTab';
+import AdminUsersTab from './AdminUsersTab'; // 🟢 IMPORT NATIN ANG BAGONG TABS
+import AdminMessagesTab from './AdminMessagesTab'; 
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -59,26 +61,6 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  // Toggle user between VIP and Standard Tier
-  const handleToggleUserTier = async (userId, currentType) => {
-    const isVip = currentType?.toLowerCase() === 'vip';
-    const newType = isVip ? 'standard' : 'vip';
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ 
-        account_type: newType,
-        is_activated: newType === 'vip'
-      })
-      .eq('id', userId);
-
-    if (error) {
-      alert('Failed to update user tier: ' + error.message);
-    } else {
-      fetchData();
-    }
-  };
-
   // Helper to update specific file status in real-time
   const updateFileState = (id, updates) => {
     setUploadFiles((prev) =>
@@ -90,7 +72,6 @@ export default function AdminDashboard() {
   const handleFileSelect = (e) => {
     const selected = Array.from(e.target.files || []);
 
-    // 🎥 Filter strictly for video extensions and MIME types (Exclude Images)
     const validVideoFiles = selected.filter((file) => {
       const fileExt = file.name.split('.').pop().toLowerCase();
       const isVideoMime = file.type.startsWith('video/');
@@ -141,8 +122,8 @@ export default function AdminDashboard() {
             Body: file,
             ContentType: file.type || 'video/mp4',
           },
-          queueSize: 4, // Uploads 4 chunks simultaneously per file
-          partSize: 5 * 1024 * 1024, // 5 MB chunks
+          queueSize: 4, 
+          partSize: 5 * 1024 * 1024, 
         });
 
         parallelUpload.on("httpUploadProgress", (progress) => {
@@ -181,7 +162,6 @@ export default function AdminDashboard() {
       }
     });
 
-    // Wait for all uploads to finish concurrently
     await Promise.all(uploadPromises);
 
     setLoading(false);
@@ -206,11 +186,9 @@ export default function AdminDashboard() {
     }
   };
 
-  // Delete ALL Media Function
   const handleDeleteAllMedia = async () => {
     if (!window.confirm("⚠️ BABALA: Sigurado ka bang gusto mong burahin ang LAHAT ng videos sa database? Hindi na ito mababawi!")) return;
     
-    // Supabase requires a filter to prevent accidental full table wipes, so we use .not('id', 'is', null)
     const { error } = await supabase.from('media').delete().not('id', 'is', null);
     
     if (error) {
@@ -221,7 +199,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Render Status Badge & Symbol for File Upload List
   const renderStatusBadge = (fileItem) => {
     switch (fileItem.status) {
       case 'uploading':
@@ -262,7 +239,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Stats Calculations
   const vipUsersCount = users.filter((u) => u.account_type?.toLowerCase() === 'vip' || u.is_activated).length;
   const standardUsersCount = users.length - vipUsersCount;
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
@@ -306,6 +282,14 @@ export default function AdminDashboard() {
               }`}
             >
               👥 Users ({users.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('messages')}
+              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer ${
+                activeTab === 'messages' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
+              }`}
+            >
+              💬 Send Messages
             </button>
             <button
               onClick={() => setActiveTab('codes')}
@@ -375,41 +359,19 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* 🟢 BAGONG USERS TAB */}
         {activeTab === 'users' && (
           <div>
             <h1 className="text-3xl font-bold mb-6 text-white">Registered Accounts ({users.length})</h1>
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-3">
-              {users.map((u) => {
-                const isVip = u.account_type?.toLowerCase() === 'vip' || u.is_activated;
-                return (
-                  <div key={u.id} className="bg-gray-800/50 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center border border-gray-800 gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-white">{u.full_name || u.email || 'No Name'}</p>
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${isVip ? 'bg-amber-500 text-black' : 'bg-blue-600/30 text-blue-400 border border-blue-500/30'}`}>
-                          {isVip ? 'VIP' : 'STANDARD'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">ID: {u.id}</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Watch Tokens: <b className="text-amber-400">{u.watch_tokens || 0}</b> | Daily Views Used: <b className="text-white">{u.daily_views_count || 0}/{u.daily_views_limit || 5}</b>
-                      </p>
-                    </div>
+            <AdminUsersTab users={users} fetchData={fetchData} />
+          </div>
+        )}
 
-                    <button
-                      onClick={() => handleToggleUserTier(u.id, u.account_type)}
-                      className={`text-xs px-4 py-2 rounded-xl font-bold cursor-pointer transition-all ${
-                        isVip
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white'
-                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white'
-                      }`}
-                    >
-                      {isVip ? 'Demote to Standard' : 'Promote to VIP 👑'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+        {/* 🟢 BAGONG MESSAGES TAB */}
+        {activeTab === 'messages' && (
+          <div>
+            <h1 className="text-3xl font-bold mb-6 text-white">Admin Messenger</h1>
+            <AdminMessagesTab users={users} />
           </div>
         )}
 
@@ -476,7 +438,6 @@ export default function AdminDashboard() {
                               </div>
                             </div>
 
-                            {/* Signal / Progress Bar for Every File */}
                             <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-gray-700/50">
                               <div
                                 className={`h-full transition-all duration-300 rounded-full ${
@@ -517,7 +478,6 @@ export default function AdminDashboard() {
             </div>
 
             <div>
-              {/* Na-update ang header section para mailagay ang Delete All button */}
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-white">Uploaded Vault Media ({totalMediaCount})</h2>
                 {mediaList.length > 0 && (
