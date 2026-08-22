@@ -109,7 +109,7 @@ export default function AdminDashboard() {
       name: file.name,
       size: file.size,
       progress: 0,
-      status: 'pending', // 'pending' | 'uploading' | 'saving' | 'completed' | 'error'
+      status: 'pending', 
       errorMsg: ''
     }));
     setUploadFiles(formattedFiles);
@@ -129,13 +129,11 @@ export default function AdminDashboard() {
       const file = fileObj.file;
       setUploadProgress(`Processing (${i + 1}/${uploadFiles.length}): ${file.name}`);
 
-      // Step 1: Mark as uploading and start reading
       updateFileState(fileObj.id, { status: 'uploading', progress: 15 });
 
       const fileExt = file.name.split('.').pop().toLowerCase();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
-      // Live progress simulation while transmitting bytes to Cloudflare R2
       const progressTimer = setInterval(() => {
         setUploadFiles((prev) =>
           prev.map((item) => {
@@ -150,7 +148,6 @@ export default function AdminDashboard() {
       try {
         const fileArrayBuffer = await file.arrayBuffer();
 
-        // Send video file to R2 Bucket
         const command = new PutObjectCommand({
           Bucket: 'jb-collections-hub',
           Key: fileName,
@@ -161,7 +158,6 @@ export default function AdminDashboard() {
         await r2Client.send(command);
         clearInterval(progressTimer);
 
-        // Step 2: R2 Upload Complete, now inserting record into Supabase
         updateFileState(fileObj.id, { status: 'saving', progress: 92 });
 
         const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
@@ -172,7 +168,7 @@ export default function AdminDashboard() {
             title: cleanTitle,
             media_url: videoPublicUrl,
             category: 'Vault Content',
-            type: 'video' // Hardcoded as video only
+            type: 'video' 
           }
         ]);
 
@@ -180,7 +176,6 @@ export default function AdminDashboard() {
           throw new Error(`Database Error: ${dbError.message}`);
         }
 
-        // Step 3: Finished successfully
         updateFileState(fileObj.id, { status: 'completed', progress: 100 });
         successCount++;
 
@@ -211,6 +206,21 @@ export default function AdminDashboard() {
     if (error) {
       alert("Error deleting media: " + error.message);
     } else {
+      fetchData();
+    }
+  };
+
+  // Delete ALL Media Function
+  const handleDeleteAllMedia = async () => {
+    if (!window.confirm("⚠️ BABALA: Sigurado ka bang gusto mong burahin ang LAHAT ng videos sa database? Hindi na ito mababawi!")) return;
+    
+    // Supabase requires a filter to prevent accidental full table wipes, so we use .not('id', 'is', null)
+    const { error } = await supabase.from('media').delete().not('id', 'is', null);
+    
+    if (error) {
+      alert("Error deleting all media: " + error.message);
+    } else {
+      alert("✅ Matagumpay na nabura ang lahat ng media records!");
       fetchData();
     }
   };
@@ -511,7 +521,19 @@ export default function AdminDashboard() {
             </div>
 
             <div>
-              <h2 className="text-2xl font-bold mb-4 text-white">Uploaded Vault Media ({totalMediaCount})</h2>
+              {/* Na-update ang header section para mailagay ang Delete All button */}
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-white">Uploaded Vault Media ({totalMediaCount})</h2>
+                {mediaList.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllMedia}
+                    className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-4 py-2 rounded-xl text-sm font-bold border border-red-600/30 transition-all shadow-lg"
+                  >
+                    ⚠️ Delete All Records
+                  </button>
+                )}
+              </div>
+              
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
                 {mediaList.length === 0 ? (
                   <p className="text-gray-500 text-sm p-4 text-center">Wala pang nakaupload na videos sa database.</p>

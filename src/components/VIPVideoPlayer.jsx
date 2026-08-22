@@ -7,6 +7,12 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink }) {
 
   const mainVideoRef = useRef(null);
 
+  // ☁️ CLOUDFLARE R2 SETUP: Awtomatikong idudugtong ang domain kung filename lang ang nasa database
+  const CLOUDFLARE_DOMAIN = "https://pub-8edb47f7180d41ab0a76011487e787b0.r2.dev";
+  const videoSrc = mainVideoUrl?.startsWith("http") 
+    ? mainVideoUrl 
+    : `${CLOUDFLARE_DOMAIN}/${mainVideoUrl}`;
+
   // 1️⃣ Reset state when user selects a new video
   useEffect(() => {
     setIsPlayingAd(true);
@@ -133,11 +139,13 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink }) {
         /* ==================== 🎥 MAIN VIP VIDEO PLAYER ==================== */
         <video
           ref={mainVideoRef}
-          src={mainVideoUrl}
+          src={videoSrc}
           controls
           autoPlay
+          playsInline
           controlsList="nodownload"
           className="w-full h-full max-h-[65vh] object-contain"
+          onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
         />
       )}
     </div>

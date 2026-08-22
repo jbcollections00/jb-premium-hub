@@ -365,9 +365,17 @@ export default function Home() {
                       alt={item.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
+                  ) : item.media_url ? (
+                    <video
+                      src={`${item.media_url}#t=1`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none opacity-60"
+                      preload="metadata"
+                      muted
+                      playsInline
+                    />
                   ) : (
                     <div className="w-full h-full bg-slate-900 flex items-center justify-center">
-                      <span className="text-slate-600 text-xs font-semibold">Video Preview</span>
+                      <span className="text-slate-600 text-xs font-semibold">No Display</span>
                     </div>
                   )}
 
@@ -456,9 +464,9 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 2️⃣ VIDEO PLAYER CONTAINER */}
+            {/* 2️⃣ VIDEO PLAYER CONTAINER (ADDED CSS FIX HERE) */}
             <div className="bg-black w-full flex-1 flex flex-col items-center justify-center overflow-y-auto p-2 md:p-4 min-h-[300px] md:min-h-[480px]">
-              <div className="w-full h-full max-w-4xl flex items-center justify-center">
+              <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:w-full [&_video]:h-auto [&_video]:aspect-video [&_video]:bg-black">
                 <VIPVideoPlayer
                   key={selectedMedia.id}
                   mainVideoUrl={selectedMedia.media_url}
