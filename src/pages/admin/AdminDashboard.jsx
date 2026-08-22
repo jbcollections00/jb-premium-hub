@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { supabase } from '../../services/supabaseClient';
 import { r2Client, r2PublicDomain } from '../../services/r2Client';
 import SupportTicketsTab from './SupportTicketsTab';
@@ -115,7 +115,7 @@ export default function AdminDashboard() {
     setUploadFiles(formattedFiles);
   };
 
-  // Cloudflare R2 Bulk Upload with Dependency-Free Per-File Signal
+  // Cloudflare R2 Bulk Upload with Parallel Multipart Upload
   const handleBulkUploadToCloudflare = async (e) => {
     e.preventDefault();
     if (uploadFiles.length === 0) return;
@@ -124,41 +124,37 @@ export default function AdminDashboard() {
     let successCount = 0;
     let errorDetails = [];
 
-    for (let i = 0; i < uploadFiles.length; i++) {
-      const fileObj = uploadFiles[i];
+    const uploadPromises = uploadFiles.map(async (fileObj) => {
       const file = fileObj.file;
-      setUploadProgress(`Processing (${i + 1}/${uploadFiles.length}): ${file.name}`);
-
-      updateFileState(fileObj.id, { status: 'uploading', progress: 15 });
+      
+      updateFileState(fileObj.id, { status: 'uploading', progress: 0 });
 
       const fileExt = file.name.split('.').pop().toLowerCase();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
-      const progressTimer = setInterval(() => {
-        setUploadFiles((prev) =>
-          prev.map((item) => {
-            if (item.id === fileObj.id && item.status === 'uploading' && item.progress < 85) {
-              return { ...item, progress: item.progress + 15 };
-            }
-            return item;
-          })
-        );
-      }, 300);
-
       try {
-        const fileArrayBuffer = await file.arrayBuffer();
-
-        const command = new PutObjectCommand({
-          Bucket: 'jb-collections-hub',
-          Key: fileName,
-          Body: new Uint8Array(fileArrayBuffer),
-          ContentType: file.type || 'video/mp4',
+        const parallelUpload = new Upload({
+          client: r2Client,
+          params: {
+            Bucket: 'jb-collections-hub',
+            Key: fileName,
+            Body: file,
+            ContentType: file.type || 'video/mp4',
+          },
+          queueSize: 4, // Uploads 4 chunks simultaneously per file
+          partSize: 5 * 1024 * 1024, // 5 MB chunks
         });
 
-        await r2Client.send(command);
-        clearInterval(progressTimer);
+        parallelUpload.on("httpUploadProgress", (progress) => {
+          if (progress.total) {
+            const percentage = Math.round((progress.loaded / progress.total) * 100);
+            updateFileState(fileObj.id, { status: 'uploading', progress: percentage });
+          }
+        });
 
-        updateFileState(fileObj.id, { status: 'saving', progress: 92 });
+        await parallelUpload.done();
+
+        updateFileState(fileObj.id, { status: 'saving', progress: 100 });
 
         const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
         const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
@@ -172,21 +168,21 @@ export default function AdminDashboard() {
           }
         ]);
 
-        if (dbError) {
-          throw new Error(`Database Error: ${dbError.message}`);
-        }
+        if (dbError) throw new Error(`Database Error: ${dbError.message}`);
 
         updateFileState(fileObj.id, { status: 'completed', progress: 100 });
         successCount++;
 
       } catch (err) {
-        clearInterval(progressTimer);
         console.error(`Failed uploading ${file.name}:`, err);
         const errMsg = err.message || 'Upload failed';
         errorDetails.push(`${file.name}: ${errMsg}`);
         updateFileState(fileObj.id, { status: 'error', progress: 0, errorMsg: errMsg });
       }
-    }
+    });
+
+    // Wait for all uploads to finish concurrently
+    await Promise.all(uploadPromises);
 
     setLoading(false);
     setUploadProgress('');

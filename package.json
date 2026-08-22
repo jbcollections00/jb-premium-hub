@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1110.0",
+    "@aws-sdk/lib-storage": "^3.1116.0",
     "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
