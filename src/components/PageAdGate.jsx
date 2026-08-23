@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 
 export default function PageAdGate({ children, adDirectLink }) {
+  const location = useLocation();
+  const isAdminPath = location.pathname.startsWith('/admin');
+
   const [isVip, setIsVip] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -15,11 +19,16 @@ export default function PageAdGate({ children, adDirectLink }) {
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('account_type')
+          .select('account_type, role')
           .eq('id', user.id)
           .single();
 
-        if (profile && profile.account_type?.toUpperCase() === 'VIP') {
+        if (
+          profile && 
+          (profile.account_type?.toUpperCase() === 'VIP' || 
+           profile.account_type?.toUpperCase() === 'ADMIN' || 
+           profile.role === 'admin')
+        ) {
           setIsVip(true);
         }
       }
@@ -32,6 +41,8 @@ export default function PageAdGate({ children, adDirectLink }) {
 
   // Trigger Adsterra / Direct Link para sa Standard Users kapag nag-click sa page
   const handlePageClick = () => {
+    if (isAdminPath) return; // 🚫 Walang ads sa anumang Admin page
+
     if (!isVip && adDirectLink) {
       // I-check kung na-click na ang ad sa session na ito (optional)
       const pageAdTriggered = sessionStorage.getItem('page_ad_triggered');
@@ -42,7 +53,10 @@ export default function PageAdGate({ children, adDirectLink }) {
     }
   };
 
-  if (loading) return <>{children}</>;
+  // 🛡️ Bypassed agad kung Admin URL path o habang naglo-load
+  if (isAdminPath || loading) {
+    return <>{children}</>;
+  }
 
   return (
     <div onClick={handlePageClick} className="w-full h-full min-h-screen">
