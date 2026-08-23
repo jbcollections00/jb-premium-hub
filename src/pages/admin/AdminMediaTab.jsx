@@ -46,6 +46,16 @@ export default function AdminMediaTab() {
     if (mediaCount !== null) setTotalMediaCount(mediaCount);
   };
 
+  // 📊 File Size Formatter Helper (Bytes to KB, MB, GB)
+  const formatBytes = (bytes, decimals = 2) => {
+    if (!bytes || bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
   // 🔍 Title Normalizer Engine para sa Pagkilala ng Duplicates
   const normalizeTitle = (title) => {
     if (!title) return '';
@@ -186,7 +196,7 @@ export default function AdminMediaTab() {
 
     if (successCount > 0) {
       alert(`Na-upload ang ${successCount} sa ${uploadFiles.length} na video!`);
-      setUploadFiles([]); // 🟢 Awtomatikong lilinisin ang queue para bumalik sa "Upload 0 Video(s)"
+      setUploadFiles([]); // Awtomatikong lilinisin ang queue para bumalik sa default UI
       fetchMedia();
     }
   };
@@ -296,22 +306,52 @@ export default function AdminMediaTab() {
             </label>
           </div>
 
-          {/* Selected Files Queue */}
+          {/* Selected Files Queue with Storage Size & Progress Bars */}
           {uploadFiles.length > 0 && (
-            <div className="bg-gray-800/40 p-3 rounded-xl border border-gray-800 space-y-2">
+            <div className="bg-gray-800/40 p-3.5 rounded-xl border border-gray-800 space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-gray-300">Selected ({uploadFiles.length})</span>
+                <span className="font-bold text-gray-300">Selected Queue ({uploadFiles.length})</span>
                 {!loading && (
-                  <button type="button" onClick={() => setUploadFiles([])} className="text-gray-400 hover:text-red-400">
+                  <button type="button" onClick={() => setUploadFiles([])} className="text-gray-400 hover:text-red-400 font-semibold cursor-pointer">
                     Clear queue
                   </button>
                 )}
               </div>
-              <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+              
+              <div className="max-h-52 overflow-y-auto space-y-2.5 pr-1">
                 {uploadFiles.map((item) => (
-                  <div key={item.id} className="bg-gray-900 p-2.5 rounded-lg border border-gray-800 flex items-center justify-between text-xs">
-                    <span className="truncate max-w-xs text-white">{item.name}</span>
-                    <span className="text-gray-400">{item.progress}%</span>
+                  <div key={item.id} className="bg-gray-900 p-3 rounded-xl border border-gray-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="min-w-0 flex-1 pr-3">
+                        <p className="truncate font-semibold text-white">{item.name}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 font-mono">
+                          Size: <span className="text-sky-400 font-bold">{formatBytes(item.size)}</span>
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className={`text-xs font-bold ${
+                          item.status === 'error' ? 'text-rose-400' :
+                          item.status === 'completed' ? 'text-emerald-400' : 'text-red-400'
+                        }`}>
+                          {item.status === 'error' ? 'Failed' : `${item.progress}%`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar Track */}
+                    <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 rounded-full ${
+                          item.status === 'error' ? 'bg-rose-500' :
+                          item.status === 'completed' ? 'bg-emerald-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${item.progress}%` }}
+                      />
+                    </div>
+
+                    {item.errorMsg && (
+                      <p className="text-[10px] text-rose-400 font-medium">{item.errorMsg}</p>
+                    )}
                   </div>
                 ))}
               </div>
