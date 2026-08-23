@@ -114,16 +114,7 @@ export default function Home() {
 
     // 👑 A. VIP USER LOGIC
     if (isVIP) {
-      const nextCounter = (userProfile.vip_video_counter || 0) + 1;
-      const isFifthVideo = nextCounter % 5 === 0;
-
-      await supabase
-        .from("profiles")
-        .update({ vip_video_counter: nextCounter })
-        .eq("id", userProfile.id);
-
-      setUserProfile((prev) => ({ ...prev, vip_video_counter: nextCounter }));
-      setSelectedMedia({ ...item, showAd: isFifthVideo });
+      setSelectedMedia(item);
       return;
     }
 
@@ -152,7 +143,7 @@ export default function Home() {
         last_view_date: today,
       }));
 
-      setSelectedMedia({ ...item, showAd: true });
+      setSelectedMedia(item);
       return;
     }
 
@@ -164,7 +155,7 @@ export default function Home() {
         .eq("id", userProfile.id);
 
       setUserProfile((prev) => ({ ...prev, watch_tokens: updatedTokens }));
-      setSelectedMedia({ ...item, showAd: true });
+      setSelectedMedia(item);
       return;
     }
 
@@ -201,7 +192,7 @@ export default function Home() {
     if (!error) {
       setUserProfile((prev) => ({ ...prev, watch_tokens: newTokens }));
       setWatchingAd(false);
-      setShowLimitModal(false);
+      setShowEarnModal(false);
       alert("🎉 Success! You earned 1 Watch Token!");
     }
   };
@@ -464,35 +455,39 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 2️⃣ VIDEO PLAYER CONTAINER (ADDED CSS FIX HERE) */}
+            {/* 2️⃣ VIDEO PLAYER CONTAINER */}
             <div className="bg-black w-full flex-1 flex flex-col items-center justify-center overflow-y-auto p-2 md:p-4 min-h-[300px] md:min-h-[480px]">
               <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:w-full [&_video]:h-auto [&_video]:aspect-video [&_video]:bg-black">
                 <VIPVideoPlayer
                   key={selectedMedia.id}
                   mainVideoUrl={selectedMedia.media_url}
                   adDirectLink={AD_DIRECT_LINK}
+                  userProfile={userProfile}
+                  accountType={userProfile?.account_type}
                 />
               </div>
 
-              {/* 3️⃣ ADSTERRA SPONSOR BANNER UNDER VIDEO */}
-              <div className="w-full max-w-4xl mt-3 p-3 bg-slate-950 border border-red-900/30 rounded-xl flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
-                    AD
-                  </span>
-                  <p className="text-slate-300 text-xs hidden sm:block">
-                    Click here to support VIP Server Access & unlock high-speed stream
-                  </p>
+              {/* 3️⃣ ADSTERRA SPONSOR BANNER UNDER VIDEO (SHOW FOR STANDARD USERS ONLY) */}
+              {!isVIP && (
+                <div className="w-full max-w-4xl mt-3 p-3 bg-slate-950 border border-red-900/30 rounded-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
+                      AD
+                    </span>
+                    <p className="text-slate-300 text-xs hidden sm:block">
+                      Click here to support VIP Server Access & unlock high-speed stream
+                    </p>
+                  </div>
+                  <a
+                    href={AD_DIRECT_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
+                  >
+                    Visit Sponsor 🚀
+                  </a>
                 </div>
-                <a
-                  href={AD_DIRECT_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
-                >
-                  Visit Sponsor 🚀
-                </a>
-              </div>
+              )}
             </div>
 
             {/* 4️⃣ DESCRIPTION */}

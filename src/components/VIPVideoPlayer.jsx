@@ -1,28 +1,91 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabase } from '../services/supabaseClient';
 
-export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink }) {
-  const [isPlayingAd, setIsPlayingAd] = useState(true);
+export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile, accountType }) {
+  const [isPlayingAd, setIsPlayingAd] = useState(false);
   const [timeLeft, setTimeLeft] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
+  const [checkingUser, setCheckingUser] = useState(true);
 
   const mainVideoRef = useRef(null);
 
-  // ☁️ CLOUDFLARE R2 SETUP: Awtomatikong idudugtong ang domain kung filename lang ang nasa database
+  // ☁️ CLOUDFLARE R2 SETUP
   const CLOUDFLARE_DOMAIN = "https://pub-8edb47f7180d41ab0a76011487e787b0.r2.dev";
   const videoSrc = mainVideoUrl?.startsWith("http") 
     ? mainVideoUrl 
     : `${CLOUDFLARE_DOMAIN}/${mainVideoUrl}`;
 
-  // 1️⃣ Reset state when user selects a new video
+  // 1️⃣ Check User VIP Status & Apply Modulo 6 Ad Logic
   useEffect(() => {
-    setIsPlayingAd(true);
-    setTimeLeft(5);
-    setCanSkip(false);
-  }, [mainVideoUrl]);
+    let isMounted = true;
+
+    const determineAdBehavior = async () => {
+      setCheckingUser(true);
+      let isVip = false;
+
+      // Check via props first if provided
+      if (accountType) {
+        isVip = accountType.toUpperCase() === 'VIP';
+      } else if (userProfile) {
+        isVip = (userProfile.account_type || '').toUpperCase() === 'VIP';
+      } else {
+        // Fallback: Fetch logged-in user profile from Supabase
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('account_type')
+              .eq('id', user.id)
+              .single();
+            if (profile) {
+              isVip = (profile.account_type || '').toUpperCase() === 'VIP';
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching user status for video player:", err);
+        }
+      }
+
+      if (!isMounted) return;
+
+      if (!isVip) {
+        // 👤 STANDARD USER: Always show ads on every video
+        setIsPlayingAd(true);
+        setTimeLeft(5);
+        setCanSkip(false);
+      } else {
+        // 👑 VIP USER: 5 Videos Direct Play (No Ad), 6th Video Shows Ad
+        const currentCount = parseInt(localStorage.getItem('vip_video_watch_count') || '0', 10);
+        const newCount = currentCount + 1;
+        localStorage.setItem('vip_video_watch_count', newCount.toString());
+
+        if (newCount % 6 === 0) {
+          // 6th, 12th, 18th video -> Show Ad
+          setIsPlayingAd(true);
+          setTimeLeft(5);
+          setCanSkip(false);
+        } else {
+          // 1st to 5th video -> Direct Play (No Ad)
+          setIsPlayingAd(false);
+        }
+      }
+
+      setCheckingUser(false);
+    };
+
+    if (mainVideoUrl) {
+      determineAdBehavior();
+    }
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [mainVideoUrl, accountType, userProfile]);
 
   // 2️⃣ 5-Second Countdown Timer for Skip Ad button
   useEffect(() => {
-    if (!isPlayingAd) return;
+    if (!isPlayingAd || checkingUser) return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -36,7 +99,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink }) {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isPlayingAd]);
+  }, [isPlayingAd, checkingUser]);
 
   // 💰 Open Adsterra Direct Link in a new tab
   const openAdsterra = (e) => {
@@ -62,6 +125,14 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink }) {
       setIsPlayingAd(false);
     }
   };
+
+  if (checkingUser) {
+    return (
+      <div className="relative w-full h-full min-h-[320px] md:min-h-[420px] flex items-center justify-center bg-black rounded-xl border border-slate-800">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">

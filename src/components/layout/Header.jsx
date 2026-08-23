@@ -23,13 +23,46 @@ export default function Header() {
 
   useEffect(() => {
     fetchMessageCount();
+
+    // Nakikinig sa local event kapag nag-read/unread/delete sa Messages.jsx
+    const handleUpdate = () => {
+      fetchMessageCount();
+    };
+    window.addEventListener("messagesUpdated", handleUpdate);
+
+    // Realtime Supabase listener para sa bagong mensahe
+    const channel = supabase
+      .channel("header_unread_messages")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "admin_messages" },
+        () => {
+          fetchMessageCount();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("messagesUpdated", handleUpdate);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchMessageCount = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        setMessageCount(0);
+        return;
+      }
+
+      // Kukunin LANG ang bilang ng UNREAD messages (is_read == false)
       const { count, error } = await supabase
         .from("admin_messages")
-        .select("*", { count: "exact", head: true });
+        .select("*", { count: "exact", head: true })
+        .or(`user_id.eq.${session.user.id},send_to_all.eq.true`)
+        .eq("is_read", false);
 
       if (!error && count !== null) {
         setMessageCount(count);
@@ -39,7 +72,8 @@ export default function Header() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/');
   };
 
@@ -211,6 +245,7 @@ export default function Header() {
           <IconMessage />
           <span className="hide-on-mobile">Messages</span>
 
+          {/* LALABAS LANG PAG MAY UNREAD MESSAGES */}
           {messageCount > 0 && (
             <span style={{ backgroundColor: '#2563eb', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>
               {messageCount}

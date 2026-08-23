@@ -18,25 +18,46 @@ export default function Footer() {
     // 2. Fetch visit counts from Supabase
     fetchAnalytics();
 
-    // 3. Supabase Realtime Presence para sa "Online Now"
-    const channel = supabase.channel('online-users-room', {
-      config: { presence: { key: Math.random().toString() } },
-    });
+    // 3. Supabase Realtime Presence para sa "Online Now" (Naka-sync sa Admin)
+    let channel;
 
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const count = Object.keys(state).length;
-        setOnlineNow(count > 0 ? count : 1);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ online_at: new Date().toISOString() });
+    const setupPresence = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // I-deduplicate ang tabs: Gamitin ang user.id o lumikha ng isang guest ID bawat browser session
+      let presenceKey = user?.id;
+      if (!presenceKey) {
+        presenceKey = sessionStorage.getItem('jb_guest_id');
+        if (!presenceKey) {
+          presenceKey = 'guest_' + Math.random().toString(36).substring(2, 9);
+          sessionStorage.setItem('jb_guest_id', presenceKey);
         }
+      }
+
+      // Parehong room channel name ('online-users') para patas sa Admin Users Page
+      channel = supabase.channel('online-users', {
+        config: { presence: { key: presenceKey } },
       });
 
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const state = channel.presenceState();
+          const count = Object.keys(state).length;
+          setOnlineNow(count > 0 ? count : 1);
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await channel.track({ online_at: new Date().toISOString() });
+          }
+        });
+    };
+
+    setupPresence();
+
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
   }, []);
 

@@ -1,24 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload } from '@aws-sdk/lib-storage';
 import { supabase } from '../../services/supabaseClient';
-import { r2Client, r2PublicDomain } from '../../services/r2Client';
+
+// Child Components / Tabs
 import SupportTicketsTab from './SupportTicketsTab';
 import AccessCodesTab from './AccessCodesTab';
-import AdminUsersTab from './AdminUsersTab'; // 🟢 IMPORT NATIN ANG BAGONG TABS
+import AdminUsersTab from './AdminUsersTab';
 import AdminMessagesTab from './AdminMessagesTab'; 
+import AdminMediaTab from './AdminMediaTab';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [users, setUsers] = useState([]);
-  const [mediaList, setMediaList] = useState([]);
   const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [tickets, setTickets] = useState([]);
-  
-  // File upload state with status tracking
-  const [uploadFiles, setUploadFiles] = useState([]);
-  const [uploadProgress, setUploadProgress] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
 
@@ -28,27 +23,26 @@ export default function AdminDashboard() {
       navigate('/admin-login');
       return;
     }
+    
     fetchData();
+    checkAndSendVIPExpirationAlerts(); // 🤖 Auto-run 5-Day VIP Expiration Scanner
   }, [navigate]);
 
   const fetchData = async () => {
-    // 1. Users
+    // 1. Fetch Users
     const { data: usersData } = await supabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false });
     if (usersData) setUsers(usersData);
 
-    // 2. Vault Media Videos & Exact Database Count
-    const { data: mediaData, count: mediaCount } = await supabase
+    // 2. Fetch Vault Media Count
+    const { count: mediaCount } = await supabase
       .from('media')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false });
-      
-    if (mediaData) setMediaList(mediaData);
+      .select('id', { count: 'exact', head: true });
     if (mediaCount !== null) setTotalMediaCount(mediaCount);
 
-    // 3. Support Tickets
+    // 3. Fetch Support Tickets
     const { data: ticketsData } = await supabase
       .from('support_tickets')
       .select('*')
@@ -56,463 +50,168 @@ export default function AdminDashboard() {
     if (ticketsData) setTickets(ticketsData || []);
   };
 
+  // 🤖 AUTOMATED 5-DAY DAILY VIP EXPIRATION SCANNER
+  const checkAndSendVIPExpirationAlerts = async () => {
+    try {
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
+      // Fetch all used VIP access codes
+      const { data: activeVipCodes } = await supabase
+        .from('access_codes')
+        .select('*')
+        .eq('is_used', true)
+        .eq('type', 'VIP');
+
+      if (!activeVipCodes) return;
+
+      for (const code of activeVipCodes) {
+        if (!code.used_by || !code.expires_at) continue;
+
+        const expDate = new Date(code.expires_at);
+        const diffMs = expDate - now;
+        const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        // ⏳ Trigger warning if within 1 to 5 days remaining
+        if (daysRemaining >= 1 && daysRemaining <= 5) {
+          // Check if an alert message was ALREADY sent to this user TODAY
+          const { data: existingAlerts } = await supabase
+            .from('admin_messages')
+            .select('id, created_at')
+            .eq('user_id', code.used_by)
+            .gte('created_at', `${todayStr}T00:00:00.000Z`)
+            .like('title', '%VIP Access Expiring%');
+
+          // If no alert sent today, send the automated message in English
+          if (!existingAlerts || existingAlerts.length === 0) {
+            const daysText = daysRemaining === 1 ? '1 Day' : `${daysRemaining} Days`;
+            
+            await supabase.from('admin_messages').insert([
+              {
+                user_id: code.used_by,
+                send_to_all: false,
+                title: `⚠️ VIP Access Expiring in ${daysText}!`,
+                message: `Dear VIP Member, your VIP Access Code will expire in ${daysText} on ${expDate.toLocaleDateString('en-US')}. Please obtain a new monthly VIP access code to maintain uninterrupted access to the Vault.`,
+                is_read: false
+              }
+            ]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error checking VIP expiration alerts:", error);
+    }
+  };
+
   const handleAdminLogout = () => {
     localStorage.removeItem('isAdminAuthenticated');
     navigate('/admin-login');
-  };
-
-  // Helper to update specific file status in real-time
-  const updateFileState = (id, updates) => {
-    setUploadFiles((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
-  };
-
-  // Handle file selection - Strictly enforce video formats only
-  const handleFileSelect = (e) => {
-    const selected = Array.from(e.target.files || []);
-
-    const validVideoFiles = selected.filter((file) => {
-      const fileExt = file.name.split('.').pop().toLowerCase();
-      const isVideoMime = file.type.startsWith('video/');
-      const isVideoExt = ['mp4', 'mkv', 'mov', 'avi', 'webm', 'm4v', 'flv', 'wmv', '3gp', 'ts', 'm2ts', '3g2'].includes(fileExt);
-      return isVideoMime || isVideoExt;
-    });
-
-    if (validVideoFiles.length < selected.length) {
-      const rejectedCount = selected.length - validVideoFiles.length;
-      alert(`⚠️ ${rejectedCount} non-video file(s) were ignored. Only video formats are allowed!`);
-    }
-
-    const formattedFiles = validVideoFiles.map((file, idx) => ({
-      id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-      file,
-      name: file.name,
-      size: file.size,
-      progress: 0,
-      status: 'pending', 
-      errorMsg: ''
-    }));
-    setUploadFiles(formattedFiles);
-  };
-
-  // Cloudflare R2 Bulk Upload with Parallel Multipart Upload
-  const handleBulkUploadToCloudflare = async (e) => {
-    e.preventDefault();
-    if (uploadFiles.length === 0) return;
-
-    setLoading(true);
-    let successCount = 0;
-    let errorDetails = [];
-
-    const uploadPromises = uploadFiles.map(async (fileObj) => {
-      const file = fileObj.file;
-      
-      updateFileState(fileObj.id, { status: 'uploading', progress: 0 });
-
-      const fileExt = file.name.split('.').pop().toLowerCase();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-
-      try {
-        const parallelUpload = new Upload({
-          client: r2Client,
-          params: {
-            Bucket: 'jb-collections-hub',
-            Key: fileName,
-            Body: file,
-            ContentType: file.type || 'video/mp4',
-          },
-          queueSize: 4, 
-          partSize: 5 * 1024 * 1024, 
-        });
-
-        parallelUpload.on("httpUploadProgress", (progress) => {
-          if (progress.total) {
-            const percentage = Math.round((progress.loaded / progress.total) * 100);
-            updateFileState(fileObj.id, { status: 'uploading', progress: percentage });
-          }
-        });
-
-        await parallelUpload.done();
-
-        updateFileState(fileObj.id, { status: 'saving', progress: 100 });
-
-        const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
-        const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
-
-        const { error: dbError } = await supabase.from('media').insert([
-          {
-            title: cleanTitle,
-            media_url: videoPublicUrl,
-            category: 'Vault Content',
-            type: 'video' 
-          }
-        ]);
-
-        if (dbError) throw new Error(`Database Error: ${dbError.message}`);
-
-        updateFileState(fileObj.id, { status: 'completed', progress: 100 });
-        successCount++;
-
-      } catch (err) {
-        console.error(`Failed uploading ${file.name}:`, err);
-        const errMsg = err.message || 'Upload failed';
-        errorDetails.push(`${file.name}: ${errMsg}`);
-        updateFileState(fileObj.id, { status: 'error', progress: 0, errorMsg: errMsg });
-      }
-    });
-
-    await Promise.all(uploadPromises);
-
-    setLoading(false);
-    setUploadProgress('');
-
-    if (successCount > 0) {
-      alert(`Successfully uploaded ${successCount} out of ${uploadFiles.length} video(s)!`);
-      fetchData();
-    } else {
-      const mainError = errorDetails.length > 0 ? errorDetails[0] : 'Missing R2 Environment Variables on Vercel';
-      alert(`Upload Failed!\n\nReason: ${mainError}`);
-    }
-  };
-
-  const handleDeleteMedia = async (id) => {
-    if (!window.confirm("Sigurado ka bang gusto mong burahin ang media na ito?")) return;
-    const { error } = await supabase.from('media').delete().eq('id', id);
-    if (error) {
-      alert("Error deleting media: " + error.message);
-    } else {
-      fetchData();
-    }
-  };
-
-  const handleDeleteAllMedia = async () => {
-    if (!window.confirm("⚠️ BABALA: Sigurado ka bang gusto mong burahin ang LAHAT ng videos sa database? Hindi na ito mababawi!")) return;
-    
-    const { error } = await supabase.from('media').delete().not('id', 'is', null);
-    
-    if (error) {
-      alert("Error deleting all media: " + error.message);
-    } else {
-      alert("✅ Matagumpay na nabura ang lahat ng media records!");
-      fetchData();
-    }
-  };
-
-  const renderStatusBadge = (fileItem) => {
-    switch (fileItem.status) {
-      case 'uploading':
-        return (
-          <span className="flex items-center gap-1 text-xs font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded animate-pulse">
-            <span className="animate-spin">🔄</span>
-            <span>Uploading {fileItem.progress}%</span>
-          </span>
-        );
-      case 'saving':
-        return (
-          <span className="flex items-center gap-1 text-xs font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded animate-pulse">
-            <span>💾</span>
-            <span>Saving DB...</span>
-          </span>
-        );
-      case 'completed':
-        return (
-          <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
-            <span>✅</span>
-            <span>Uploaded</span>
-          </span>
-        );
-      case 'error':
-        return (
-          <span className="flex items-center gap-1 text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded">
-            <span>❌</span>
-            <span>Failed</span>
-          </span>
-        );
-      default:
-        return (
-          <span className="flex items-center gap-1 text-xs font-semibold text-gray-400 bg-gray-800 border border-gray-700 px-2 py-0.5 rounded">
-            <span>⏳</span>
-            <span>Ready</span>
-          </span>
-        );
-    }
   };
 
   const vipUsersCount = users.filter((u) => u.account_type?.toLowerCase() === 'vip' || u.is_activated).length;
   const standardUsersCount = users.length - vipUsersCount;
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
+  const navItems = [
+    { id: 'dashboard', label: '📊 Dashboard' },
+    { id: 'tickets', label: '🎧 Support Tickets', badge: pendingTicketsCount },
+    { id: 'users', label: `👥 Users (${users.length})` },
+    { id: 'messages', label: '💬 Send Messages' },
+    { id: 'codes', label: '🔑 Access Codes' },
+    { id: 'upload', label: '📤 Bulk Upload & Media' },
+  ];
+
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-4">
+      {/* 🛡️ SIDEBAR */}
+      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-4 shrink-0">
         <div>
           <div className="flex items-center gap-2 mb-8 px-2">
             <span className="text-2xl">🛡️</span>
-            <span className="font-bold text-lg text-red-500">Vault Control</span>
+            <div>
+              <h2 className="font-bold text-base text-red-500 leading-tight">Vault Control</h2>
+              <p className="text-[10px] text-gray-500">Admin Portal v2.0</p>
+            </div>
           </div>
 
-          <nav className="flex flex-col gap-2">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer ${
-                activeTab === 'dashboard' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              📊 Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab('tickets')}
-              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer flex items-center justify-between ${
-                activeTab === 'tickets' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              <span>🎧 Support Tickets</span>
-              {pendingTicketsCount > 0 && (
-                <span className="bg-amber-500 text-black font-bold text-[10px] px-2 py-0.5 rounded-full">
-                  {pendingTicketsCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer ${
-                activeTab === 'users' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              👥 Users ({users.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('messages')}
-              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer ${
-                activeTab === 'messages' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              💬 Send Messages
-            </button>
-            <button
-              onClick={() => setActiveTab('codes')}
-              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer ${
-                activeTab === 'codes' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              🔑 Access Codes
-            </button>
-            <button
-              onClick={() => setActiveTab('upload')}
-              className={`p-3 rounded-xl text-left font-medium transition-all cursor-pointer ${
-                activeTab === 'upload' ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              📤 Bulk Upload & Media
-            </button>
+          <nav className="flex flex-col gap-1.5">
+            {navItems.map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`p-3 rounded-xl text-left font-medium text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-between ${
+                    isActive
+                      ? 'bg-red-600 text-white font-bold shadow-lg shadow-red-600/20'
+                      : 'text-gray-400 hover:bg-gray-800/80 hover:text-white'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {item.badge > 0 && (
+                    <span className="bg-amber-500 text-black font-black text-[10px] px-2 py-0.5 rounded-full">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
         </div>
 
         <button
           onClick={handleAdminLogout}
-          className="bg-gray-800 hover:bg-red-600/20 hover:text-red-400 p-3 rounded-xl text-sm font-semibold text-gray-400 transition-all cursor-pointer"
+          className="bg-gray-800 hover:bg-red-600/20 hover:text-red-400 p-3 rounded-xl text-xs font-bold text-gray-400 transition-all cursor-pointer border border-gray-700/50 flex items-center justify-center gap-2"
         >
-          🚪 Admin Logout
+          <span>🚪</span> Admin Logout
         </button>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 p-8 overflow-y-auto">
+      {/* 💻 MAIN CONTENT AREA */}
+      <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
+        {/* DASHBOARD OVERVIEW */}
         {activeTab === 'dashboard' && (
-          <div>
-            <h1 className="text-3xl font-bold mb-6 text-white">System Dashboard</h1>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-              <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Users</p>
-                <p className="text-3xl font-black text-purple-400 mt-2">{users.length}</p>
+          <div className="space-y-6 max-w-6xl">
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight">System Dashboard</h1>
+              <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, tickets, and media stats.</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Total Users</p>
+                <p className="text-2xl font-black text-purple-400 mt-1">{users.length}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Active VIP Members</p>
-                <p className="text-3xl font-black text-emerald-400 mt-2">{vipUsersCount}</p>
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">VIP Members</p>
+                <p className="text-2xl font-black text-emerald-400 mt-1">{vipUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Standard Users</p>
-                <p className="text-3xl font-black text-blue-400 mt-2">{standardUsersCount}</p>
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Standard Users</p>
+                <p className="text-2xl font-black text-blue-400 mt-1">{standardUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Vault Videos</p>
-                <p className="text-3xl font-black text-sky-400 mt-2">{totalMediaCount}</p>
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Vault Videos</p>
+                <p className="text-2xl font-black text-sky-400 mt-1">{totalMediaCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Pending Support Tickets</p>
-                <p className="text-3xl font-black text-amber-400 mt-2">{pendingTicketsCount}</p>
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Pending Tickets</p>
+                <p className="text-2xl font-black text-amber-400 mt-1">{pendingTicketsCount}</p>
               </div>
             </div>
           </div>
         )}
 
-        {activeTab === 'tickets' && (
-          <div>
-            <h1 className="text-3xl font-bold mb-6 text-white">Support Tickets Management</h1>
-            <SupportTicketsTab />
-          </div>
-        )}
-
-        {/* 🟢 BAGONG USERS TAB */}
-        {activeTab === 'users' && (
-          <div>
-            <h1 className="text-3xl font-bold mb-6 text-white">Registered Accounts ({users.length})</h1>
-            <AdminUsersTab users={users} fetchData={fetchData} />
-          </div>
-        )}
-
-        {/* 🟢 BAGONG MESSAGES TAB */}
-        {activeTab === 'messages' && (
-          <div>
-            <h1 className="text-3xl font-bold mb-6 text-white">Admin Messenger</h1>
-            <AdminMessagesTab users={users} />
-          </div>
-        )}
-
+        {/* TAB COMPONENTS */}
+        {activeTab === 'tickets' && <SupportTicketsTab />}
+        {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}
+        {activeTab === 'messages' && <AdminMessagesTab users={users} />}
         {activeTab === 'codes' && <AccessCodesTab />}
-
-        {activeTab === 'upload' && (
-          <div className="space-y-8">
-            <div>
-              <h1 className="text-3xl font-bold mb-6 text-white">Cloudflare R2 Bulk Video Uploader</h1>
-              <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-2xl shadow-xl">
-                <form onSubmit={handleBulkUploadToCloudflare} className="flex flex-col gap-6">
-                  <div className="border-2 border-dashed border-gray-700 hover:border-red-500/50 bg-gray-800/40 rounded-2xl p-8 text-center transition-all cursor-pointer">
-                    <input
-                      type="file"
-                      multiple
-                      accept="video/*,.mp4,.mkv,.mov,.avi,.webm,.m4v,.flv,.wmv,.3gp"
-                      id="file-upload"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                    <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                      <span className="text-4xl mb-3">🎬</span>
-                      <span className="text-lg font-semibold text-white mb-1">
-                        Click to select or drag videos here
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        Uploading to bucket: <strong className="text-red-400">jb-collections-hub</strong> (Video Formats Only)
-                      </span>
-                    </label>
-                  </div>
-
-                  {uploadFiles.length > 0 && (
-                    <div className="bg-gray-800/60 p-4 rounded-xl border border-gray-700">
-                      <div className="flex justify-between items-center mb-3">
-                        <p className="text-sm font-bold text-gray-300">
-                          Selected Videos ({uploadFiles.length}):
-                        </p>
-                        {!loading && (
-                          <button
-                            type="button"
-                            onClick={() => setUploadFiles([])}
-                            className="text-xs text-gray-400 hover:text-red-400 transition-colors"
-                          >
-                            Clear list
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
-                        {uploadFiles.map((item) => (
-                          <div 
-                            key={item.id} 
-                            className="bg-gray-900/80 p-3 rounded-xl border border-gray-700/60 flex flex-col gap-2"
-                          >
-                            <div className="flex justify-between items-center gap-2 text-xs">
-                              <span className="truncate max-w-xs text-white font-medium">
-                                {item.name}
-                              </span>
-                              <div className="flex items-center gap-3 shrink-0">
-                                <span className="text-gray-400">
-                                  {(item.size / (1024 * 1024)).toFixed(2)} MB
-                                </span>
-                                {renderStatusBadge(item)}
-                              </div>
-                            </div>
-
-                            <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-gray-700/50">
-                              <div
-                                className={`h-full transition-all duration-300 rounded-full ${
-                                  item.status === 'completed'
-                                    ? 'bg-emerald-500'
-                                    : item.status === 'error'
-                                    ? 'bg-red-500'
-                                    : 'bg-gradient-to-r from-red-600 via-amber-500 to-emerald-400'
-                                }`}
-                                style={{ width: `${item.progress}%` }}
-                              />
-                            </div>
-
-                            {item.errorMsg && (
-                              <p className="text-[11px] text-red-400 truncate">{item.errorMsg}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {uploadProgress && (
-                    <p className="text-center text-sm font-semibold text-yellow-400 animate-pulse">
-                      {uploadProgress}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={loading || uploadFiles.length === 0}
-                    className="bg-red-600 hover:bg-red-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20"
-                  >
-                    {loading ? 'Uploading Videos...' : `Upload ${uploadFiles.length} Video(s) to Cloudflare`}
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-white">Uploaded Vault Media ({totalMediaCount})</h2>
-                {mediaList.length > 0 && (
-                  <button
-                    onClick={handleDeleteAllMedia}
-                    className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-4 py-2 rounded-xl text-sm font-bold border border-red-600/30 transition-all shadow-lg"
-                  >
-                    ⚠️ Delete All Records
-                  </button>
-                )}
-              </div>
-              
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
-                {mediaList.length === 0 ? (
-                  <p className="text-gray-500 text-sm p-4 text-center">Wala pang nakaupload na videos sa database.</p>
-                ) : (
-                  mediaList.map((item) => (
-                    <div key={item.id} className="bg-gray-800/50 p-4 rounded-xl flex justify-between items-center border border-gray-800 gap-4">
-                      <div className="truncate flex-1">
-                        <p className="font-bold text-white text-sm truncate">{item.title}</p>
-                        <p className="text-xs text-gray-500 truncate">{item.media_url}</p>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteMedia(item.id)}
-                        className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-red-600/30 shrink-0"
-                      >
-                        Delete 🗑️
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {activeTab === 'upload' && <AdminMediaTab />}
       </main>
     </div>
   );

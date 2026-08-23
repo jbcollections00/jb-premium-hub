@@ -8,6 +8,7 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showModal, setShowModal] = useState(false);
   
   const navigate = useNavigate();
 
@@ -31,26 +32,50 @@ export default function Signup() {
       return;
     }
 
-    // 2. Kapag success, gumawa ng random Access Code at I-send ang Welcome Message
+    // 2. Kapag success, gumawa ng Access Code na may 7-Day Expiration
     if (data?.user) {
       const generatedCode = 'VAULT-' + Math.random().toString(36).substring(2, 8).toUpperCase();
       
-      // 🟢 BAGONG DAGDAG: I-save ang Access Code sa database para maging VALID
+      const expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + 7); // +7 ARAW EXPIRATION
+
+      // I-save ang Access Code sa database
       const { error: codeError } = await supabase.from('access_codes').insert([{
         code: generatedCode,
-        status: 'active' // O 'unused', depende sa ginamit mong default status sa table mo
+        user_id: data.user.id,
+        type: 'STANDARD',
+        is_used: false,
+        duration_days: 30,
+        expires_at: expirationDate.toISOString()
       }]);
 
       if (codeError) {
         console.error("Failed to save access code:", codeError.message);
       }
 
-      // 🟢 I-send ang Welcome Message sa Inbox ng user
+      const formattedExpDate = expirationDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+
+      // 📩 I-send ang Welcome Message na may pangalang JB PREMIUM HUB
+      const messageContent = `Hi ${fullName || 'User'}! Thank you for registering.
+
+🔑 Your Standard Access Code is: ${generatedCode}
+
+⏳ PAALALA: Ang Access Code na ito ay valid lamang sa loob ng 7 ARAW (Mag-e-expire sa: ${formattedExpDate}).
+
+⚠️ KUNG MAG-EXPIRE ANG CODE:
+Kapag hindi mo na-redeem ang code na ito sa loob ng 7 araw, pumunta sa iyong Profile page o mag-message sa Admin sa Support para makakuha ng bagong activation code.`;
+
       const { error: msgError } = await supabase.from('admin_messages').insert([{
         user_id: data.user.id,
-        title: '🎉 Welcome to Vault Hub!',
-        content: `Hi ${fullName}! Thank you for registering. Your Standard Access Code is: ${generatedCode}. Use this to unlock exclusive media. Enjoy!`,
-        is_read: false
+        title: '🎉 Welcome to JB PREMIUM HUB!',
+        message: messageContent,
+        content: messageContent,
+        is_read: false,
+        send_to_all: false
       }]);
 
       if (msgError) {
@@ -58,12 +83,12 @@ export default function Signup() {
       }
     }
 
-    alert('Signup Successful! Redirecting to Home...');
-    navigate('/home');
+    setLoading(false);
+    setShowModal(true); // Buksan ang Success Modal
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4 relative">
       <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-md w-full shadow-2xl">
         <h2 className="text-2xl font-bold text-white mb-2 text-center">Create an Account</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">Sign up to unlock exclusive vault media</p>
@@ -111,6 +136,31 @@ export default function Signup() {
           Already have an account? <Link to="/login" className="text-blue-400 hover:underline font-semibold">Log In</Link>
         </div>
       </div>
+
+      {/* 🔔 SUCCESS POPUP MODAL */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center space-y-5 shadow-2xl">
+            <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+              📩
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-extrabold text-white">Account Created!</h3>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Buksan ang iyong <span className="text-blue-400 font-bold">Messages Page</span> para kopyahin ang iyong <span className="text-red-400 font-bold">Standard Access Code</span>.
+              </p>
+            </div>
+
+            <button
+              onClick={() => navigate('/messages')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
+            >
+              Buksan ang Messages 💬
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
