@@ -57,6 +57,7 @@ export default function Profile() {
         .single();
 
       if (fetchError || !codeData) {
+        console.error("Fetch code error (Likely doesn't exist or RLS block):", fetchError);
         setRedeemMsg({ type: "error", text: "Invalid or already used access code." });
         setRedeemLoading(false);
         return;
@@ -141,6 +142,7 @@ export default function Profile() {
       setAccessCode("");
       fetchUserData();
     } catch (err) {
+      console.error("Redeem code system error:", err);
       setRedeemMsg({ type: "error", text: "Failed to redeem: " + err.message });
     } finally {
       setRedeemLoading(false);

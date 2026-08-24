@@ -17,7 +17,7 @@ export default function Signup() {
     setLoading(true);
     setErrorMsg('');
 
-    // 1. I-register ang user sa Supabase Auth
+    // 1. Register the user in Supabase Auth
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -32,42 +32,29 @@ export default function Signup() {
       return;
     }
 
-    // 2. Kapag success, gumawa ng Access Code na may 7-Day Expiration
+    // 2. On success, generate a Standard Access Code (No Expiration)
     if (data?.user) {
       const generatedCode = 'VAULT-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-      
-      const expirationDate = new Date();
-      expirationDate.setDate(expirationDate.getDate() + 7); // +7 ARAW EXPIRATION
 
-      // I-save ang Access Code sa database
+      // Save the Access Code to the database WITHOUT an expires_at value
       const { error: codeError } = await supabase.from('access_codes').insert([{
         code: generatedCode,
-        user_id: data.user.id,
         type: 'STANDARD',
         is_used: false,
-        duration_days: 30,
-        expires_at: expirationDate.toISOString()
+        duration_days: 30
       }]);
 
       if (codeError) {
-        console.error("Failed to save access code:", codeError.message);
+        console.error("🚨 CRITICAL: Failed to save access code to DB:", codeError.message);
+        setErrorMsg("Account created, but we couldn't generate your code. Please contact Admin.");
       }
 
-      const formattedExpDate = expirationDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      });
-
-      // 📩 I-send ang Welcome Message na may pangalang JB PREMIUM HUB
+      // 3. Send the Welcome Message (Removed the 7-day warning)
       const messageContent = `Hi ${fullName || 'User'}! Thank you for registering.
 
 🔑 Your Standard Access Code is: ${generatedCode}
 
-⏳ PAALALA: Ang Access Code na ito ay valid lamang sa loob ng 7 ARAW (Mag-e-expire sa: ${formattedExpDate}).
-
-⚠️ KUNG MAG-EXPIRE ANG CODE:
-Kapag hindi mo na-redeem ang code na ito sa loob ng 7 araw, pumunta sa iyong Profile page o mag-message sa Admin sa Support para makakuha ng bagong activation code.`;
+Go to your Profile page and enter this code to activate your 30-day Standard Access whenever you're ready!`;
 
       const { error: msgError } = await supabase.from('admin_messages').insert([{
         user_id: data.user.id,
@@ -84,7 +71,7 @@ Kapag hindi mo na-redeem ang code na ito sa loob ng 7 araw, pumunta sa iyong Pro
     }
 
     setLoading(false);
-    setShowModal(true); // Buksan ang Success Modal
+    setShowModal(true); // Open Success Modal
   };
 
   return (
