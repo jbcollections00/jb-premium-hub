@@ -315,6 +315,26 @@ export default function Messages() {
                     <p className="whitespace-pre-line bg-slate-950/50 border border-slate-800/80 p-5 rounded-2xl font-mono text-xs md:text-sm">
                       {selectedMessage.content || selectedMessage.message}
                     </p>
+
+                    {/* 🖼️ ATTACHMENT DISPLAY (IMAGE / VIDEO) */}
+                    {selectedMessage.attachment_url && (
+                      <div className="mt-4 rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-2">
+                        {selectedMessage.attachment_type === "image" ||
+                        selectedMessage.attachment_url.match(/\.(jpeg|jpg|gif|png|webp)/i) ? (
+                          <img
+                            src={selectedMessage.attachment_url}
+                            alt="Message Attachment"
+                            className="w-full max-h-[450px] object-contain rounded-lg"
+                          />
+                        ) : (
+                          <video
+                            src={selectedMessage.attachment_url}
+                            controls
+                            className="w-full max-h-[450px] rounded-lg"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Footer Notice */}

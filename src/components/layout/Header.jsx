@@ -19,6 +19,7 @@ const IconLogout = () => (
 
 export default function Header() {
   const [messageCount, setMessageCount] = useState(0);
+  const [userInitial, setUserInitial] = useState('U');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -57,12 +58,18 @@ export default function Header() {
         return;
       }
 
-      // Kukunin LANG ang bilang ng UNREAD messages (is_read == false)
+      // Kunin ang user initial para sa profile icon
+      const email = session.user.email || "";
+      if (email) {
+        setUserInitial(email.charAt(0).toUpperCase());
+      }
+
+      // Kukunin LANG ang bilang ng UNREAD messages (is_read == false o null)
       const { count, error } = await supabase
         .from("admin_messages")
         .select("*", { count: "exact", head: true })
         .or(`user_id.eq.${session.user.id},send_to_all.eq.true`)
-        .eq("is_read", false);
+        .or("is_read.eq.false,is_read.is.null");
 
       if (!error && count !== null) {
         setMessageCount(count);
@@ -152,6 +159,7 @@ export default function Header() {
           padding: 6px 10px;
           border-radius: 8px;
           transition: all 0.2s;
+          position: relative;
         }
 
         .nav-item-btn:hover {
@@ -234,8 +242,8 @@ export default function Header() {
       <div className="nav-controls">
         {/* 👤 Profile Link */}
         <Link to="/profile" className="nav-item-btn" title="Profile">
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(to top right, #2563eb, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px', color: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-            U
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(to top right, #2563eb, #6366f1)', display: 'flex', itemsCenter: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px', color: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+            {userInitial}
           </div>
           <span className="hide-on-mobile">Profile</span>
         </Link>
