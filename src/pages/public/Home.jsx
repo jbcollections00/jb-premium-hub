@@ -4,6 +4,12 @@ import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 
 const ITEMS_PER_PAGE = 50;
 
+// Helper para siguraduhing CDN URL ang gamit kahit may lumang link pa sa DB
+const getCdnUrl = (url) => {
+  if (!url) return "";
+  return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
+};
+
 export default function Home() {
   const [mediaList, setMediaList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +39,7 @@ export default function Home() {
         event.message?.includes("null") ||
         (event.filename && event.filename.includes("fb5310e"))
       ) {
-        event.preventDefault(); // Prevents third-party ad scripts from crashing React
+        event.preventDefault();
       }
     };
 
@@ -51,17 +57,30 @@ export default function Home() {
 
   // 2️⃣ Fetch Current Logged-In User Profile
   const fetchUserProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+      let { data: profile, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
 
-    if (profile) {
-      setUserProfile(profile);
+      if (!profile && !error) {
+        const { data: newProfile } = await supabase
+          .from("profiles")
+          .upsert([{ id: user.id, account_type: "standard" }])
+          .select()
+          .maybeSingle();
+        profile = newProfile;
+      }
+
+      if (profile) {
+        setUserProfile(profile);
+      }
+    } catch (err) {
+      console.error("Profile load error:", err);
     }
   };
 
@@ -96,12 +115,10 @@ export default function Home() {
     }
   };
 
-  // 4️⃣ Video Click Handler (UNLIMITED VIEWING FOR ALL)
   const handleSelectMedia = (item) => {
     setSelectedMedia(item);
   };
 
-  // 5️⃣ Redeem Access Code (Simplified - Removed Token Logic)
   const handleRedeemCode = async (e) => {
     e.preventDefault();
     if (!accessCodeInput.trim() || !userProfile) return;
@@ -113,7 +130,7 @@ export default function Home() {
       .from("access_codes")
       .select("*")
       .eq("code", codeUpper)
-      .single();
+      .maybeSingle();
 
     if (codeErr || !codeData) {
       alert("Invalid Access Code! Please check your code.");
@@ -143,9 +160,7 @@ export default function Home() {
 
     const { error: profileErr } = await supabase
       .from("profiles")
-      .update({
-        account_type: newType
-      })
+      .update({ account_type: newType })
       .eq("id", userProfile.id);
 
     if (!profileErr) {
@@ -190,11 +205,7 @@ export default function Home() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {isVIP ? (
-                    "Unlimited Videos • Ad-Free • VIP Download Unlocked"
-                  ) : (
-                    "Unlimited Videos • Ad Supported"
-                  )}
+                  {isVIP ? "Unlimited Videos • Ad-Free • VIP Download Unlocked" : "Unlimited Videos • Ad Supported"}
                 </p>
               </div>
             </div>
@@ -212,7 +223,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 📊 Vault Header Info & Item Count */}
+        {/* 📊 Vault Header Info */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
@@ -242,14 +253,14 @@ export default function Home() {
                 <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
                   {item.thumbnail_url ? (
                     <img
-                      src={item.thumbnail_url}
+                      src={getCdnUrl(item.thumbnail_url)}
                       alt={item.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   ) : item.media_url ? (
                     <video
-                      src={`${item.media_url}#t=1`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none opacity-60"
+                      src={`${getCdnUrl(item.media_url)}#t=1`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
                       preload="metadata"
                       muted
                       playsInline
@@ -260,13 +271,9 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Play Icon Badge */}
                   <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                     <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                      <svg
-                        className="w-6 h-6 text-white fill-current ml-0.5"
-                        viewBox="0 0 24 24"
-                      >
+                      <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
                         <path d="M8 5v14l11-7z" />
                       </svg>
                     </div>
@@ -324,8 +331,6 @@ export default function Home() {
             className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            
-            {/* 1️⃣ TOP HEADER */}
             <div className="p-4 md:px-6 md:py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/90 shrink-0">
               <div className="flex flex-col pr-4">
                 <span className="text-[10px] md:text-xs font-black text-red-500 uppercase tracking-widest">
@@ -339,25 +344,22 @@ export default function Home() {
               <button
                 onClick={() => setSelectedMedia(null)}
                 className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50"
-                title="Close"
               >
                 ✕
               </button>
             </div>
 
-            {/* 2️⃣ VIDEO PLAYER CONTAINER */}
             <div className="bg-black w-full flex-1 flex flex-col items-center justify-center overflow-y-auto p-2 md:p-4 min-h-[300px] md:min-h-[480px]">
               <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:w-full [&_video]:h-auto [&_video]:aspect-video [&_video]:bg-black">
                 <VIPVideoPlayer
                   key={selectedMedia.id}
-                  mainVideoUrl={selectedMedia.media_url}
+                  mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
                   adDirectLink={AD_DIRECT_LINK}
                   userProfile={userProfile}
                   accountType={userProfile?.account_type}
                 />
               </div>
 
-              {/* 3️⃣ ADSTERRA SPONSOR BANNER UNDER VIDEO (SHOW FOR STANDARD USERS ONLY) */}
               {!isVIP && (
                 <div className="w-full max-w-4xl mt-3 p-3 bg-slate-950 border border-red-900/30 rounded-xl flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -380,7 +382,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* 4️⃣ DESCRIPTION */}
             {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
               <div className="px-4 py-3 md:px-6 border-t border-slate-800/80 bg-slate-950/60 shrink-0">
                 <p className="text-slate-400 text-xs md:text-sm line-clamp-2">
@@ -388,7 +389,6 @@ export default function Home() {
                 </p>
               </div>
             )}
-
           </div>
         </div>
       )}

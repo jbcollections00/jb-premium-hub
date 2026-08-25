@@ -12,56 +12,69 @@ export default function Footer() {
   });
 
   useEffect(() => {
-    // 1. Log a new visit (Once per session)
-    logSiteVisit();
+    let channel;
+    let isMounted = true;
 
-    // 2. Fetch visit counts from Supabase
+    // 1. Log visit and fetch analytics
+    logSiteVisit();
     fetchAnalytics();
 
-    // 3. Supabase Realtime Presence para sa "Online Now" (Naka-sync sa Admin)
-    let channel;
-
+    // 2. Setup Realtime Presence
     const setupPresence = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
 
-      // I-deduplicate ang tabs: Gamitin ang user.id o lumikha ng isang guest ID bawat browser session
-      let presenceKey = user?.id;
-      if (!presenceKey) {
-        presenceKey = sessionStorage.getItem('jb_guest_id');
+        let presenceKey = user?.id;
         if (!presenceKey) {
-          presenceKey = 'guest_' + Math.random().toString(36).substring(2, 9);
-          sessionStorage.setItem('jb_guest_id', presenceKey);
+          presenceKey = sessionStorage.getItem('jb_guest_id');
+          if (!presenceKey) {
+            presenceKey = 'guest_' + Math.random().toString(36).substring(2, 9);
+            sessionStorage.setItem('jb_guest_id', presenceKey);
+          }
         }
-      }
 
-      // Parehong room channel name ('online-users') para patas sa Admin Users Page
-      channel = supabase.channel('online-users', {
-        config: { presence: { key: presenceKey } },
-      });
+        // Siguraduhing lilinisin muna ang anumang umiiral na channel sa pangalang ito
+        const existingChannel = supabase.getChannels().find(c => c.topic === 'realtime:online-users');
+        if (existingChannel) {
+          await supabase.removeChannel(existingChannel);
+        }
 
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState();
-          const count = Object.keys(state).length;
-          setOnlineNow(count > 0 ? count : 1);
-        })
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
+        if (!isMounted) return;
+
+        // Gumawa ng bagong channel at i-chain ang listener BAGO mag-subscribe
+        channel = supabase
+          .channel('online-users', {
+            config: { presence: { key: presenceKey } },
+          })
+          .on('presence', { event: 'sync' }, () => {
+            if (!isMounted || !channel) return;
+            const state = channel.presenceState();
+            const count = Object.keys(state).length;
+            setOnlineNow(count > 0 ? count : 1);
+          });
+
+        // Huli nating tatawagin ang subscribe
+        channel.subscribe(async (status) => {
+          if (status === 'SUBSCRIBED' && isMounted && channel) {
             await channel.track({ online_at: new Date().toISOString() });
           }
         });
+
+      } catch (error) {
+        console.error('Presence setup error:', error);
+      }
     };
 
     setupPresence();
 
     return () => {
+      isMounted = false;
       if (channel) {
         supabase.removeChannel(channel);
       }
     };
   }, []);
 
-  // Function para mag-record ng bisita sa database
   const logSiteVisit = async () => {
     try {
       const hasVisited = sessionStorage.getItem('jb_visited');
@@ -74,35 +87,28 @@ export default function Footer() {
     }
   };
 
-  // Function para mag-calculate ng mga numero (Today, Week, Month, Total)
   const fetchAnalytics = async () => {
     try {
       const now = new Date();
-
-      // Timeframes
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
       const dayOfWeek = now.getDay();
       const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).toISOString();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      // Total Visits
       const { count: total } = await supabase
         .from('site_visits')
         .select('*', { count: 'exact', head: true });
 
-      // Today's Visits
       const { count: today } = await supabase
         .from('site_visits')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', startOfToday);
 
-      // This Week's Visits
       const { count: week } = await supabase
         .from('site_visits')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', startOfWeek);
 
-      // This Month's Visits
       const { count: month } = await supabase
         .from('site_visits')
         .select('*', { count: 'exact', head: true })
@@ -123,10 +129,9 @@ export default function Footer() {
     <footer className="bg-slate-950 border-t border-slate-900 text-slate-400 text-xs py-8 px-4 md:px-8 mt-auto">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* 📊 1. Real-Time Visitor Counter Cards */}
+        {/* Real-Time Visitor Counter Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           
-          {/* Online Now */}
           <div className="bg-slate-900/60 border border-emerald-500/40 rounded-xl p-3 shadow-sm">
             <div className="flex items-center gap-1.5 text-slate-300 text-[11px] font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -137,7 +142,6 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Today */}
           <div className="bg-slate-900/60 border border-sky-500/40 rounded-xl p-3 shadow-sm">
             <div className="flex items-center gap-1.5 text-slate-300 text-[11px] font-medium">
               <span>📅</span> Today
@@ -147,7 +151,6 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* This Week */}
           <div className="bg-slate-900/60 border border-purple-500/40 rounded-xl p-3 shadow-sm">
             <div className="flex items-center gap-1.5 text-slate-300 text-[11px] font-medium">
               <span>📅</span> This Week
@@ -157,7 +160,6 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* This Month */}
           <div className="bg-slate-900/60 border border-amber-500/40 rounded-xl p-3 shadow-sm">
             <div className="flex items-center gap-1.5 text-slate-300 text-[11px] font-medium">
               <span>📅</span> This Month
@@ -167,7 +169,6 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Total Visits */}
           <div className="bg-slate-900/60 border border-pink-500/40 rounded-xl p-3 shadow-sm col-span-2 sm:col-span-1">
             <div className="flex items-center gap-1.5 text-slate-300 text-[11px] font-medium">
               <span>📊</span> Total Visits
@@ -179,7 +180,7 @@ export default function Footer() {
 
         </div>
 
-        {/* 🔗 2. Navigation Links */}
+        {/* Navigation Links */}
         <div className="pt-2 flex flex-wrap justify-center items-center gap-6 sm:gap-8 text-sm font-medium text-slate-300">
           <Link to="/terms" className="hover:text-white transition-colors">
             Terms of Service
@@ -195,7 +196,7 @@ export default function Footer() {
           </Link>
         </div>
 
-        {/* ©️ 3. Copyright Text */}
+        {/* Copyright */}
         <div className="text-slate-500 text-center text-xs">
           © 2026 JB Collections. All rights reserved.
         </div>

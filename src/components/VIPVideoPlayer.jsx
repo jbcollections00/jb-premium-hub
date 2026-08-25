@@ -6,15 +6,19 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   const [timeLeft, setTimeLeft] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
   const [checkingUser, setCheckingUser] = useState(true);
-  const [isVipUser, setIsVipUser] = useState(false); // New state to track VIP for the UI
+  const [isVipUser, setIsVipUser] = useState(false);
 
   const mainVideoRef = useRef(null);
 
-  // ☁️ CLOUDFLARE R2 SETUP
-  const CLOUDFLARE_DOMAIN = "https://pub-8edb47f7180d41ab0a76011487e787b0.r2.dev";
-  const videoSrc = mainVideoUrl?.startsWith("http") 
-    ? mainVideoUrl 
-    : `${CLOUDFLARE_DOMAIN}/${mainVideoUrl}`;
+  const CDN_DOMAIN = "https://cdn.jb-premium-hub.vip";
+  
+  const getCleanVideoUrl = (url) => {
+    if (!url) return "";
+    let formattedUrl = url.startsWith("http") ? url : `${CDN_DOMAIN}/${url}`;
+    return formattedUrl.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
+  };
+
+  const videoSrc = getCleanVideoUrl(mainVideoUrl);
 
   // 1️⃣ Check User VIP Status & Apply Ad Logic
   useEffect(() => {
@@ -24,22 +28,22 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
       setCheckingUser(true);
       let isVip = false;
 
-      // Check via props first if provided
       if (accountType) {
         isVip = accountType.toUpperCase() === 'VIP';
       } else if (userProfile) {
         isVip = (userProfile.account_type || '').toUpperCase() === 'VIP';
       } else {
-        // Fallback: Fetch logged-in user profile from Supabase
         try {
+          // Ligtas na check para hindi mag-trigger ng 400 Bad Request kung undefined ang user.id
           const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { data: profile } = await supabase
+          if (user?.id) {
+            const { data: profile, error } = await supabase
               .from('profiles')
               .select('account_type')
               .eq('id', user.id)
-              .single();
-            if (profile) {
+              .maybeSingle();
+
+            if (!error && profile) {
               isVip = (profile.account_type || '').toUpperCase() === 'VIP';
             }
           }
@@ -53,7 +57,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
       setIsVipUser(isVip);
 
       if (!isVip) {
-        // 👤 STANDARD USER: Ad every 3 videos (Shows on 1st, 4th, 7th...)
         const currentCount = parseInt(localStorage.getItem('std_video_watch_count') || '0', 10);
         const newCount = currentCount + 1;
         localStorage.setItem('std_video_watch_count', newCount.toString());
@@ -66,7 +69,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
           setIsPlayingAd(false);
         }
       } else {
-        // 👑 VIP USER: ALWAYS DIRECT PLAY (NO VIDEO ADS)
         setIsPlayingAd(false);
       }
 
@@ -100,7 +102,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     return () => clearInterval(timer);
   }, [isPlayingAd, checkingUser]);
 
-  // 💰 Open Adsterra Direct Link in a new tab
   const openAdsterra = (e) => {
     if (e) e.stopPropagation();
     if (adDirectLink) {
@@ -108,7 +109,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     }
   };
 
-  // ⏩ Skip Ad Handler: Triggers Adsterra ad & starts main video
   const handleSkipAd = (e) => {
     e.stopPropagation();
     if (!canSkip) return;
@@ -117,7 +117,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     setIsPlayingAd(false);
   };
 
-  // 🎯 Screen Click Handler: Triggers Adsterra ad & plays video if countdown finished
   const handleOverlayClick = () => {
     openAdsterra();
     if (canSkip) {
@@ -125,17 +124,18 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     }
   };
 
-  // 💾 Download VIP Video Handler
+  // 💾 INSTANT DIRECT DOWNLOAD HANDLER
   const handleVipDownload = (e) => {
-    e.stopPropagation();
-    // 1. Open Sponsor Ad in background to monetize the download
+    if (e) e.stopPropagation();
+    if (!videoSrc) return;
+
     openAdsterra();
-    
-    // 2. Trigger the download automatically
-    const link = document.createElement('a');
+
+    const link = document.createElement("a");
     link.href = videoSrc;
-    link.setAttribute('download', 'Vault-VIP-Video.mp4');
-    link.setAttribute('target', '_blank');
+    link.setAttribute("download", `Vault-VIP-Video-${Date.now()}.mp4`);
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -152,25 +152,24 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
-      {/* 👑 VIP DOWNLOAD BUTTON (Only shows when video is playing for VIPs) */}
+      {/* 👑 VIP DOWNLOAD BUTTON */}
       {isVipUser && !isPlayingAd && (
         <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <button
             onClick={handleVipDownload}
-            className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105"
+            className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
           >
-            <span className="text-base">💾</span> Download VIP
+            <span className="text-base">💾</span>
+            <span>Download VIP</span>
           </button>
         </div>
       )}
 
       {isPlayingAd ? (
-        /* ==================== 📢 ADSTERRA MONETIZED OVERLAY ==================== */
         <div 
           className="relative w-full h-full min-h-[320px] md:min-h-[420px] flex flex-col justify-between p-4 md:p-6 bg-slate-950/90 cursor-pointer backdrop-blur-sm"
           onClick={handleOverlayClick}
         >
-          {/* Top Bar: Ad Badge & Countdown Status */}
           <div className="flex items-center justify-between z-20">
             <div className="flex items-center gap-1.5 bg-yellow-500 text-black px-2.5 py-1 rounded-md font-extrabold text-[11px] tracking-wider uppercase shadow-md">
               <span>📢 Ad</span>
@@ -186,7 +185,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
             </div>
           </div>
 
-          {/* Center Call-to-Action */}
           <div className="my-auto text-center flex flex-col items-center justify-center gap-3 z-10">
             <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center border border-red-500/30 animate-pulse shadow-lg">
               <svg className="w-8 h-8 fill-current ml-1" viewBox="0 0 24 24">
@@ -201,7 +199,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
             </p>
           </div>
 
-          {/* Bottom Bar Controls */}
           <div className="flex items-center justify-between z-20 gap-2">
             <button
               type="button"
@@ -232,7 +229,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
           </div>
         </div>
       ) : (
-        /* ==================== 🎥 MAIN VIP VIDEO PLAYER ==================== */
         <video
           ref={mainVideoRef}
           src={videoSrc}
