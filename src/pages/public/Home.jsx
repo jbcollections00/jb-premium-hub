@@ -17,13 +17,7 @@ export default function Home() {
   const [userProfile, setUserProfile] = useState(null);
 
   // 🚪 Modals State
-  const [showLimitModal, setShowLimitModal] = useState(false);
-  const [showEarnModal, setShowEarnModal] = useState(false);
   const [showRedeemModal, setShowRedeemModal] = useState(false);
-
-  // 💰 Ad / Token Earning State
-  const [watchingAd, setWatchingAd] = useState(false);
-  const [adTimer, setAdTimer] = useState(10);
 
   // 🔑 Code Redemption Input State
   const [accessCodeInput, setAccessCodeInput] = useState("");
@@ -102,102 +96,12 @@ export default function Home() {
     }
   };
 
-  // 4️⃣ Video Click Handler with VIP / Standard Enforcement
-  const handleSelectMedia = async (item) => {
-    if (!userProfile) {
-      setSelectedMedia(item);
-      return;
-    }
-
-    const today = new Date().toISOString().split("T")[0];
-    const isVIP = userProfile.account_type?.toLowerCase() === "vip";
-
-    // 👑 A. VIP USER LOGIC
-    if (isVIP) {
-      setSelectedMedia(item);
-      return;
-    }
-
-    // 👤 B. STANDARD USER LOGIC
-    let currentDailyViews = userProfile.daily_views_count || 0;
-    let currentTokens = userProfile.watch_tokens || 0;
-    const lastDate = userProfile.last_view_date;
-
-    if (lastDate !== today) {
-      currentDailyViews = 0;
-    }
-
-    if (currentDailyViews < 5) {
-      const updatedViews = currentDailyViews + 1;
-      await supabase
-        .from("profiles")
-        .update({
-          daily_views_count: updatedViews,
-          last_view_date: today,
-        })
-        .eq("id", userProfile.id);
-
-      setUserProfile((prev) => ({
-        ...prev,
-        daily_views_count: updatedViews,
-        last_view_date: today,
-      }));
-
-      setSelectedMedia(item);
-      return;
-    }
-
-    if (currentTokens > 0) {
-      const updatedTokens = currentTokens - 1;
-      await supabase
-        .from("profiles")
-        .update({ watch_tokens: updatedTokens })
-        .eq("id", userProfile.id);
-
-      setUserProfile((prev) => ({ ...prev, watch_tokens: updatedTokens }));
-      setSelectedMedia(item);
-      return;
-    }
-
-    setShowLimitModal(true);
+  // 4️⃣ Video Click Handler (UNLIMITED VIEWING FOR ALL)
+  const handleSelectMedia = (item) => {
+    setSelectedMedia(item);
   };
 
-  // 5️⃣ Earn Watch Token via Ad View
-  const handleStartEarnAd = () => {
-    window.open(AD_DIRECT_LINK, "_blank");
-    setWatchingAd(true);
-    setAdTimer(10);
-
-    const interval = setInterval(() => {
-      setAdTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          grantEarnedToken();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  const grantEarnedToken = async () => {
-    if (!userProfile) return;
-    const newTokens = (userProfile.watch_tokens || 0) + 1;
-
-    const { error } = await supabase
-      .from("profiles")
-      .update({ watch_tokens: newTokens })
-      .eq("id", userProfile.id);
-
-    if (!error) {
-      setUserProfile((prev) => ({ ...prev, watch_tokens: newTokens }));
-      setWatchingAd(false);
-      setShowEarnModal(false);
-      alert("🎉 Success! You earned 1 Watch Token!");
-    }
-  };
-
-  // 6️⃣ Redeem Access Code
+  // 5️⃣ Redeem Access Code (Simplified - Removed Token Logic)
   const handleRedeemCode = async (e) => {
     e.preventDefault();
     if (!accessCodeInput.trim() || !userProfile) return;
@@ -236,31 +140,27 @@ export default function Home() {
 
     const isVipCode = codeData.type === "VIP" || codeUpper.startsWith("VIP");
     const newType = isVipCode ? "vip" : "standard";
-    const extraTokens = isVipCode ? userProfile.watch_tokens : (userProfile.watch_tokens || 0) + 5;
 
     const { error: profileErr } = await supabase
       .from("profiles")
       .update({
-        account_type: newType,
-        watch_tokens: extraTokens,
+        account_type: newType
       })
       .eq("id", userProfile.id);
 
     if (!profileErr) {
       setUserProfile((prev) => ({
         ...prev,
-        account_type: newType,
-        watch_tokens: extraTokens,
+        account_type: newType
       }));
 
       setAccessCodeInput("");
       setShowRedeemModal(false);
-      setShowLimitModal(false);
 
       alert(
         isVipCode
           ? "👑 CONGRATULATIONS! Your account has been upgraded to VIP ACCESS!"
-          : "🎉 Standard Code Redeemed! +5 Watch Tokens added to your account."
+          : "🎉 Standard Code Redeemed! You are now an active user."
       );
     }
 
@@ -268,9 +168,6 @@ export default function Home() {
   };
 
   const isVIP = userProfile?.account_type?.toLowerCase() === "vip";
-  const dailyUsed = userProfile?.daily_views_count || 0;
-  const remainingFreeViews = Math.max(0, 5 - dailyUsed);
-  const watchTokens = userProfile?.watch_tokens || 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
@@ -294,9 +191,9 @@ export default function Home() {
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {isVIP ? (
-                    "Unlimited Videos • Reduced Ads (1 ad per 5 videos)"
+                    "Unlimited Videos • Ad-Free • VIP Download Unlocked"
                   ) : (
-                    <>Daily Free Views: <b className="text-white">{remainingFreeViews}/5</b> | Watch Tokens: <b className="text-amber-400">{watchTokens}</b></>
+                    "Unlimited Videos • Ad Supported"
                   )}
                 </p>
               </div>
@@ -304,13 +201,6 @@ export default function Home() {
 
             {!isVIP && (
               <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                <button
-                  onClick={() => setShowEarnModal(true)}
-                  className="flex-1 sm:flex-none bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>💰 Earn Tokens</span>
-                </button>
-
                 <button
                   onClick={() => setShowRedeemModal(true)}
                   className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center justify-center gap-1.5"
@@ -503,88 +393,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ⚠️ MODAL 1: DAILY LIMIT REACHED */}
-      {showLimitModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
-            <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/30">
-              🔒
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Daily Free Limit Reached!</h3>
-            <p className="text-slate-400 text-xs md:text-sm mb-6">
-              Standard accounts are limited to <b className="text-white">5 free videos per day</b>. Watch a short ad to earn a Watch Token or upgrade to VIP!
-            </p>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => {
-                  setShowLimitModal(false);
-                  setShowEarnModal(true);
-                }}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-amber-500/20"
-              >
-                💰 Watch Ad (+1 Watch Token)
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowLimitModal(false);
-                  setShowRedeemModal(true);
-                }}
-                className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20"
-              >
-                🔑 Upgrade with VIP Code
-              </button>
-
-              <button
-                onClick={() => setShowLimitModal(false)}
-                className="text-slate-500 hover:text-slate-300 text-xs mt-2"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 💰 MODAL 2: EARN WATCH TOKENS PAGE */}
-      {showEarnModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
-            <button
-              onClick={() => setShowEarnModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              ✕
-            </button>
-
-            <div className="w-14 h-14 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-500/30 text-2xl">
-              🪙
-            </div>
-            <h3 className="text-xl font-bold text-white mb-1">Earn Watch Tokens</h3>
-            <p className="text-slate-400 text-xs mb-6">
-              Watch 1 sponsor offer to get <b className="text-amber-400">1 Watch Token = 1 Extra Video Play</b>.
-            </p>
-
-            {watchingAd ? (
-              <div className="bg-slate-950 p-6 rounded-2xl border border-amber-500/30 animate-pulse my-4">
-                <p className="text-xs text-amber-400 font-bold uppercase tracking-wider">Verifying Sponsor Visit...</p>
-                <p className="text-3xl font-black text-white mt-2">{adTimer}s</p>
-                <p className="text-[10px] text-slate-500 mt-2">Please keep the sponsor tab open to confirm token award.</p>
-              </div>
-            ) : (
-              <button
-                onClick={handleStartEarnAd}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-black font-extrabold py-3.5 rounded-xl transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
-              >
-                🚀 Launch Sponsor & Earn +1 Token
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 🔑 MODAL 3: REDEEM VIP CODE */}
+      {/* 🔑 MODAL: REDEEM VIP CODE */}
       {showRedeemModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
@@ -600,7 +409,7 @@ export default function Home() {
             </div>
             <h3 className="text-xl font-bold text-white mb-1">Redeem Access Code</h3>
             <p className="text-slate-400 text-xs mb-6">
-              Enter your VIP Access Code to unlock unlimited video browsing and reduced ads.
+              Enter your VIP Access Code to unlock ad-free viewing and downloads.
             </p>
 
             <form onSubmit={handleRedeemCode} className="flex flex-col gap-3">

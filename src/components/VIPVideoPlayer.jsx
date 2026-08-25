@@ -6,6 +6,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   const [timeLeft, setTimeLeft] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
   const [checkingUser, setCheckingUser] = useState(true);
+  const [isVipUser, setIsVipUser] = useState(false); // New state to track VIP for the UI
 
   const mainVideoRef = useRef(null);
 
@@ -15,7 +16,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     ? mainVideoUrl 
     : `${CLOUDFLARE_DOMAIN}/${mainVideoUrl}`;
 
-  // 1️⃣ Check User VIP Status & Apply Modulo 6 Ad Logic
+  // 1️⃣ Check User VIP Status & Apply Ad Logic
   useEffect(() => {
     let isMounted = true;
 
@@ -49,26 +50,24 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
 
       if (!isMounted) return;
 
-      if (!isVip) {
-        // 👤 STANDARD USER: Always show ads on every video
-        setIsPlayingAd(true);
-        setTimeLeft(5);
-        setCanSkip(false);
-      } else {
-        // 👑 VIP USER: 5 Videos Direct Play (No Ad), 6th Video Shows Ad
-        const currentCount = parseInt(localStorage.getItem('vip_video_watch_count') || '0', 10);
-        const newCount = currentCount + 1;
-        localStorage.setItem('vip_video_watch_count', newCount.toString());
+      setIsVipUser(isVip);
 
-        if (newCount % 6 === 0) {
-          // 6th, 12th, 18th video -> Show Ad
+      if (!isVip) {
+        // 👤 STANDARD USER: Ad every 3 videos (Shows on 1st, 4th, 7th...)
+        const currentCount = parseInt(localStorage.getItem('std_video_watch_count') || '0', 10);
+        const newCount = currentCount + 1;
+        localStorage.setItem('std_video_watch_count', newCount.toString());
+
+        if (newCount % 3 === 1) {
           setIsPlayingAd(true);
           setTimeLeft(5);
           setCanSkip(false);
         } else {
-          // 1st to 5th video -> Direct Play (No Ad)
           setIsPlayingAd(false);
         }
+      } else {
+        // 👑 VIP USER: ALWAYS DIRECT PLAY (NO VIDEO ADS)
+        setIsPlayingAd(false);
       }
 
       setCheckingUser(false);
@@ -126,6 +125,22 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     }
   };
 
+  // 💾 Download VIP Video Handler
+  const handleVipDownload = (e) => {
+    e.stopPropagation();
+    // 1. Open Sponsor Ad in background to monetize the download
+    openAdsterra();
+    
+    // 2. Trigger the download automatically
+    const link = document.createElement('a');
+    link.href = videoSrc;
+    link.setAttribute('download', 'Vault-VIP-Video.mp4');
+    link.setAttribute('target', '_blank');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (checkingUser) {
     return (
       <div className="relative w-full h-full min-h-[320px] md:min-h-[420px] flex items-center justify-center bg-black rounded-xl border border-slate-800">
@@ -137,6 +152,18 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
+      {/* 👑 VIP DOWNLOAD BUTTON (Only shows when video is playing for VIPs) */}
+      {isVipUser && !isPlayingAd && (
+        <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <button
+            onClick={handleVipDownload}
+            className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105"
+          >
+            <span className="text-base">💾</span> Download VIP
+          </button>
+        </div>
+      )}
+
       {isPlayingAd ? (
         /* ==================== 📢 ADSTERRA MONETIZED OVERLAY ==================== */
         <div 
@@ -176,7 +203,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
 
           {/* Bottom Bar Controls */}
           <div className="flex items-center justify-between z-20 gap-2">
-            {/* Visit Advertiser Button */}
             <button
               type="button"
               onClick={openAdsterra}
@@ -185,7 +211,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
               <span>🔗 Visit Advertiser</span>
             </button>
 
-            {/* Skip Ad / Countdown Button */}
             {canSkip ? (
               <button
                 type="button"
@@ -214,7 +239,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
           controls
           autoPlay
           playsInline
-          controlsList="nodownload"
+          controlsList={isVipUser ? "" : "nodownload"}
           className="w-full h-full max-h-[65vh] object-contain"
           onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
         />
