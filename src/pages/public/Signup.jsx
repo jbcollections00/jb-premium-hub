@@ -49,7 +49,7 @@ export default function Signup() {
         setErrorMsg("Account created, but we couldn't generate your code. Please contact Admin.");
       }
 
-      // 3. Send the Welcome Message (Removed the 7-day warning)
+      // 3. Send the Welcome Message
       const messageContent = `Hi ${fullName || 'User'}! Thank you for registering.
 
 🔑 Your Standard Access Code is: ${generatedCode}
@@ -124,26 +124,56 @@ Go to your Profile page and enter this code to activate your 30-day Standard Acc
         </div>
       </div>
 
-      {/* 🔔 SUCCESS POPUP MODAL */}
+      {/* 🔔 SUCCESS POPUP MODAL WITH ENGLISH INSTRUCTIONS */}
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center space-y-5 shadow-2xl">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-5 shadow-2xl">
             <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto text-3xl">
               📩
             </div>
 
-            <div className="space-y-2">
-              <h3 className="text-xl font-extrabold text-white">Account Created!</h3>
-              <p className="text-xs text-gray-300 leading-relaxed">
-                Buksan ang iyong <span className="text-blue-400 font-bold">Messages Page</span> para kopyahin ang iyong <span className="text-red-400 font-bold">Standard Access Code</span>.
+            <div className="space-y-1">
+              <h3 className="text-xl font-extrabold text-white">Account Created Successfully!</h3>
+              <p className="text-xs text-gray-400">
+                Follow these simple steps to retrieve and activate your code:
               </p>
+            </div>
+
+            {/* 📌 STEP-BY-STEP INSTRUCTION BOX */}
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 text-left space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white rounded-full text-[10px] font-bold shrink-0 mt-0.5">
+                  1
+                </span>
+                <p className="text-xs text-gray-300">
+                  Click <span className="text-blue-400 font-bold">Open Messages</span> to copy your <span className="text-amber-400 font-bold">Standard Access Code</span>[cite: 6].
+                </p>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white rounded-full text-[10px] font-bold shrink-0 mt-0.5">
+                  2
+                </span>
+                <p className="text-xs text-gray-300">
+                  Go to your <span className="text-blue-400 font-bold">Profile Page</span>[cite: 6].
+                </p>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white rounded-full text-[10px] font-bold shrink-0 mt-0.5">
+                  3
+                </span>
+                <p className="text-xs text-gray-300">
+                  Paste the code into the <span className="text-emerald-400 font-bold">Redeem Access Code</span> section to activate your 30-day standard access!
+                </p>
+              </div>
             </div>
 
             <button
               onClick={() => navigate('/messages')}
               className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
             >
-              Buksan ang Messages 💬
+              Open Messages & Copy Code 💬
             </button>
           </div>
         </div>
