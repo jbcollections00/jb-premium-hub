@@ -32,16 +32,16 @@ export default function Signup() {
       return;
     }
 
-    // 2. On success, generate a Standard Access Code (No Expiration)
+    // 2. On success, generate an Unlimited Standard Access Code
     if (data?.user) {
       const generatedCode = 'VAULT-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      // Save the Access Code to the database WITHOUT an expires_at value
+      // Save the Access Code to the database with duration_days: null (Unlimited)
       const { error: codeError } = await supabase.from('access_codes').insert([{
         code: generatedCode,
         type: 'STANDARD',
         is_used: false,
-        duration_days: 30
+        duration_days: null // Unlimited duration for standard access
       }]);
 
       if (codeError) {
@@ -54,7 +54,7 @@ export default function Signup() {
 
 🔑 Your Standard Access Code is: ${generatedCode}
 
-Go to your Profile page and enter this code to activate your 30-day Standard Access whenever you're ready!`;
+Go to your Profile page and enter this code to activate your Unlimited Standard Access whenever you're ready!`;
 
       const { error: msgError } = await supabase.from('admin_messages').insert([{
         user_id: data.user.id,
@@ -124,7 +124,7 @@ Go to your Profile page and enter this code to activate your 30-day Standard Acc
         </div>
       </div>
 
-      {/* 🔔 SUCCESS POPUP MODAL WITH ENGLISH INSTRUCTIONS */}
+      {/* 🔔 SUCCESS POPUP MODAL WITH UNLIMITED ACCESS INSTRUCTIONS */}
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-5 shadow-2xl">
@@ -146,7 +146,7 @@ Go to your Profile page and enter this code to activate your 30-day Standard Acc
                   1
                 </span>
                 <p className="text-xs text-gray-300">
-                  Click <span className="text-blue-400 font-bold">Open Messages</span> to copy your <span className="text-amber-400 font-bold">Standard Access Code</span>[cite: 6].
+                  Click <span className="text-blue-400 font-bold">Open Messages</span> to copy your <span className="text-amber-400 font-bold">Standard Access Code</span>.
                 </p>
               </div>
 
@@ -155,7 +155,7 @@ Go to your Profile page and enter this code to activate your 30-day Standard Acc
                   2
                 </span>
                 <p className="text-xs text-gray-300">
-                  Go to your <span className="text-blue-400 font-bold">Profile Page</span>[cite: 6].
+                  Go to your <span className="text-blue-400 font-bold">Profile Page</span>.
                 </p>
               </div>
 
@@ -164,7 +164,7 @@ Go to your Profile page and enter this code to activate your 30-day Standard Acc
                   3
                 </span>
                 <p className="text-xs text-gray-300">
-                  Paste the code into the <span className="text-emerald-400 font-bold">Redeem Access Code</span> section to activate your 30-day standard access!
+                  Paste the code into the <span className="text-emerald-400 font-bold">Redeem Access Code</span> section to activate your unlimited Standard Access!
                 </p>
               </div>
             </div>
