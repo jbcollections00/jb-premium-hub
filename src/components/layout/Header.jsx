@@ -64,11 +64,11 @@ export default function Header() {
         setUserInitial(email.charAt(0).toUpperCase());
       }
 
-      // Kukunin LANG ang bilang ng UNREAD messages (is_read == false o null)
+      // Pinipigilan din ang pagbilang ng duplicates sa badge counter
       const { count, error } = await supabase
         .from("admin_messages")
         .select("*", { count: "exact", head: true })
-        .or(`user_id.eq.${session.user.id},send_to_all.eq.true`)
+        .or(`user_id.eq.${session.user.id},and(send_to_all.eq.true,user_id.is.null)`)
         .or("is_read.eq.false,is_read.is.null");
 
       if (!error && count !== null) {
@@ -220,6 +220,7 @@ export default function Header() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {/* 🔧 FIXED: Inayos ang 'alignItems' mula sa 'itemsCenter' */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
             <span style={{ fontSize: '1.15rem', fontWeight: 800, background: 'linear-gradient(to right, #60a5fa, #818cf8, #c084fc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               JB
@@ -242,7 +243,7 @@ export default function Header() {
       <div className="nav-controls">
         {/* 👤 Profile Link */}
         <Link to="/profile" className="nav-item-btn" title="Profile">
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(to top right, #2563eb, #6366f1)', display: 'flex', itemsCenter: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px', color: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(to top right, #2563eb, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px', color: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
             {userInitial}
           </div>
           <span className="hide-on-mobile">Profile</span>

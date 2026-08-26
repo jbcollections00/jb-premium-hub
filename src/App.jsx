@@ -9,6 +9,7 @@ import Home from './pages/public/Home';
 import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
+import BuyVip from './pages/public/BuyVip'; // 👈 In-import ang BuyVip
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
@@ -35,6 +36,7 @@ function App() {
           <Route path="/activate" element={<ActivateCode />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/messages" element={<Messages />} />
+          <Route path="/buy-vip" element={<BuyVip />} /> {/* 👈 Idinagdag ang /buy-vip route */}
           
           {/* Footer Legal Routes */}
           <Route path="/terms" element={<TermsPage />} />

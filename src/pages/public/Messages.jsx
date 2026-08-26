@@ -26,9 +26,8 @@ export default function Messages() {
     };
   }, []);
 
-  // Isang function para sa sabay na pag-update ng UI at Database kapag nabasa ang message
+  // Function para sa sabay na pag-update ng UI at Database kapag nabasa ang message
   const markAsReadInDBAndLocal = async (msgId) => {
-    // 1. Instant Local State Update
     setMessages((prev) =>
       prev.map((m) => (m.id === msgId ? { ...m, is_read: true } : m))
     );
@@ -36,10 +35,8 @@ export default function Messages() {
       prev?.id === msgId ? { ...prev, is_read: true } : prev
     );
 
-    // 2. I-notify ang Navbar para mag-update agad ang badge number
     window.dispatchEvent(new Event("messagesUpdated"));
 
-    // 3. Supabase Database Update
     const { error } = await supabase
       .from("admin_messages")
       .update({ is_read: true })
@@ -56,10 +53,11 @@ export default function Messages() {
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.user) {
+      // 🟢 FIX: Kukunin lang ang direct user messages O totoong global broadcast (kung saan user_id ay NULL)
       const { data, error } = await supabase
         .from("admin_messages")
         .select("*")
-        .or(`user_id.eq.${session.user.id},send_to_all.eq.true`)
+        .or(`user_id.eq.${session.user.id},and(send_to_all.eq.true,user_id.is.null)`)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -71,7 +69,6 @@ export default function Messages() {
           const firstMsg = data[0];
           setSelectedMessage(firstMsg);
 
-          // 🚀 KAPAG NAKALOAD ANG PAGE AT UNREAD ANG UNANG MESSAGE, I-MARK AS READ AGAD NITO SA DB AT NAVBAR
           if (!firstMsg.is_read) {
             markAsReadInDBAndLocal(firstMsg.id);
           }
@@ -85,13 +82,11 @@ export default function Messages() {
     setLoading(false);
   };
 
-  // ✉️ MARK AS READ BUTTON
   const handleMarkAsRead = async (msgId, e) => {
     if (e) e.stopPropagation();
     await markAsReadInDBAndLocal(msgId);
   };
 
-  // 📩 MARK AS UNREAD BUTTON
   const handleMarkAsUnread = async (msgId, e) => {
     if (e) e.stopPropagation();
 
@@ -113,7 +108,6 @@ export default function Messages() {
     }
   };
 
-  // 🗑️ DELETE MESSAGE BUTTON
   const handleDeleteMessage = async (msgId, e) => {
     if (e) e.stopPropagation();
 
@@ -142,7 +136,6 @@ export default function Messages() {
     }
   };
 
-  // Kapag kinlik ang ibang mensahe sa kaliwang listahan
   const handleSelectMessage = (item) => {
     setSelectedMessage(item);
     if (!item.is_read) {
@@ -159,6 +152,58 @@ export default function Messages() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const getPreviewText = (text) => {
+    if (!text) return "";
+    return text.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  };
+
+  const renderFormattedContent = (content) => {
+    if (!content) return null;
+
+    const lines = content.split("\n");
+
+    return (
+      <div className="space-y-3 font-sans text-slate-200">
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return <div key={idx} className="h-1" />;
+
+          const isBullet =
+            trimmed.startsWith("•") ||
+            trimmed.startsWith("-") ||
+            trimmed.startsWith("*");
+
+          if (isBullet) {
+            const textOnly = trimmed.replace(/^[•\-\*]\s*/, "");
+            const isVideo =
+              textOnly.match(/\.(mp4|mkv|mov|avi|webm)$/i) ||
+              textOnly.toLowerCase().includes("video");
+
+            return (
+              <div
+                key={idx}
+                className="flex items-center gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-sky-500/30 transition-all group"
+              >
+                <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center text-sm shadow-sm">
+                  {isVideo ? "🎬" : "📌"}
+                </span>
+                <span className="text-xs md:text-sm font-medium text-slate-200 break-all group-hover:text-sky-300 transition-colors">
+                  {textOnly}
+                </span>
+              </div>
+            );
+          }
+
+          return (
+            <p key={idx} className="text-sm md:text-base text-slate-300 leading-relaxed">
+              {line}
+            </p>
+          );
+        })}
+      </div>
+    );
   };
 
   const unreadCount = messages.filter((m) => !m.is_read).length;
@@ -243,7 +288,7 @@ export default function Messages() {
                       </h3>
 
                       <p className="text-xs text-slate-400 line-clamp-2 mt-1">
-                        {item.content || item.message}
+                        {getPreviewText(item.content || item.message)}
                       </p>
                     </div>
                   );
@@ -275,7 +320,7 @@ export default function Messages() {
                         </div>
                       </div>
 
-                      {/* 🛠️ Action Buttons (Mark Read / Mark Unread / Delete) */}
+                      {/* Action Buttons */}
                       <div className="flex items-center gap-2 self-end sm:self-auto">
                         {selectedMessage.is_read ? (
                           <button
@@ -311,19 +356,19 @@ export default function Messages() {
                   </div>
 
                   {/* Message Body */}
-                  <div className="py-6 text-slate-300 text-sm md:text-base leading-relaxed space-y-4 flex-1">
-                    <p className="whitespace-pre-line bg-slate-950/50 border border-slate-800/80 p-5 rounded-2xl font-mono text-xs md:text-sm">
-                      {selectedMessage.content || selectedMessage.message}
-                    </p>
+                  <div className="py-6 flex-1">
+                    <div className="bg-slate-950/40 border border-slate-800/80 p-5 rounded-2xl shadow-inner">
+                      {renderFormattedContent(selectedMessage.content || selectedMessage.message)}
+                    </div>
 
-                    {/* 🖼️ ATTACHMENT DISPLAY (IMAGE / VIDEO) */}
+                    {/* Attachment Display */}
                     {selectedMessage.attachment_url && (
                       <div className="mt-4 rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-2">
                         {selectedMessage.attachment_type === "image" ||
                         selectedMessage.attachment_url.match(/\.(jpeg|jpg|gif|png|webp)/i) ? (
                           <img
                             src={selectedMessage.attachment_url}
-                            alt="Message Attachment"
+                            alt="Attachment"
                             className="w-full max-h-[450px] object-contain rounded-lg"
                           />
                         ) : (

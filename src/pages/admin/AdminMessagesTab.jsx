@@ -6,39 +6,39 @@ export default function AdminMessagesTab({ users = [] }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachmentType, setAttachmentType] = useState('image'); // 'image' or 'video'
+  const [attachmentType, setAttachmentType] = useState('image');
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
 
-  // 📝 PRESET AUTOMATED TEMPLATES (Manual Broadcasts / Updates Only)
+  // Preset Automated Message Templates
   const MESSAGE_TEMPLATES = [
     {
       id: 'custom',
-      label: '✍️ Custom Message (Blank)',
+      label: 'Custom Message (Blank)',
       title: '',
       content: ''
     },
     {
       id: 'new_content',
-      label: '🍿 New Content Drop Alert',
-      title: '🍿 New Exclusive Content Available in Vault!',
-      content: 'Fresh high-quality content has just been uploaded to the Vault! Check it out now while it is hot.'
+      label: 'New Content Release',
+      title: 'New Content Available in Vault',
+      content: 'Exclusive new media has just been added to the Vault. Log in to explore the latest updates.'
     },
     {
       id: 'new_code',
-      label: '🔑 Monthly Code Distribution',
-      title: '🔑 Your New Monthly VIP Access Code',
-      content: 'Here is your new VIP Access Code for this month. Please copy and redeem it in your profile settings to extend your membership:'
+      label: 'VIP Access Code Delivery',
+      title: 'Your VIP Access Code',
+      content: 'Thank you for your purchase. Below is your VIP Access Code:\n\n[INSERT_CODE_HERE]\n\nYou can redeem this code directly in your Account Profile settings.'
     },
     {
       id: 'support_update',
-      label: '🛠️ Support Ticket Resolution',
-      title: '🛠️ Support Ticket Update',
-      content: 'We have reviewed and resolved your submitted support ticket. Thank you for your patience and cooperation.'
+      label: 'Support Ticket Resolution',
+      title: 'Support Ticket Status Update',
+      content: 'Your support inquiry has been reviewed and resolved. Please let us know if you require any further assistance.'
     }
   ];
 
-  // Template Selector Handler
   const handleSelectTemplate = (e) => {
     const selectedId = e.target.value;
     const template = MESSAGE_TEMPLATES.find((t) => t.id === selectedId);
@@ -49,95 +49,117 @@ export default function AdminMessagesTab({ users = [] }) {
     }
   };
 
-  // File Upload Handler (Supabase Storage)
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setUploading(true);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `msg_attach_${Date.now()}.${fileExt}`;
-    const filePath = `messages/${fileName}`;
+    setStatusMsg({ type: '', text: '' });
 
-    if (file.type.startsWith('video/')) {
-      setAttachmentType('video');
-    } else {
-      setAttachmentType('image');
-    }
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `msg_attach_${Date.now()}.${fileExt}`;
+      const filePath = `messages/${fileName}`;
 
-    const { error } = await supabase.storage
-      .from('vault_media')
-      .upload(filePath, file);
+      const isVideo = file.type.startsWith('video/');
+      setAttachmentType(isVideo ? 'video' : 'image');
 
-    if (error) {
-      alert('Upload Error: ' + error.message);
-    } else {
+      const { error } = await supabase.storage
+        .from('vault_media')
+        .upload(filePath, file);
+
+      if (error) throw error;
+
       const { data } = supabase.storage.from('vault_media').getPublicUrl(filePath);
       setAttachmentUrl(data.publicUrl);
+      setStatusMsg({ type: 'success', text: 'Attachment uploaded successfully.' });
+    } catch (error) {
+      setStatusMsg({ type: 'error', text: 'Upload failed: ' + error.message });
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    setStatusMsg({ type: '', text: '' });
+
     if (!selectedUser) {
-      alert('Please select a recipient first.');
+      setStatusMsg({ type: 'error', text: 'Please select a recipient or broadcast option.' });
       return;
     }
     if (!title.trim() || !content.trim()) {
-      alert('Please enter both Title and Message content.');
+      setStatusMsg({ type: 'error', text: 'Message title and content fields are required.' });
       return;
     }
 
     setSending(true);
 
-    const { error } = await supabase.from('admin_messages').insert([
-      {
-        user_id: selectedUser === 'ALL' ? null : selectedUser,
-        send_to_all: selectedUser === 'ALL',
-        title: title.trim(),
-        message: content.trim(),
-        attachment_url: attachmentUrl.trim() || null,
-        attachment_type: attachmentUrl.trim() ? attachmentType : null,
-        is_read: false
-      }
-    ]);
+    try {
+      const { error } = await supabase.from('admin_messages').insert([
+        {
+          user_id: selectedUser === 'ALL' ? null : selectedUser,
+          send_to_all: selectedUser === 'ALL',
+          title: title.trim(),
+          message: content.trim(),
+          attachment_url: attachmentUrl.trim() || null,
+          attachment_type: attachmentUrl.trim() ? attachmentType : null,
+          is_read: false
+        }
+      ]);
 
-    if (error) {
-      alert('Error sending message: ' + error.message);
-    } else {
-      alert('✅ Message sent successfully!');
+      if (error) throw error;
+
+      setStatusMsg({ type: 'success', text: 'Message dispatched successfully!' });
       setTitle('');
       setContent('');
       setAttachmentUrl('');
       setSelectedUser('');
+    } catch (error) {
+      setStatusMsg({ type: 'error', text: 'Failed to send message: ' + error.message });
+    } finally {
+      setSending(false);
     }
-
-    setSending(false);
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl font-sans">
       <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">Compose Admin Message</h1>
-        <p className="text-xs text-gray-400 mt-1">
-          Send announcements, warnings, or direct updates with automated templates and media attachments.
+        <h1 className="text-2xl font-bold text-white tracking-tight">Compose Admin Message</h1>
+        <p className="text-xs text-slate-400 mt-1">
+          Dispatch direct messages, account updates, or system-wide announcements to registered users.
         </p>
       </div>
 
-      <form onSubmit={handleSendMessage} className="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-5">
-        {/* RECIPIENT SELECTOR */}
+      <form onSubmit={handleSendMessage} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-5 shadow-xl">
+        
+        {/* Status Alert Banner */}
+        {statusMsg.text && (
+          <div
+            className={`p-4 rounded-xl text-xs font-semibold border transition-all ${
+              statusMsg.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}
+          >
+            {statusMsg.text}
+          </div>
+        )}
+
+        {/* Recipient Selection */}
         <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-            Send To (Select User):
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+            Target Recipient <span className="text-rose-500">*</span>
           </label>
           <select
             value={selectedUser}
             onChange={(e) => setSelectedUser(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-xs font-medium focus:outline-none focus:border-red-500 cursor-pointer"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs font-medium focus:outline-none focus:border-red-500 transition-colors cursor-pointer"
           >
-            <option value="">-- Select Recipient --</option>
-            <option value="ALL">📢 BROADCAST TO ALL USERS</option>
+            <option value="">-- Select Target User --</option>
+            <option value="ALL" className="font-bold text-amber-400">
+              📢 BROADCAST TO ALL USERS
+            </option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.full_name || u.email || 'Unnamed User'} ({u.account_type || 'STANDARD'})
@@ -146,14 +168,14 @@ export default function AdminMessagesTab({ users = [] }) {
           </select>
         </div>
 
-        {/* AUTOMATED TEMPLATE SELECTOR */}
-        <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-800">
-          <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
-            ⚡ Quick Load Preset Template:
+        {/* Template Selector */}
+        <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80 space-y-2">
+          <label className="block text-xs font-semibold text-amber-400 uppercase tracking-wider">
+            ⚡ Quick Load Preset Template
           </label>
           <select
             onChange={handleSelectTemplate}
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-xs font-semibold focus:outline-none focus:border-amber-500 cursor-pointer"
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 text-xs font-medium focus:outline-none focus:border-amber-500 transition-colors cursor-pointer"
           >
             {MESSAGE_TEMPLATES.map((tmpl) => (
               <option key={tmpl.id} value={tmpl.id}>
@@ -163,35 +185,37 @@ export default function AdminMessagesTab({ users = [] }) {
           </select>
         </div>
 
-        {/* TITLE */}
+        {/* Title Input */}
         <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Message Title:</label>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+            Message Title <span className="text-rose-500">*</span>
+          </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. You have been upgraded to VIP!"
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-red-500"
+            placeholder="e.g. VIP Subscription Code Delivery"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-red-500 transition-colors"
           />
         </div>
 
-        {/* MESSAGE CONTENT */}
+        {/* Message Body */}
         <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-            Message Content:
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+            Message Content <span className="text-rose-500">*</span>
           </label>
           <textarea
             rows={5}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Type your message here..."
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl p-4 text-white text-xs focus:outline-none focus:border-red-500 resize-none"
+            placeholder="Write message details or paste code specifications..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white text-xs focus:outline-none focus:border-red-500 transition-colors resize-none"
           />
         </div>
 
-        {/* ATTACHMENT SECTION */}
-        <div className="space-y-3 bg-gray-800/30 p-4 rounded-xl border border-gray-800">
-          <label className="block text-xs font-bold text-sky-400 uppercase tracking-wider">
+        {/* Media Attachments */}
+        <div className="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+          <label className="block text-xs font-semibold text-sky-400 uppercase tracking-wider">
             📎 Media Attachment (Optional)
           </label>
 
@@ -201,8 +225,8 @@ export default function AdminMessagesTab({ users = [] }) {
                 type="text"
                 value={attachmentUrl}
                 onChange={(e) => setAttachmentUrl(e.target.value)}
-                placeholder="Paste Direct Image/Video URL or Upload File below"
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-sky-500"
+                placeholder="Paste direct media URL or upload file below"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-sky-500 transition-colors"
               />
             </div>
 
@@ -210,17 +234,24 @@ export default function AdminMessagesTab({ users = [] }) {
               <select
                 value={attachmentType}
                 onChange={(e) => setAttachmentType(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none cursor-pointer"
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none cursor-pointer"
               >
-                <option value="image">🖼️ Image</option>
-                <option value="video">🎥 Video</option>
+                <option value="image">🖼️ Image File</option>
+                <option value="video">🎥 Video File</option>
               </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold px-3 py-2 rounded-xl border border-gray-700 cursor-pointer transition-all">
-              {uploading ? 'Uploading...' : '📁 Choose File to Upload'}
+          <div className="flex items-center gap-3 pt-1">
+            <label className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-700 cursor-pointer transition-all inline-flex items-center gap-2">
+              {uploading ? (
+                <>
+                  <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></span>
+                  Uploading...
+                </>
+              ) : (
+                '📁 Upload Local File'
+              )}
               <input
                 type="file"
                 accept="image/*,video/*"
@@ -229,41 +260,49 @@ export default function AdminMessagesTab({ users = [] }) {
                 className="hidden"
               />
             </label>
+
             {attachmentUrl && (
               <button
                 type="button"
                 onClick={() => setAttachmentUrl('')}
-                className="text-xs text-rose-400 hover:underline cursor-pointer"
+                className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
               >
                 Remove Attachment
               </button>
             )}
           </div>
 
-          {/* MEDIA PREVIEW */}
+          {/* Media Preview Box */}
           {attachmentUrl && (
-            <div className="mt-3 p-3 bg-gray-900 rounded-xl border border-gray-800">
-              <p className="text-[10px] text-gray-400 uppercase font-bold mb-2">Attachment Preview:</p>
+            <div className="mt-3 p-3 bg-slate-900 rounded-xl border border-slate-800">
+              <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">Attachment Preview</p>
               {attachmentType === 'image' ? (
                 <img
                   src={attachmentUrl}
                   alt="Attachment Preview"
-                  className="max-h-48 rounded-lg object-contain bg-black"
+                  className="max-h-48 rounded-lg object-contain bg-slate-950"
                 />
               ) : (
-                <video src={attachmentUrl} controls className="max-h-48 rounded-lg bg-black w-full" />
+                <video src={attachmentUrl} controls className="max-h-48 rounded-lg bg-slate-950 w-full" />
               )}
             </div>
           )}
         </div>
 
-        {/* SUBMIT BUTTON */}
+        {/* Submit Action Button */}
         <button
           type="submit"
           disabled={sending || uploading}
-          className="w-full bg-red-600 hover:bg-red-500 disabled:bg-gray-800 text-white font-bold py-3.5 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20 text-sm"
+          className="w-full bg-red-600 hover:bg-red-500 disabled:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-950/50 text-xs uppercase tracking-wider flex items-center justify-center gap-2"
         >
-          {sending ? 'Sending Message...' : 'Send Message 📩'}
+          {sending ? (
+            <>
+              <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+              Dispatching Message...
+            </>
+          ) : (
+            'Dispatch Admin Message ✉️'
+          )}
         </button>
       </form>
     </div>

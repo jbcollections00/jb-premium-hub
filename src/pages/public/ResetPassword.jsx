@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
@@ -9,6 +9,20 @@ export default function ResetPassword() {
   const [msg, setMsg] = useState({ type: '', text: '' });
 
   const navigate = useNavigate();
+
+  // 🛡️ Guard: Siguraduhing may valid session mula sa recovery email
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setMsg({
+          type: 'error',
+          text: '⛔ Invalid or expired password reset link. Please request a new one.',
+        });
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleResetPassword = async (e) => {
     e.preventDefault();
@@ -41,7 +55,7 @@ export default function ResetPassword() {
         text: '🎉 Password updated successfully! Redirecting to login...',
       });
 
-      // 3. Auto-redirect pabalik sa Login pagkatapos ng 2.5 seconds
+      // 3. Auto-redirect pabalik sa Login
       setTimeout(() => {
         navigate('/login');
       }, 2500);
@@ -61,7 +75,7 @@ export default function ResetPassword() {
           </p>
         </div>
 
-        {/* Dynamic Success/Error Alert Banner */}
+        {/* Dynamic Alert Banner */}
         {msg.text && (
           <div
             className={`text-sm p-3 rounded-xl mb-4 text-center font-medium ${
@@ -104,7 +118,7 @@ export default function ResetPassword() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
           >
             {loading ? 'Updating Password...' : 'Save New Password'}
           </button>
