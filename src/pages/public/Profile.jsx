@@ -58,7 +58,7 @@ export default function Profile() {
 
         if (profile) {
           setProfileData(profile);
-          setDisplayName(profile.display_name || user.email?.split("@")[0] || "");
+          setDisplayName(profile.full_name || profile.display_name || user.email?.split("@")[0] || "");
         }
 
         const { data: activeCodes } = await supabase
@@ -113,7 +113,10 @@ export default function Profile() {
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ display_name: displayName.trim() })
+        .update({ 
+          full_name: displayName.trim(),
+          display_name: displayName.trim() 
+        })
         .eq("id", user.id);
 
       if (error) throw error;
@@ -263,8 +266,9 @@ export default function Profile() {
     );
   }
 
-  const accountType = profileData?.account_type || "STANDARD";
-  const isVip = accountType.toUpperCase() === "VIP";
+  const rawAccountType = (profileData?.account_type || "STANDARD").toLowerCase();
+  const isAdmin = rawAccountType === "admin";
+  const isVip = rawAccountType === "vip" || profileData?.is_activated;
 
   const faqs = [
     {
@@ -313,15 +317,20 @@ export default function Profile() {
               </h2>
               <p className="text-xs text-slate-400 truncate mb-3">{user?.email}</p>
 
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                  isVip
-                    ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                    : "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                }`}
-              >
-                {isVip ? "👑 VIP Member" : "👤 Standard Member"}
-              </span>
+              {/* Dynamic Account Badge */}
+              {isAdmin ? (
+                <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border bg-purple-500/20 text-purple-400 border-purple-500/40">
+                  ⚙️ Admin Member
+                </span>
+              ) : isVip ? (
+                <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border bg-amber-500/10 text-amber-400 border-amber-500/30">
+                  👑 VIP Member
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border bg-blue-500/10 text-blue-400 border-blue-500/30">
+                  👤 Standard Member
+                </span>
+              )}
 
               {/* BUY VIP ACCESS BUTTON */}
               <button
@@ -332,7 +341,7 @@ export default function Profile() {
               </button>
 
               {/* Countdown Display */}
-              {isVip && expirationDate && (
+              {(isVip || isAdmin) && expirationDate && (
                 <div className="mt-4 p-4 rounded-xl bg-slate-950/90 border border-amber-500/20 text-left">
                   <p className="text-[11px] uppercase font-bold text-amber-400 tracking-wider text-center mb-2">
                     ⏳ VIP Remaining Access Time
