@@ -1,28 +1,44 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
 export default function Signup() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [is18Plus, setIs18Plus] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  
-  const navigate = useNavigate();
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // Live Field Validation Logic
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  const isEmailValid = emailRegex.test(email.trim());
+  const isPasswordValid = password.trim().length >= 6;
+  const isNameValid = fullName.trim().length >= 2;
 
   const handleSignup = async (e) => {
     e.preventDefault();
+    if (!is18Plus) {
+      setErrorMsg('You must be 18+ years old to register.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg('');
 
-    // 1. Register the user in Supabase Auth
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPassword = password.trim();
+
+    // Create Supabase Auth Account
+    const { error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password: trimmedPassword,
       options: {
-        data: { full_name: fullName },
+        data: { full_name: trimmedName, email: trimmedEmail },
       },
     });
 
@@ -32,152 +48,172 @@ export default function Signup() {
       return;
     }
 
-    // 2. On success, generate an Unlimited Standard Access Code
-    if (data?.user) {
-      const generatedCode = 'VAULT-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-
-      // Save the Access Code to the database with duration_days: null (Unlimited)
-      const { error: codeError } = await supabase.from('access_codes').insert([{
-        code: generatedCode,
-        type: 'STANDARD',
-        is_used: false,
-        duration_days: null // Unlimited duration for standard access
-      }]);
-
-      if (codeError) {
-        console.error("🚨 CRITICAL: Failed to save access code to DB:", codeError.message);
-        setErrorMsg("Account created, but we couldn't generate your code. Please contact Admin.");
-      }
-
-      // 3. Send the Welcome Message
-      const messageContent = `Hi ${fullName || 'User'}! Thank you for registering.
-
-🔑 Your Standard Access Code is: ${generatedCode}
-
-Go to your Profile page and enter this code to activate your Unlimited Standard Access whenever you're ready!`;
-
-      const { error: msgError } = await supabase.from('admin_messages').insert([{
-        user_id: data.user.id,
-        title: '🎉 Welcome to JB PREMIUM HUB!',
-        message: messageContent,
-        content: messageContent,
-        is_read: false,
-        send_to_all: false
-      }]);
-
-      if (msgError) {
-        console.error("Failed to send welcome message:", msgError.message);
-      }
-    }
-
     setLoading(false);
-    setShowModal(true); // Open Success Modal
+    setIsSubmitted(true);
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4 relative">
-      <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-md w-full shadow-2xl">
-        <h2 className="text-2xl font-bold text-white mb-2 text-center">Create an Account</h2>
-        <p className="text-gray-400 text-sm mb-6 text-center">Sign up to unlock exclusive vault media</p>
-
-        {errorMsg && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-xl mb-4 text-center">
-            {errorMsg}
-          </div>
-        )}
-
-        <form onSubmit={handleSignup} className="flex flex-col gap-4">
-          <div>
-            <label className="text-gray-400 text-xs mb-1 block">Full Name</label>
-            <input 
-              type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)}
-              placeholder="Juan Dela Cruz" 
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="text-gray-400 text-xs mb-1 block">Email Address</label>
-            <input 
-              type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="user@example.com" 
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="text-gray-400 text-xs mb-1 block">Password</label>
-            <input 
-              type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••" 
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <button 
-            type="submit" disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
-          >
-            {loading ? 'Creating Account...' : 'Create Account'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-sm text-gray-400">
-          Already have an account? <Link to="/login" className="text-blue-400 hover:underline font-semibold">Log In</Link>
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
+      <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-md w-full shadow-2xl space-y-6">
+        
+        {/* Logo & Header Section */}
+        <div className="text-center">
+          <img 
+            src="/jb-logo.png" 
+            alt="JB Logo" 
+            className="w-16 h-16 mx-auto mb-3 object-contain drop-shadow-md"
+          />
+          <h2 className="text-2xl font-bold text-white">Create an Account</h2>
+          <p className="text-slate-400 text-xs mt-1">Sign up to unlock immediate access to the vault</p>
         </div>
-      </div>
 
-      {/* 🔔 SUCCESS POPUP MODAL WITH UNLIMITED ACCESS INSTRUCTIONS */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-5 shadow-2xl">
-            <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+        {/* Confirmation Screen with Spam Instructions */}
+        {isSubmitted ? (
+          <div className="text-center space-y-4 pt-2">
+            <div className="w-12 h-12 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-2xl">
               📩
             </div>
-
-            <div className="space-y-1">
-              <h3 className="text-xl font-extrabold text-white">Account Created Successfully!</h3>
-              <p className="text-xs text-gray-400">
-                Follow these simple steps to retrieve and activate your code:
+            
+            <div>
+              <h3 className="font-bold text-white text-lg">Check Your Inbox</h3>
+              <p className="text-xs text-slate-300 mt-1">
+                We sent a confirmation link to <span className="font-bold text-emerald-400">{email}</span>.
               </p>
             </div>
 
-            {/* 📌 STEP-BY-STEP INSTRUCTION BOX */}
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 text-left space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white rounded-full text-[10px] font-bold shrink-0 mt-0.5">
-                  1
-                </span>
-                <p className="text-xs text-gray-300">
-                  Click <span className="text-blue-400 font-bold">Open Messages</span> to copy your <span className="text-amber-400 font-bold">Standard Access Code</span>.
-                </p>
+            {/* Spam Folder Guidance Box */}
+            <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl text-left space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 text-sm">⚠️</span>
+                <p className="text-xs font-bold text-amber-300">Check your Spam or Junk folder</p>
               </div>
-
-              <div className="flex items-start gap-3">
-                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white rounded-full text-[10px] font-bold shrink-0 mt-0.5">
-                  2
-                </span>
-                <p className="text-xs text-gray-300">
-                  Go to your <span className="text-blue-400 font-bold">Profile Page</span>.
-                </p>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white rounded-full text-[10px] font-bold shrink-0 mt-0.5">
-                  3
-                </span>
-                <p className="text-xs text-gray-300">
-                  Paste the code into the <span className="text-emerald-400 font-bold">Redeem Access Code</span> section to activate your unlimited Standard Access!
-                </p>
-              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Verification emails frequently land in <span className="font-semibold text-amber-400">Spam</span>. If you don't see it in your main inbox:
+              </p>
+              <ol className="text-[11px] text-slate-300 space-y-1.5 list-decimal list-inside pl-1">
+                <li>Open your <span className="font-semibold text-white">Spam / Junk / Social</span> folder.</li>
+                <li>Find the email titled <span className="font-semibold text-white">"Confirm your mail"</span>.</li>
+                <li>Click <span className="font-semibold text-emerald-400">"Report as Not Spam"</span> or move it to your main inbox—otherwise, email providers disable the verification link inside.</li>
+              </ol>
             </div>
 
-            <button
-              onClick={() => navigate('/messages')}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
-            >
-              Open Messages & Copy Code 💬
-            </button>
+            {/* Action Buttons */}
+            <div className="pt-2 space-y-2">
+              <Link 
+                to="/login" 
+                className="block w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-3 rounded-xl transition-all"
+              >
+                I Confirmed My Email → Go to Login
+              </Link>
+              <button 
+                type="button"
+                onClick={() => setIsSubmitted(false)}
+                className="text-xs text-slate-400 hover:text-white underline cursor-pointer block mx-auto pt-1"
+              >
+                Entered wrong email? Click here to fix it
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <>
+            {errorMsg && (
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs p-3 rounded-xl text-center">
+                {errorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleSignup} className="space-y-4">
+              {/* Full Name Field */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-slate-400 text-xs">Full Name</label>
+                  {fullName && (
+                    <span className={`text-[10px] ${isNameValid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {isNameValid ? '✓ Valid' : 'Min 2 chars'}
+                    </span>
+                  )}
+                </div>
+                <input 
+                  type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Juan Dela Cruz" 
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Email Address Field */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-slate-400 text-xs">Email Address</label>
+                  {email && (
+                    <span className={`text-[10px] ${isEmailValid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {isEmailValid ? '✓ Valid Email' : 'Invalid format'}
+                    </span>
+                  )}
+                </div>
+                <input 
+                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@example.com" 
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Password Field with Eye Toggle */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-slate-400 text-xs">Password</label>
+                  {password && (
+                    <span className={`text-[10px] ${isPasswordValid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {isPasswordValid ? '✓ Strong' : 'Min 6 chars'}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    required value={password} onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••" 
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3.5 text-slate-400 hover:text-white text-xs cursor-pointer"
+                  >
+                    {showPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
+              </div>
+
+              {/* 18+ Verification Checkbox */}
+              <div className="flex items-start gap-2.5 pt-1">
+                <input 
+                  type="checkbox" 
+                  id="ageCheck" 
+                  required 
+                  checked={is18Plus} 
+                  onChange={(e) => setIs18Plus(e.target.checked)}
+                  className="mt-0.5 rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer"
+                />
+                <label htmlFor="ageCheck" className="text-xs text-slate-300 cursor-pointer leading-tight">
+                  I confirm I am <span className="text-amber-400 font-bold">18+ years of age</span> and agree to the Terms of Service.
+                </label>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={loading || !is18Plus || !isEmailValid || !isPasswordValid || !isNameValid}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
+              >
+                {loading ? 'Creating Account...' : 'Create Account & Start Watching'}
+              </button>
+            </form>
+
+            <div className="text-center text-xs text-slate-400">
+              Already have an account? <Link to="/login" className="text-blue-400 hover:underline font-semibold">Log In</Link>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

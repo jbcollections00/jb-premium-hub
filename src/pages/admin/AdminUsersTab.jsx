@@ -20,7 +20,6 @@ export default function AdminUsers() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      // Guard against unmounted state or no authenticated user
       if (!user || !isMounted) return;
 
       const existingChannel = supabase
@@ -60,7 +59,6 @@ export default function AdminUsers() {
     };
   }, []);
 
-  // 1. Fetch Users List
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -78,7 +76,6 @@ export default function AdminUsers() {
     }
   };
 
-  // 2. Impersonation Link Handler
   const handleAccessAccount = async (userAccount) => {
     if (!userAccount?.id && !userAccount?.email) {
       alert("Cannot impersonate: Invalid user profile.");
@@ -92,7 +89,6 @@ export default function AdminUsers() {
     try {
       setActionInProgress(userAccount.id);
 
-      // Verify active admin session and retrieve session token
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         alert("Authentication error: Session expired. Please log in again as Admin.");
@@ -133,7 +129,6 @@ export default function AdminUsers() {
     }
   };
 
-  // 3. Promote / Demote VIP (Optimistic Update)
   const handleToggleVip = async (userId, currentType) => {
     const newType = currentType === "VIP" ? "STANDARD" : "VIP";
     setActionInProgress(userId);
@@ -153,7 +148,6 @@ export default function AdminUsers() {
     setActionInProgress(null);
   };
 
-  // 4. Ban / Unban User (Optimistic Update)
   const handleBanUser = async (userId, isBanned) => {
     setActionInProgress(userId);
 
@@ -172,7 +166,6 @@ export default function AdminUsers() {
     setActionInProgress(null);
   };
 
-  // 5. Delete User Profile
   const handleDeleteUser = async (userId) => {
     if (!window.confirm("Are you sure you want to delete this user profile?")) return;
     setActionInProgress(userId);
@@ -187,7 +180,6 @@ export default function AdminUsers() {
     setActionInProgress(null);
   };
 
-  // Search & Filter Logic
   const filteredUsers = users.filter((u) => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
@@ -205,7 +197,6 @@ export default function AdminUsers() {
 
   return (
     <div className="p-6 bg-slate-950 text-white min-h-screen">
-      {/* Search & Filter Header */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6">
         <div className="relative w-full md:w-1/2">
           <input
@@ -232,7 +223,6 @@ export default function AdminUsers() {
         </div>
       </div>
 
-      {/* Main Content Area */}
       {loading ? (
         <div className="text-center py-12 text-slate-400 text-xs">Loading users...</div>
       ) : filteredUsers.length === 0 ? (
@@ -253,7 +243,6 @@ export default function AdminUsers() {
                   isProcessing ? "opacity-50 pointer-events-none" : ""
                 }`}
               >
-                {/* User Metadata */}
                 <div className="space-y-1">
                   <div className="flex items-center gap-3 flex-wrap">
                     <span
@@ -296,12 +285,8 @@ export default function AdminUsers() {
                     {item.email || "No email linked"}
                   </p>
                   <p className="text-[11px] text-slate-500 font-mono">ID: {item.id}</p>
-                  <p className="text-xs text-slate-400">
-                    Watch Tokens: <span className="text-amber-400 font-bold">{item.tokens || 0}</span> | Daily Views Used: <span className="text-white font-bold">{item.views_used || 0}/5</span>
-                  </p>
                 </div>
 
-                {/* Control Buttons */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => handleAccessAccount(item)}

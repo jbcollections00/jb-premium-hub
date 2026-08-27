@@ -5,31 +5,72 @@ import { supabase } from '../../services/supabaseClient';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
   const navigate = useNavigate();
 
-  // Function para sa normal login
+  // Handle standard user login
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMsg({ type: '', text: '' });
 
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPassword = password.trim();
+
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
+      email: trimmedEmail,
+      password: trimmedPassword,
     });
 
     if (error) {
-      setMsg({ type: 'error', text: error.message });
       setLoading(false);
+      if (error.message.toLowerCase().includes('email not confirmed')) {
+        setMsg({
+          type: 'unconfirmed',
+          text: 'Email not confirmed yet. Please check your Inbox and Spam folder for the verification link.',
+        });
+      } else {
+        setMsg({ type: 'error', text: error.message });
+      }
     } else {
-      navigate('/home');
+      setLoading(false);
+      navigate('/profile');
     }
   };
 
-  // Function para sa Forgot Password
+  // Handle resending unconfirmed account emails
+  const handleResendConfirmation = async () => {
+    if (!email.trim()) {
+      setMsg({ type: 'error', text: 'Please enter your email address first.' });
+      return;
+    }
+
+    setResending(true);
+    setMsg({ type: '', text: '' });
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+    });
+
+    setResending(false);
+
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+    } else {
+      setMsg({
+        type: 'success',
+        text: '📩 New confirmation link sent! Check your Inbox and Spam folder.',
+      });
+    }
+  };
+
+  // Handle inline password reset link request
   const handleForgotPassword = async () => {
     if (!email.trim()) {
       setMsg({ type: 'error', text: 'Please enter your email address first.' });
@@ -39,7 +80,7 @@ export default function Login() {
     setLoading(true);
     setMsg({ type: '', text: '' });
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
       redirectTo: `${window.location.origin}/reset-password`,
     });
 
@@ -48,7 +89,7 @@ export default function Login() {
     } else {
       setMsg({
         type: 'success',
-        text: '🎉 Password reset link sent! Please check your email inbox.',
+        text: '🎉 Password reset link sent! Check your email inbox.',
       });
     }
 
@@ -56,69 +97,100 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-md w-full shadow-2xl">
-        <h2 className="text-2xl font-bold text-white mb-2 text-center">Welcome Back</h2>
-        <p className="text-gray-400 text-sm mb-6 text-center">Log in to access your VIP status</p>
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
+      <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-md w-full shadow-2xl space-y-6">
+        
+        {/* Logo & Header Section */}
+        <div className="text-center">
+          <img 
+            src="/jb-logo.png" 
+            alt="JB Logo" 
+            className="w-16 h-16 mx-auto mb-3 object-contain drop-shadow-md"
+          />
+          <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
+          <p className="text-slate-400 text-xs mt-1">Log in to access your VIP status and vault</p>
+        </div>
 
-        {/* Dynamic Success or Error Banner */}
+        {/* Dynamic Alert Banner */}
         {msg.text && (
           <div
-            className={`text-sm p-3 rounded-xl mb-4 text-center font-medium ${
+            className={`text-xs p-3.5 rounded-xl text-center font-medium leading-relaxed ${
               msg.type === 'error'
-                ? 'bg-red-500/10 border border-red-500/30 text-red-400'
-                : 'bg-green-500/10 border border-green-500/30 text-green-400'
+                ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400'
+                : msg.type === 'unconfirmed'
+                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
+                : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
             }`}
           >
-            {msg.text}
+            <p>{msg.text}</p>
+            {msg.type === 'unconfirmed' && (
+              <button
+                type="button"
+                onClick={handleResendConfirmation}
+                disabled={resending}
+                className="mt-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer block mx-auto"
+              >
+                {resending ? 'Sending...' : 'Resend Confirmation Email'}
+              </button>
+            )}
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-4">
+        <form onSubmit={handleLogin} className="space-y-4">
+          {/* Email Address Field */}
           <div>
-            <label className="text-gray-400 text-xs mb-1 block">Email Address</label>
+            <label className="text-slate-400 text-xs block mb-1">Email Address</label>
             <input 
               type="email" 
               required 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@example.com" 
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+              className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
             />
           </div>
 
+          {/* Password Field with Eye Toggle */}
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="text-gray-400 text-xs">Password</label>
-              {/* FORGOT PASSWORD BUTTON */}
+              <label className="text-slate-400 text-xs">Password</label>
               <button
                 type="button"
                 onClick={handleForgotPassword}
-                className="text-xs text-blue-400 hover:underline cursor-pointer"
+                className="text-[11px] text-blue-400 hover:underline cursor-pointer"
               >
                 Forgot Password?
               </button>
             </div>
-            <input 
-              type="password" 
-              required 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••" 
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
-            />
+            <div className="relative">
+              <input 
+                type={showPassword ? 'text' : 'password'} 
+                required 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••" 
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3.5 text-slate-400 hover:text-white text-xs cursor-pointer"
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
 
           <button 
             type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
+            disabled={loading || !email || !password}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
           >
-            {loading ? 'Please wait...' : 'Log In'}
+            {loading ? 'Logging In...' : 'Log In'}
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-gray-400">
+        <div className="text-center text-xs text-slate-400">
           Don't have an account?{' '}
           <Link to="/signup" className="text-blue-400 hover:underline font-semibold">
             Sign Up
