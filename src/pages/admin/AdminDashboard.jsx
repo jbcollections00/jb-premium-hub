@@ -25,38 +25,51 @@ export default function AdminDashboard() {
     }
     
     fetchData();
-    checkAndSendVIPExpirationAlerts(); // 🤖 Auto-run 5-Day VIP Expiration Scanner
+    checkAndSendVIPExpirationAlerts();
   }, [navigate]);
 
   const fetchData = async () => {
     // 1. Fetch Users
-    const { data: usersData } = await supabase
+    const { data: usersData, error: usersError } = await supabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false });
-    if (usersData) setUsers(usersData);
+
+    if (usersError) {
+      console.error("Error fetching users:", usersError.message);
+    } else if (usersData) {
+      setUsers(usersData);
+    }
 
     // 2. Fetch Vault Media Count
-    const { count: mediaCount } = await supabase
+    const { count: mediaCount, error: mediaError } = await supabase
       .from('media')
       .select('id', { count: 'exact', head: true });
-    if (mediaCount !== null) setTotalMediaCount(mediaCount);
+
+    if (mediaError) {
+      console.error("Error fetching media count:", mediaError.message);
+    } else if (mediaCount !== null) {
+      setTotalMediaCount(mediaCount);
+    }
 
     // 3. Fetch Support Tickets
-    const { data: ticketsData } = await supabase
+    const { data: ticketsData, error: ticketsError } = await supabase
       .from('support_tickets')
       .select('*')
       .order('created_at', { ascending: false });
-    if (ticketsData) setTickets(ticketsData || []);
+
+    if (ticketsError) {
+      console.error("Error fetching tickets:", ticketsError.message);
+    } else if (ticketsData) {
+      setTickets(ticketsData || []);
+    }
   };
 
-  // 🤖 AUTOMATED 5-DAY DAILY VIP EXPIRATION SCANNER
   const checkAndSendVIPExpirationAlerts = async () => {
     try {
       const now = new Date();
-      const todayStr = now.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const todayStr = now.toISOString().split('T')[0];
 
-      // Fetch all used VIP access codes
       const { data: activeVipCodes } = await supabase
         .from('access_codes')
         .select('*')
@@ -72,9 +85,7 @@ export default function AdminDashboard() {
         const diffMs = expDate - now;
         const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-        // ⏳ Trigger warning if within 1 to 5 days remaining
         if (daysRemaining >= 1 && daysRemaining <= 5) {
-          // Check if an alert message was ALREADY sent to this user TODAY
           const { data: existingAlerts } = await supabase
             .from('admin_messages')
             .select('id, created_at')
@@ -82,7 +93,6 @@ export default function AdminDashboard() {
             .gte('created_at', `${todayStr}T00:00:00.000Z`)
             .like('title', '%VIP Access Expiring%');
 
-          // If no alert sent today, send the automated message in English
           if (!existingAlerts || existingAlerts.length === 0) {
             const daysText = daysRemaining === 1 ? '1 Day' : `${daysRemaining} Days`;
             
@@ -108,8 +118,15 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  const vipUsersCount = users.filter((u) => u.account_type?.toLowerCase() === 'vip' || u.is_activated).length;
-  const standardUsersCount = users.length - vipUsersCount;
+  const vipUsersCount = users.filter(
+    (u) => u.account_type?.toLowerCase() === 'vip' || u.is_activated
+  ).length;
+
+  const adminUsersCount = users.filter(
+    (u) => u.account_type?.toLowerCase() === 'admin'
+  ).length;
+
+  const standardUsersCount = Math.max(0, users.length - vipUsersCount - adminUsersCount);
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
   const navItems = [
@@ -123,7 +140,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* 🛡️ SIDEBAR */}
+      {/* SIDEBAR */}
       <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-4 shrink-0">
         <div>
           <div className="flex items-center gap-2 mb-8 px-2">
@@ -167,7 +184,7 @@ export default function AdminDashboard() {
         </button>
       </aside>
 
-      {/* 💻 MAIN CONTENT AREA */}
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
         {/* DASHBOARD OVERVIEW */}
         {activeTab === 'dashboard' && (

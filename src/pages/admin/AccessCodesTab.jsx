@@ -6,16 +6,13 @@ export default function AccessCodesTab() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form State
-  const [codeType, setCodeType] = useState('VIP');
-  const [durationDays, setDurationDays] = useState(30);
+  // Form State (VIP only, fixed 30 days)
   const [customCode, setCustomCode] = useState('');
   const [directSendUser, setDirectSendUser] = useState('');
   const [generating, setGenerating] = useState(false);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   // Modal State for Sending Existing Code
@@ -45,30 +42,28 @@ export default function AccessCodesTab() {
     setLoading(false);
   };
 
-  const generateRandomCode = (type) => {
-    const prefix = type === 'VIP' ? 'VIP-' : 'STD-';
+  const generateRandomCode = () => {
     const randomChars = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return `${prefix}${randomChars}`;
+    return `VIP-${randomChars}`;
   };
 
-  // 🚀 GENERATE CODE (Standard = Unlimited / VIP = Time-bound)
+  // 🚀 GENERATE CODE (Strictly 30-Day VIP)
   const handleGenerateCode = async (e) => {
     e.preventDefault();
     setGenerating(true);
 
-    const isStandard = codeType === 'STANDARD';
     const finalCode = customCode.trim()
       ? customCode.trim().toUpperCase()
-      : generateRandomCode(codeType);
+      : generateRandomCode();
 
-    const codeDuration = isStandard ? null : Number(durationDays);
+    const codeDuration = 30; // Strictly 30 days
 
     const { data: newCodeData, error: codeErr } = await supabase
       .from('access_codes')
       .insert([
         {
           code: finalCode,
-          type: codeType,
+          type: 'VIP',
           duration_days: codeDuration,
           is_used: false,
         },
@@ -88,7 +83,6 @@ export default function AccessCodesTab() {
 
       const sendErr = await sendMessageToUser(
         directSendUser,
-        codeType,
         finalCode,
         codeDuration
       );
@@ -96,10 +90,10 @@ export default function AccessCodesTab() {
       if (sendErr) {
         alert(`Code generated (${finalCode}), but failed to send message: ${sendErr.message}`);
       } else {
-        alert(`✅ Code generated (${finalCode}) and sent directly to ${userEmail}!`);
+        alert(`✅ VIP Code generated (${finalCode}) and sent directly to ${userEmail}!`);
       }
     } else {
-      alert(`✅ Access Code (${finalCode}) successfully generated!`);
+      alert(`✅ VIP Access Code (${finalCode}) successfully generated!`);
     }
 
     setCustomCode('');
@@ -109,12 +103,11 @@ export default function AccessCodesTab() {
   };
 
   // 📩 SEND CODE TO USER FUNCTION
-  const sendMessageToUser = async (userId, type, code, days) => {
-    const isStandard = type === 'STANDARD' || !days;
-    const durationLabel = isStandard ? 'Unlimited Access' : `${days} Days Duration`;
+  const sendMessageToUser = async (userId, code, days = 30) => {
+    const durationLabel = `${days} Days Duration`;
 
-    const title = `🔑 Your ${type} Access Code`;
-    const message = `Hello! Here is your new ${type} Access Code (${durationLabel}):\n\nCode: ${code}\n\nPlease copy this code and redeem it on your Profile page to activate your membership. Enjoy!`;
+    const title = `🔑 Your VIP Access Code`;
+    const message = `Hello! Here is your new VIP Access Code (${durationLabel}):\n\nCode: ${code}\n\nPlease copy this code and redeem it on your Profile page to activate your VIP membership. Enjoy!`;
 
     const { error } = await supabase.from('admin_messages').insert([
       {
@@ -140,9 +133,8 @@ export default function AccessCodesTab() {
     setSendingMessage(true);
     const err = await sendMessageToUser(
       targetUserId,
-      selectedCodeForSend.type || 'STANDARD',
       selectedCodeForSend.code,
-      selectedCodeForSend.duration_days
+      selectedCodeForSend.duration_days || 30
     );
 
     if (err) {
@@ -169,7 +161,7 @@ export default function AccessCodesTab() {
 
   // ⏳ HELPER: Determine expiration date (VIP only)
   const getExpDate = (c) => {
-    if (c.type === 'STANDARD' || !c.duration_days) return null; // Unlimited
+    const duration = c.duration_days || 30;
     if (c.expires_at) {
       const d = new Date(c.expires_at);
       if (!isNaN(d.getTime())) return d;
@@ -177,7 +169,7 @@ export default function AccessCodesTab() {
     if (c.used_at) {
       const d = new Date(c.used_at);
       if (!isNaN(d.getTime())) {
-        return new Date(d.getTime() + c.duration_days * 24 * 60 * 60 * 1000);
+        return new Date(d.getTime() + duration * 24 * 60 * 60 * 1000);
       }
     }
     return null;
@@ -185,8 +177,6 @@ export default function AccessCodesTab() {
 
   // ⏱️ HELPER: Calculate dynamic remaining time badge
   const getRemainingTime = (c) => {
-    if (c.type === 'STANDARD' || !c.duration_days) return 'UNLIMITED';
-
     const expDate = getExpDate(c);
     if (!expDate) return 'ACTIVE';
 
@@ -211,56 +201,59 @@ export default function AccessCodesTab() {
     return email.includes(query) || name.includes(query) || id.includes(query);
   });
 
-  // Safe status metrics
-  const totalCodesCount = codes.length;
-  const availableCodesCount = codes.filter((c) => !c.is_used).length;
+  // Strict VIP Code Filtering (Excludes all Standard codes)
+  const vipCodesOnly = codes.filter((c) => {
+    const type = (c.type || '').toUpperCase();
+    const codeStr = (c.code || '').toUpperCase();
+    return type === 'VIP' || codeStr.includes('VIP');
+  });
 
-  const activeSubsCount = codes.filter((c) => {
+  // VIP Metrics
+  const totalCodesCount = vipCodesOnly.length;
+  const availableCodesCount = vipCodesOnly.filter((c) => !c.is_used).length;
+
+  const activeSubsCount = vipCodesOnly.filter((c) => {
     if (!c.is_used) return false;
-    if (c.type === 'STANDARD' || !c.duration_days) return true; // Unlimited is active
     const expDate = getExpDate(c);
     return !expDate || expDate > new Date();
   }).length;
 
-  const expiredCodesCount = codes.filter((c) => {
-    if (!c.is_used || c.type === 'STANDARD' || !c.duration_days) return false;
+  const expiredCodesCount = vipCodesOnly.filter((c) => {
+    if (!c.is_used) return false;
     const expDate = getExpDate(c);
     return expDate && expDate <= new Date();
   }).length;
 
-  const filteredCodes = codes.filter((c) => {
-    const isUnlimited = c.type === 'STANDARD' || !c.duration_days;
+  const filteredCodes = vipCodesOnly.filter((c) => {
     const expDate = getExpDate(c);
-    const isExpired = c.is_used && !isUnlimited && expDate && expDate <= new Date();
-    const isActive = c.is_used && (isUnlimited || !expDate || expDate > new Date());
+    const isExpired = c.is_used && expDate && expDate <= new Date();
+    const isActive = c.is_used && (!expDate || expDate > new Date());
 
     const matchesSearch =
       c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (c.used_by && c.used_by.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    const matchesType = filterType === 'ALL' || c.type?.toUpperCase() === filterType;
 
     let matchesStatus = true;
     if (filterStatus === 'AVAILABLE') matchesStatus = !c.is_used;
     if (filterStatus === 'ACTIVE') matchesStatus = isActive;
     if (filterStatus === 'EXPIRED') matchesStatus = isExpired;
 
-    return matchesSearch && matchesType && matchesStatus;
+    return matchesSearch && matchesStatus;
   });
 
   return (
     <div className="space-y-6 max-w-6xl">
       <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">Access Code Management</h1>
+        <h1 className="text-2xl font-black text-white tracking-tight">VIP Access Code Management</h1>
         <p className="text-xs text-gray-400 mt-1">
-          Generate, dispatch access keys, and track subscriber redemption status.
+          Generate 30-Day VIP access keys, dispatch to subscribers, and track redemption status.
         </p>
       </div>
 
       {/* 📊 STATS OVERVIEW */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Total Codes</p>
+          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Total VIP Codes</p>
           <p className="text-2xl font-black text-white mt-1">{totalCodesCount}</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
@@ -268,8 +261,8 @@ export default function AccessCodesTab() {
           <p className="text-2xl font-black text-emerald-400 mt-1">{availableCodesCount}</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Active Subs</p>
-          <p className="text-2xl font-black text-sky-400 mt-1">{activeSubsCount}</p>
+          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Active VIP Subs</p>
+          <p className="text-2xl font-black text-amber-400 mt-1">{activeSubsCount}</p>
         </div>
         <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Expired VIP</p>
@@ -279,37 +272,19 @@ export default function AccessCodesTab() {
 
       {/* 🔑 GENERATE ACCESS CODE FORM */}
       <form onSubmit={handleGenerateCode} className="bg-gray-900 border border-gray-800 p-5 rounded-2xl space-y-4 shadow-xl">
-        <h2 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Generate & Direct Send Access Code</h2>
+        <h2 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Generate & Direct Send VIP Access Code</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
           <div className="sm:col-span-2">
-            <select
-              value={codeType}
-              onChange={(e) => setCodeType(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
-            >
-              <option value="VIP">👑 VIP Code</option>
-              <option value="STANDARD">👤 Standard Code</option>
-            </select>
+            <div className="w-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold rounded-xl px-3 py-2.5 text-xs flex items-center justify-center select-none">
+              👑 VIP Code
+            </div>
           </div>
 
           <div className="sm:col-span-2">
-            {codeType === 'VIP' ? (
-              <select
-                value={durationDays}
-                onChange={(e) => setDurationDays(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-amber-300 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value={7}>📅 7 Days</option>
-                <option value={30}>📅 30 Days (1 Month)</option>
-                <option value={90}>📅 90 Days (3 Months)</option>
-                <option value={365}>📅 365 Days (1 Year)</option>
-              </select>
-            ) : (
-              <div className="w-full bg-gray-800/60 border border-gray-700/60 rounded-xl px-3 py-2.5 text-emerald-400 text-xs font-bold flex items-center justify-center gap-1.5 select-none">
-                ♾️ Unlimited
-              </div>
-            )}
+            <div className="w-full bg-gray-800 border border-gray-700 text-amber-300 font-semibold rounded-xl px-3 py-2.5 text-xs flex items-center justify-center select-none">
+              📅 30 Days
+            </div>
           </div>
 
           <div className="sm:col-span-3">
@@ -361,16 +336,6 @@ export default function AccessCodesTab() {
 
         <div className="flex gap-2 w-full sm:w-auto">
           <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-gray-300 text-xs font-medium focus:outline-none cursor-pointer"
-          >
-            <option value="ALL">All Types</option>
-            <option value="VIP">VIP Only</option>
-            <option value="STANDARD">Standard Only</option>
-          </select>
-
-          <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-gray-300 text-xs font-medium focus:outline-none cursor-pointer"
@@ -385,18 +350,17 @@ export default function AccessCodesTab() {
 
       {/* 📋 CODES LIST */}
       {loading ? (
-        <div className="p-12 text-center text-gray-500 text-xs">Loading access codes...</div>
+        <div className="p-12 text-center text-gray-500 text-xs">Loading VIP access codes...</div>
       ) : filteredCodes.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 p-8 text-center rounded-2xl text-gray-500 text-xs">
-          No access codes found matching your query.
+          No VIP access codes found matching your query.
         </div>
       ) : (
         <div className="space-y-3">
           {filteredCodes.map((c) => {
-            const isUnlimited = c.type === 'STANDARD' || !c.duration_days;
             const expDate = getExpDate(c);
-            const isExpired = c.is_used && !isUnlimited && expDate && expDate <= new Date();
-            const isActive = c.is_used && (isUnlimited || !expDate || expDate > new Date());
+            const isExpired = c.is_used && expDate && expDate <= new Date();
+            const isActive = c.is_used && (!expDate || expDate > new Date());
             const remainingText = c.is_used ? getRemainingTime(c) : 'NOT USED YET';
 
             const usedByUser = users.find((u) => u.id === c.used_by);
@@ -409,15 +373,8 @@ export default function AccessCodesTab() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-black text-sm text-amber-400 tracking-wider">{c.code}</span>
-                    <span
-                      className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                        c.type === 'VIP'
-                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                          : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                      }`}
-                    >
-                      {c.type || 'STANDARD'}{' '}
-                      {isUnlimited ? '(Unlimited)' : `(${c.duration_days}D)`}
+                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                      VIP (30D)
                     </span>
                   </div>
 
@@ -451,7 +408,7 @@ export default function AccessCodesTab() {
 
                   {isActive && (
                     <span className="bg-sky-950 text-sky-400 border border-sky-800 font-mono text-[11px] font-bold px-3 py-1.5 rounded-xl">
-                      {isUnlimited ? '♾️ UNLIMITED' : `⏳ ${remainingText}`}
+                      ⏳ {remainingText}
                     </span>
                   )}
 

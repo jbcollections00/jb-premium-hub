@@ -9,7 +9,7 @@ import Home from './pages/public/Home';
 import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
-import BuyVip from './pages/public/BuyVip'; // 👈 In-import ang BuyVip
+import BuyVip from './pages/public/BuyVip';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
@@ -33,25 +33,26 @@ function App() {
 
         {/* User Pages & Legal Pages with MainLayout (Header & Footer) */}
         <Route element={<MainLayout />}>
-          <Route path="/activate" element={<ActivateCode />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/messages" element={<Messages />} />
-          <Route path="/buy-vip" element={<BuyVip />} /> {/* 👈 Idinagdag ang /buy-vip route */}
-          
-          {/* Footer Legal Routes */}
+          {/* Public Legal Routes */}
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/dmca" element={<DmcaPage />} />
           <Route path="/support" element={<SupportPage />} />
-          
-          {/* Protected Vault Routes */}
+
+          {/* Protected User Routes (Requires User Login) */}
           <Route element={<ProtectedRoute />}>
             <Route path="/home" element={<Home />} />
+            <Route path="/activate" element={<ActivateCode />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/buy-vip" element={<BuyVip />} />
           </Route>
         </Route>
 
-        {/* Secret Admin Route */}
-        <Route path="/admin-vault-secret" element={<AdminDashboard />} />
+        {/* Protected Secret Admin Route (Requires Admin Privilege) */}
+        <Route element={<ProtectedRoute adminOnly={true} />}>
+          <Route path="/admin-vault-secret" element={<AdminDashboard />} />
+        </Route>
 
         {/* Catch-all Fallback */}
         <Route path="*" element={<LandingPage />} />

@@ -37,7 +37,8 @@ export default function Profile() {
     if (!expirationDate) return;
 
     const timer = setInterval(() => {
-      setTimeLeft(calculateTimeLeft(expirationDate));
+      const calculated = calculateTimeLeft(expirationDate);
+      setTimeLeft(calculated);
     }, 1000);
 
     return () => clearInterval(timer);
@@ -58,19 +59,23 @@ export default function Profile() {
 
         if (profile) {
           setProfileData(profile);
-          setDisplayName(profile.full_name || profile.display_name || user.email?.split("@")[0] || "");
+          setDisplayName(profile.full_name || user.email?.split("@")[0] || "");
         }
 
         const { data: activeCodes } = await supabase
           .from("access_codes")
           .select("expires_at")
           .eq("used_by", user.id)
+          .gt("expires_at", new Date().toISOString())
           .order("expires_at", { ascending: false })
           .limit(1);
 
         if (activeCodes && activeCodes.length > 0 && activeCodes[0].expires_at) {
           setExpirationDate(activeCodes[0].expires_at);
           setTimeLeft(calculateTimeLeft(activeCodes[0].expires_at));
+        } else {
+          setExpirationDate(null);
+          setTimeLeft(null);
         }
 
         const { data: history } = await supabase
@@ -114,8 +119,7 @@ export default function Profile() {
       const { error } = await supabase
         .from("profiles")
         .update({ 
-          full_name: displayName.trim(),
-          display_name: displayName.trim() 
+          full_name: displayName.trim()
         })
         .eq("id", user.id);
 
@@ -268,7 +272,8 @@ export default function Profile() {
 
   const rawAccountType = (profileData?.account_type || "STANDARD").toLowerCase();
   const isAdmin = rawAccountType === "admin";
-  const isVip = rawAccountType === "vip" || profileData?.is_activated;
+  const hasActiveVipDate = expirationDate ? new Date(expirationDate) > new Date() : false;
+  const isVip = isAdmin || hasActiveVipDate;
 
   const faqs = [
     {
@@ -341,7 +346,7 @@ export default function Profile() {
               </button>
 
               {/* Countdown Display */}
-              {(isVip || isAdmin) && expirationDate && (
+              {isVip && expirationDate && (
                 <div className="mt-4 p-4 rounded-xl bg-slate-950/90 border border-amber-500/20 text-left">
                   <p className="text-[11px] uppercase font-bold text-amber-400 tracking-wider text-center mb-2">
                     ⏳ VIP Remaining Access Time

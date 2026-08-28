@@ -297,47 +297,67 @@ export default function AdminMediaTab() {
   );
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-8 max-w-7xl mx-auto">
+      {/* 📊 HEADER & METRICS */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Vault Media Uploader</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Upload, edit titles, compare duplicates, and broadcast new uploads to users.</p>
+          <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+            <span>Vault Media Uploader</span>
+            <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono font-semibold">
+              v2.0
+            </span>
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Upload, edit titles, compare duplicates, and broadcast new uploads to users.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="bg-gray-900 border border-gray-800 px-4 py-2 rounded-xl text-right">
-            <p className="text-[10px] text-gray-400 uppercase font-semibold">Total Vault Videos</p>
-            <p className="text-xl font-black text-sky-400">{totalMediaCount}</p>
+
+        <div className="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl">
+          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Vault Videos</p>
+            <p className="text-2xl font-black text-white font-mono mt-0.5">{totalMediaCount}</p>
           </div>
         </div>
       </div>
 
-      {/* UPLOADER CARD */}
-      <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-        <form onSubmit={handleBulkUploadToCloudflare} className="space-y-4">
-          <div className="border-2 border-dashed border-gray-800 hover:border-red-500/50 bg-gray-800/30 rounded-xl p-6 text-center transition-all cursor-pointer">
+      {/* 📤 UPLOADER CARD */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-md space-y-5">
+        <form onSubmit={handleBulkUploadToCloudflare} className="space-y-5">
+          <div className="relative group border-2 border-dashed border-slate-700/80 hover:border-indigo-500/80 bg-slate-950/40 hover:bg-indigo-950/10 rounded-2xl p-8 transition-all duration-300 text-center cursor-pointer flex flex-col items-center justify-center">
             <input
               type="file"
               multiple
               accept="video/*,.mp4,.mkv,.mov,.avi,.webm,.m4v"
               id="file-upload"
               onChange={handleFileSelect}
-              className="hidden"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
             <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-              <span className="text-3xl mb-2">🎬</span>
-              <span className="text-sm font-bold text-white">Click or drag videos here to upload</span>
-              <span className="text-[11px] text-gray-400 mt-1">Bucket: <strong className="text-red-400">jb-collections-hub</strong></span>
-            </label>
+              <div className="p-4 bg-indigo-500/10 text-indigo-400 rounded-full group-hover:scale-110 group-hover:bg-indigo-500/20 transition-all duration-300 mb-3 border border-indigo-500/20">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <span className="text-sm font-bold text-white tracking-wide">Click or drag videos here to upload</span>
+             </label>
           </div>
 
           {/* Selected Files Queue */}
           {uploadFiles.length > 0 && (
-            <div className="bg-gray-800/40 p-3.5 rounded-xl border border-gray-800 space-y-3">
+            <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-gray-300">Selected Queue ({uploadFiles.length})</span>
+                <span className="font-bold text-slate-200">Selected Queue ({uploadFiles.length})</span>
                 {!loading && (
-                  <button type="button" onClick={() => setUploadFiles([])} className="text-gray-400 hover:text-red-400 font-semibold cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => setUploadFiles([])}
+                    className="text-slate-400 hover:text-rose-400 font-semibold transition-colors cursor-pointer"
+                  >
                     Clear queue
                   </button>
                 )}
@@ -345,29 +365,29 @@ export default function AdminMediaTab() {
               
               <div className="max-h-52 overflow-y-auto space-y-2.5 pr-1">
                 {uploadFiles.map((item) => (
-                  <div key={item.id} className="bg-gray-900 p-3 rounded-xl border border-gray-800 space-y-2">
+                  <div key={item.id} className="bg-slate-900 p-3 rounded-xl border border-slate-800/80 space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <div className="min-w-0 flex-1 pr-3">
                         <p className="truncate font-semibold text-white">{item.name}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5 font-mono">
-                          Size: <span className="text-sky-400 font-bold">{formatBytes(item.size)}</span>
+                        <p className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                          Size: <span className="text-indigo-400 font-bold">{formatBytes(item.size)}</span>
                         </p>
                       </div>
                       <div className="text-right shrink-0">
                         <span className={`text-xs font-bold ${
                           item.status === 'error' ? 'text-rose-400' :
-                          item.status === 'completed' ? 'text-emerald-400' : 'text-red-400'
+                          item.status === 'completed' ? 'text-emerald-400' : 'text-indigo-400'
                         }`}>
                           {item.status === 'error' ? 'Failed' : `${item.progress}%`}
                         </span>
                       </div>
                     </div>
 
-                    <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                       <div
                         className={`h-full transition-all duration-300 rounded-full ${
                           item.status === 'error' ? 'bg-rose-500' :
-                          item.status === 'completed' ? 'bg-emerald-500' : 'bg-red-500'
+                          item.status === 'completed' ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-blue-500'
                         }`}
                         style={{ width: `${item.progress}%` }}
                       />
@@ -383,56 +403,68 @@ export default function AdminMediaTab() {
           )}
 
           {/* 📢 Notification Toggle */}
-          <div className="flex items-center gap-2.5 bg-gray-800/50 p-3 rounded-xl border border-gray-800">
-            <input
-              type="checkbox"
-              id="notify-toggle"
-              checked={notifyUsers}
-              onChange={(e) => setNotifyUsers(e.target.checked)}
-              className="w-4 h-4 accent-red-600 rounded cursor-pointer"
-            />
-            <label htmlFor="notify-toggle" className="text-xs font-medium text-gray-300 cursor-pointer">
-              📢 Send announcement message to user inbox with list of uploaded files
+          <div className="flex items-center justify-between bg-slate-950/60 border border-slate-800 p-4 rounded-xl">
+            <label htmlFor="notify-toggle" className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                id="notify-toggle"
+                checked={notifyUsers}
+                onChange={(e) => setNotifyUsers(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-200">
+                Send announcement message to user inbox with list of uploaded files
+              </span>
             </label>
           </div>
 
           <button
             type="submit"
             disabled={loading || uploadFiles.length === 0}
-            className="w-full bg-red-600 hover:bg-red-500 disabled:bg-gray-800 text-white font-bold py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+            className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-indigo-600/20 disabled:shadow-none cursor-pointer flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
             {loading ? 'Uploading Videos...' : `Upload ${uploadFiles.length} Video(s)`}
           </button>
         </form>
       </div>
 
-      {/* MEDIA MANAGEMENT TOOLBAR */}
-      <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-3">
+      {/* 🔍 MEDIA MANAGEMENT TOOLBAR */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-3 bg-slate-900/40 border border-slate-800 p-3 rounded-2xl">
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto flex-1">
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full sm:w-80">
+            <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by video title..."
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl pl-9 pr-8 py-2 text-xs focus:outline-none focus:border-red-500"
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
             />
-            <span className="absolute left-3 top-2.5 text-xs text-gray-400">🔍</span>
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-2 text-xs text-gray-400">✖</button>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 text-xs"
+              >
+                ✕
+              </button>
             )}
           </div>
 
           <button
             onClick={() => setShowDuplicatesOnly(!showDuplicatesOnly)}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 cursor-pointer ${
               showDuplicatesOnly
-                ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                : 'bg-gray-800 text-amber-400 hover:bg-gray-700 border border-gray-700'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-lg shadow-amber-500/10'
+                : 'bg-slate-800/80 text-slate-400 border-slate-700/60 hover:text-white'
             }`}
           >
             <span>⚠️ Duplicates Filter</span>
-            <span className="bg-black/20 text-black px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+            <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-md text-[10px] font-mono">
               {totalDuplicatesCount}
             </span>
           </button>
@@ -440,18 +472,24 @@ export default function AdminMediaTab() {
           {totalDuplicatesCount > 0 && showDuplicatesOnly && (
             <button
               onClick={handleAutoCleanDuplicates}
-              className="bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black border border-amber-500/30 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
             >
-              🧹 Clean All Extra Copies ({totalDuplicatesCount})
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Clean Extra Copies ({totalDuplicatesCount})
             </button>
           )}
 
           {ignoredDuplicates.length > 0 && (
             <button
               onClick={handleResetIgnored}
-              className="bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
             >
-              🔄 Reset OK Marks ({ignoredDuplicates.length})
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reset OK Marks ({ignoredDuplicates.length})
             </button>
           )}
         </div>
@@ -459,38 +497,44 @@ export default function AdminMediaTab() {
         {mediaList.length > 0 && (
           <button
             onClick={handleDeleteAllMedia}
-            className="bg-red-600/10 hover:bg-red-600 text-red-400 hover:text-white px-3 py-2 rounded-xl text-xs font-bold border border-red-600/20 transition-all cursor-pointer w-full md:w-auto shrink-0"
+            className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
           >
-            ⚠️ Delete All Videos
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete All Videos
           </button>
         )}
       </div>
 
-      {/* MEDIA LIST DISPLAY */}
+      {/* 📋 MEDIA LIST DISPLAY */}
       {showDuplicatesOnly ? (
         <div className="space-y-4">
           {duplicateGroups.length === 0 ? (
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center text-gray-500 text-xs">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
               ✨ Walang natagpuang duplicate na video sa iyong Vault!
             </div>
           ) : (
             duplicateGroups.map((group, idx) => (
-              <div key={idx} className="bg-gray-900 border border-amber-500/30 rounded-2xl p-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between border-b border-gray-800 pb-2.5 gap-2">
+              <div key={idx} className="bg-slate-900/60 border border-amber-500/30 rounded-2xl p-5 space-y-4 shadow-xl">
+                <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-amber-400 text-xs font-bold">📂 Match Group:</span>
                     <span className="text-white text-xs font-semibold capitalize">{group.cleanTitle}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="bg-amber-500/10 text-amber-400 text-[10px] px-2.5 py-1 rounded-full font-bold border border-amber-500/20">
+                    <span className="bg-amber-500/10 text-amber-300 text-[10px] px-2.5 py-1 rounded-full font-mono font-bold border border-amber-500/20">
                       {group.items.length} Copies
                     </span>
                     <button
                       onClick={() => handleMarkGroupAsOk(group.cleanTitle)}
-                      className="bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/30 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                      className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                     >
-                      <span>✅ Mark as OK</span>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Mark as OK
                     </button>
                   </div>
                 </div>
@@ -499,12 +543,12 @@ export default function AdminMediaTab() {
                   {group.items.map((item) => (
                     <div
                       key={item.id}
-                      className="bg-gray-800/60 p-3 rounded-xl border border-gray-800 flex justify-between items-center gap-2"
+                      className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 flex justify-between items-center gap-2"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-white truncate">{item.title}</p>
-                        <p className="text-[10px] text-gray-400 truncate mt-0.5">{item.media_url}</p>
-                        <p className="text-[9px] text-gray-500 mt-1">
+                        <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{item.media_url}</p>
+                        <p className="text-[9px] text-slate-500 mt-1">
                           Uploaded: {item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}
                         </p>
                       </div>
@@ -512,15 +556,27 @@ export default function AdminMediaTab() {
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => handleCopyLink(item.media_url, item.id)}
-                          className="bg-gray-800 hover:bg-gray-700 text-gray-300 p-2 rounded-lg border border-gray-700 text-xs cursor-pointer"
+                          className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer border border-slate-700/50 text-xs"
+                          title="Copy Link"
                         >
-                          {copiedId === item.id ? '✅' : '🔗'}
+                          {copiedId === item.id ? (
+                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                          )}
                         </button>
                         <button
                           onClick={() => handleDeleteMedia(item.id)}
-                          className="bg-rose-600/10 hover:bg-rose-600 text-rose-400 hover:text-white p-2 rounded-lg border border-rose-600/20 text-xs transition-all cursor-pointer"
+                          className="p-2 bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-400 rounded-xl transition-all cursor-pointer border border-slate-700/50 text-xs"
+                          title="Delete Video"
                         >
-                          🗑️
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -531,35 +587,35 @@ export default function AdminMediaTab() {
           )}
         </div>
       ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-2.5">
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 space-y-2.5">
           {filteredMedia.length === 0 ? (
-            <p className="text-gray-500 text-xs text-center py-6">
+            <p className="text-slate-500 text-xs text-center py-8">
               {searchQuery ? 'Walang nahanap na video sa search.' : 'Wala pang nakaupload na videos.'}
             </p>
           ) : (
             filteredMedia.map((item) => (
               <div
                 key={item.id}
-                className="bg-gray-800/40 p-3.5 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center border border-gray-800/80 hover:border-gray-700 transition-all gap-3"
+                className="bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all group"
               >
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 space-y-1">
                   {editingId === item.id ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 max-w-md">
                       <input
                         type="text"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
-                        className="bg-gray-900 border border-red-500 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none flex-1"
+                        className="bg-slate-950 border border-indigo-500/50 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none w-full"
                       />
                       <button
                         onClick={() => handleSaveTitle(item.id)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer"
+                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors"
                       >
                         Save
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        className="bg-gray-700 hover:bg-gray-600 text-gray-300 text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer"
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-xs cursor-pointer transition-colors"
                       >
                         Cancel
                       </button>
@@ -567,15 +623,18 @@ export default function AdminMediaTab() {
                   ) : (
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-bold text-white text-sm truncate">{item.title}</p>
+                        <p className="font-bold text-slate-100 text-xs truncate">{item.title}</p>
                         <button
                           onClick={() => handleStartEdit(item)}
-                          className="text-gray-400 hover:text-amber-400 text-xs cursor-pointer"
+                          className="text-slate-500 hover:text-indigo-400 transition-colors p-1 cursor-pointer"
+                          title="Edit Title"
                         >
-                          ✏️
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
                         </button>
                       </div>
-                      <p className="text-[11px] text-gray-500 truncate mt-0.5">{item.media_url}</p>
+                      <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{item.media_url}</p>
                     </div>
                   )}
                 </div>
@@ -583,16 +642,34 @@ export default function AdminMediaTab() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => handleCopyLink(item.media_url, item.id)}
-                    className="bg-gray-800 hover:bg-gray-700 text-gray-300 p-2 rounded-lg border border-gray-700 text-xs transition-all cursor-pointer"
+                    className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer border border-slate-700/50 text-xs flex items-center gap-1.5"
+                    title="Copy Link"
                   >
-                    {copiedId === item.id ? '✅' : '🔗'}
+                    {copiedId === item.id ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                        <span>Copy Link</span>
+                      </>
+                    )}
                   </button>
 
                   <button
                     onClick={() => handleDeleteMedia(item.id)}
-                    className="bg-gray-800 hover:bg-rose-600 text-gray-400 hover:text-white p-2 rounded-lg border border-gray-700 hover:border-rose-600 transition-all text-xs cursor-pointer"
+                    className="p-2 bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-400 rounded-xl transition-all cursor-pointer border border-slate-700/50 text-xs"
+                    title="Delete Video"
                   >
-                    🗑️
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
                   </button>
                 </div>
               </div>
