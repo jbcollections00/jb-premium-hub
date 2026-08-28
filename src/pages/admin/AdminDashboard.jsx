@@ -130,27 +130,29 @@ export default function AdminDashboard() {
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
   const navItems = [
-    { id: 'dashboard', label: '📊 Dashboard' },
-    { id: 'tickets', label: '🎧 Support Tickets', badge: pendingTicketsCount },
-    { id: 'users', label: `👥 Users (${users.length})` },
-    { id: 'messages', label: '💬 Send Messages' },
-    { id: 'codes', label: '🔑 Access Codes' },
-    { id: 'upload', label: '📤 Bulk Upload & Media' },
+    { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+    { id: 'tickets', icon: '🎧', label: 'Support Tickets', badge: pendingTicketsCount },
+    { id: 'users', icon: '👥', label: 'Users', count: users.length },
+    { id: 'messages', icon: '💬', label: 'Send Messages' },
+    { id: 'codes', icon: '🔑', label: 'Access Codes' },
+    { id: 'upload', icon: '📤', label: 'Bulk Upload & Media' },
   ];
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-4 shrink-0">
+      {/* ADAPTABLE SIDEBAR (Icons only on small screens, full labels on md+) */}
+      <aside className="w-16 md:w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-2 md:p-4 shrink-0 transition-all duration-300">
         <div>
-          <div className="flex items-center gap-2 mb-8 px-2">
-            <span className="text-2xl">🛡️</span>
-            <div>
-              <h2 className="font-bold text-base text-red-500 leading-tight">Vault Control</h2>
-              <p className="text-[10px] text-gray-500">Admin Portal v2.0</p>
+          {/* Header Branding */}
+          <div className="flex items-center justify-center md:justify-start gap-2 mb-8 px-1 md:px-2">
+            <span className="text-2xl shrink-0">🛡️</span>
+            <div className="hidden md:block overflow-hidden">
+              <h2 className="font-bold text-base text-red-500 leading-tight truncate">Vault Control</h2>
+              <p className="text-[10px] text-gray-500 truncate">Admin Portal v2.0</p>
             </div>
           </div>
 
+          {/* Navigation Links */}
           <nav className="flex flex-col gap-1.5">
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
@@ -158,17 +160,28 @@ export default function AdminDashboard() {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`p-3 rounded-xl text-left font-medium text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-between ${
+                  title={`${item.label}${item.count !== undefined ? ` (${item.count})` : ''}`}
+                  className={`p-3 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center md:justify-between relative ${
                     isActive
                       ? 'bg-red-600 text-white font-bold shadow-lg shadow-red-600/20'
                       : 'text-gray-400 hover:bg-gray-800/80 hover:text-white'
                   }`}
                 >
-                  <span>{item.label}</span>
-                  {item.badge > 0 && (
-                    <span className="bg-amber-500 text-black font-black text-[10px] px-2 py-0.5 rounded-full">
-                      {item.badge}
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <span className="text-lg shrink-0">{item.icon}</span>
+                    <span className="hidden md:inline truncate">
+                      {item.label} {item.count !== undefined ? `(${item.count})` : ''}
                     </span>
+                  </div>
+
+                  {/* Badge displaying pending tickets or status */}
+                  {item.badge > 0 && (
+                    <>
+                      <span className="hidden md:inline bg-amber-500 text-black font-black text-[10px] px-2 py-0.5 rounded-full ml-1 shrink-0">
+                        {item.badge}
+                      </span>
+                      <span className="md:hidden absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-gray-900"></span>
+                    </>
                   )}
                 </button>
               );
@@ -176,21 +189,24 @@ export default function AdminDashboard() {
           </nav>
         </div>
 
+        {/* Logout Button */}
         <button
           onClick={handleAdminLogout}
+          title="Admin Logout"
           className="bg-gray-800 hover:bg-red-600/20 hover:text-red-400 p-3 rounded-xl text-xs font-bold text-gray-400 transition-all cursor-pointer border border-gray-700/50 flex items-center justify-center gap-2"
         >
-          <span>🚪</span> Admin Logout
+          <span className="text-base shrink-0">🚪</span>
+          <span className="hidden md:inline truncate">Admin Logout</span>
         </button>
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
+      <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
         {/* DASHBOARD OVERVIEW */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6 max-w-6xl">
             <div>
-              <h1 className="text-2xl font-black text-white tracking-tight">System Dashboard</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">System Dashboard</h1>
               <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, tickets, and media stats.</p>
             </div>
 

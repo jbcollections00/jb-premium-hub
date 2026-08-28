@@ -182,7 +182,13 @@ export default function Home() {
     setRedeemLoading(false);
   };
 
-  const isVIP = userProfile?.account_type?.toLowerCase() === "vip";
+  // Determine user account tier and privileges
+  const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
+  const roleUpper = (userProfile?.role || "").toUpperCase();
+
+  const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
+  const isVIP = accountTypeUpper === "VIP";
+  const isAdFree = isVIP || isAdmin;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
@@ -192,25 +198,25 @@ export default function Home() {
         {userProfile && (
           <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3">
-              <div className={`p-3 rounded-xl ${isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                {isVIP ? "👑" : "👤"}
+              <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-bold text-white text-base">
                     {userProfile.full_name || userProfile.email || "Member Account"}
                   </h2>
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
-                    {isVIP ? "VIP ACCESS" : "STANDARD TIER"}
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isAdmin ? 'bg-purple-600 text-white' : isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
+                    {isAdmin ? "ADMIN ACCESS" : isVIP ? "VIP ACCESS" : "STANDARD TIER"}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {isVIP ? "Unlimited Videos • Ad-Free • VIP Download Unlocked" : "Unlimited Videos • Ad Supported"}
+                  {isAdFree ? "Unlimited Videos • Ad-Free • VIP Download Unlocked" : "Unlimited Videos • Ad Supported"}
                 </p>
               </div>
             </div>
 
-            {!isVIP && (
+            {!isAdFree && (
               <div className="flex items-center gap-2.5 w-full sm:w-auto">
                 <button
                   onClick={() => setShowRedeemModal(true)}
@@ -360,7 +366,7 @@ export default function Home() {
                 />
               </div>
 
-              {!isVIP && (
+              {!isAdFree && (
                 <div className="w-full max-w-4xl mt-3 p-3 bg-slate-950 border border-red-900/30 rounded-xl flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">

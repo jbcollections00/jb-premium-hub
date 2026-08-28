@@ -200,7 +200,7 @@ export default function AdminUsers() {
   });
 
   return (
-    <div className="p-6 bg-slate-950 text-white min-h-screen">
+    <div className="p-4 sm:p-6 bg-slate-950 text-white min-h-screen">
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6">
         <div className="relative w-full md:w-1/2">
           <input
@@ -217,7 +217,7 @@ export default function AdminUsers() {
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="bg-slate-900 border border-slate-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer"
+            className="bg-slate-900 border border-slate-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer w-full md:w-auto"
           >
             <option value="ALL">All Accounts ({users.length})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
@@ -246,12 +246,12 @@ export default function AdminUsers() {
             return (
               <div
                 key={item.id}
-                className={`bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg hover:border-slate-700 transition-all ${
+                className={`bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg hover:border-slate-700 transition-all ${
                   isProcessing ? "opacity-50 pointer-events-none" : ""
                 }`}
               >
                 <div className="space-y-1">
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                     <span
                       className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                         isOnline
@@ -290,26 +290,33 @@ export default function AdminUsers() {
                     )}
                   </div>
 
-                  <p className="text-xs text-slate-300 font-medium">
+                  <p className="text-xs text-slate-300 font-medium break-all">
                     {item.email || "No email linked"}
                   </p>
-                  <p className="text-[11px] text-slate-500 font-mono">ID: {item.id}</p>
+                  <p className="text-[11px] text-slate-500 font-mono truncate max-w-xs sm:max-w-none">
+                    ID: {item.id}
+                  </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                {/* ADAPTABLE ACTION BUTTONS (Icons only on small screens, Icon + Label on sm+) */}
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  {/* View as User Button */}
                   <button
                     onClick={() => handleAccessAccount(item)}
                     disabled={isProcessing}
-                    className="bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1"
-                    title="Log in as this user in a new tab"
+                    className="bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 font-bold text-xs p-2 sm:px-3 sm:py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                    title="View as User"
                   >
-                    👁️ View as User
+                    <span className="text-sm">👁️</span>
+                    <span className="hidden sm:inline">View as User</span>
                   </button>
 
+                  {/* Promote / Demote Button */}
                   <button
                     onClick={() => handleToggleVip(item.id, item.account_type)}
                     disabled={isProcessing || isAdminAccount}
-                    className={`font-bold text-xs px-3.5 py-2 rounded-xl border transition-all cursor-pointer ${
+                    title={isAdminAccount ? "Admin Account" : isVip ? "Demote User" : "Promote User"}
+                    className={`font-bold text-xs p-2 sm:px-3.5 sm:py-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
                       isAdminAccount
                         ? "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed"
                         : isVip
@@ -317,27 +324,40 @@ export default function AdminUsers() {
                         : "bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border-emerald-500/30"
                     }`}
                   >
-                    {isAdminAccount ? "Admin" : isVip ? "Demote" : "Promote 👑"}
+                    <span className="text-sm">
+                      {isAdminAccount ? "🛡️" : isVip ? "⬇️" : "👑"}
+                    </span>
+                    <span className="hidden sm:inline">
+                      {isAdminAccount ? "Admin" : isVip ? "Demote" : "Promote"}
+                    </span>
                   </button>
 
+                  {/* Ban / Unban Button */}
                   <button
                     onClick={() => handleBanUser(item.id, item.is_banned)}
                     disabled={isProcessing}
-                    className={`font-bold text-xs px-3.5 py-2 rounded-xl border transition-all cursor-pointer ${
+                    title={item.is_banned ? "Unban User" : "Ban User"}
+                    className={`font-bold text-xs p-2 sm:px-3.5 sm:py-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
                       item.is_banned
                         ? "bg-amber-900/40 hover:bg-amber-800 text-amber-300 border-amber-500/30"
                         : "bg-orange-950/50 hover:bg-orange-900 text-orange-400 border-orange-800/40"
                     }`}
                   >
-                    {item.is_banned ? "Unban 🔓" : "Ban 🚫"}
+                    <span className="text-sm">{item.is_banned ? "🔓" : "🚫"}</span>
+                    <span className="hidden sm:inline">
+                      {item.is_banned ? "Unban" : "Ban"}
+                    </span>
                   </button>
 
+                  {/* Delete Button */}
                   <button
                     onClick={() => handleDeleteUser(item.id)}
                     disabled={isProcessing}
-                    className="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 border border-slate-700/60 hover:border-rose-500/40 font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer"
+                    title="Delete User"
+                    className="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 border border-slate-700/60 hover:border-rose-500/40 font-bold text-xs p-2 sm:px-3 sm:py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
                   >
-                    Delete 🗑️
+                    <span className="text-sm">🗑️</span>
+                    <span className="hidden sm:inline">Delete</span>
                   </button>
                 </div>
               </div>

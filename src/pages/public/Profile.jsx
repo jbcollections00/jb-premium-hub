@@ -24,6 +24,12 @@ export default function Profile() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetMsg, setResetMsg] = useState({ type: "", text: "" });
 
+  // Delete Account State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   // FAQ Toggle State
   const [openFaq, setOpenFaq] = useState(null);
 
@@ -148,6 +154,32 @@ export default function Profile() {
       setResetMsg({ type: "error", text: err.message });
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") return;
+
+    setDeletingAccount(true);
+    setDeleteError("");
+
+    try {
+      // 1. Delete public profile record
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", user.id);
+
+      if (profileError) throw profileError;
+
+      // 2. Sign user out from session
+      await supabase.auth.signOut();
+
+      // 3. Redirect user back to auth page
+      navigate("/admin-login");
+    } catch (err) {
+      setDeleteError("Failed to delete account: " + err.message);
+      setDeletingAccount(false);
     }
   };
 
@@ -514,6 +546,23 @@ export default function Profile() {
               </div>
             </div>
 
+            {/* DANGER ZONE: DELETE ACCOUNT */}
+            <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl">
+              <h3 className="text-lg font-bold text-rose-400 mb-2 flex items-center gap-2">
+                ⚠️ Danger Zone
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                Permanently remove your account and access to any active VIP memberships. This action cannot be undone.
+              </p>
+
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2"
+              >
+                🗑️ Delete My Account
+              </button>
+            </div>
+
           </div>
         </div>
 
@@ -609,6 +658,58 @@ export default function Profile() {
         </div>
 
       </div>
+
+      {/* CONFIRM DELETE MODAL */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-900/60 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="text-xl font-black text-rose-400 flex items-center gap-2">
+              🚨 Permanently Delete Account?
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This action will completely erase your profile information and active VIP status. You will not be able to recover this account.
+            </p>
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold uppercase text-slate-400 block">
+                Type <span className="text-white font-mono font-black">DELETE</span> to confirm:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono uppercase text-white focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            {deleteError && (
+              <p className="text-xs text-rose-400 font-semibold">{deleteError}</p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmText("");
+                  setDeleteError("");
+                }}
+                disabled={deletingAccount}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== "DELETE" || deletingAccount}
+                className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs py-2.5 rounded-xl transition-all"
+              >
+                {deletingAccount ? "Deleting..." : "Permanently Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

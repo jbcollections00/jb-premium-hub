@@ -3,7 +3,7 @@ import { supabase } from '../services/supabaseClient';
 
 export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile, accountType }) {
   const [isPlayingAd, setIsPlayingAd] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(5);
+  const [timeLeft, setTimeLeft] = useState(3);
   const [canSkip, setCanSkip] = useState(false);
   const [checkingUser, setCheckingUser] = useState(true);
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
@@ -62,18 +62,11 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
 
       setIsAdFreeUser(isAdFree);
 
+      // 📢 Triggers pre-roll ad on EVERY video play for standard users
       if (!isAdFree) {
-        const currentCount = parseInt(localStorage.getItem('std_video_watch_count') || '0', 10);
-        const newCount = currentCount + 1;
-        localStorage.setItem('std_video_watch_count', newCount.toString());
-
-        if (newCount % 3 === 1) {
-          setIsPlayingAd(true);
-          setTimeLeft(5);
-          setCanSkip(false);
-        } else {
-          setIsPlayingAd(false);
-        }
+        setIsPlayingAd(true);
+        setTimeLeft(3);
+        setCanSkip(false);
       } else {
         setIsPlayingAd(false);
       }

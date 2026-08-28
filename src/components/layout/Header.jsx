@@ -2,18 +2,33 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
-// SVG Icons
+// 🎨 Modernized Vector SVG Icons
 const IconMessage = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path 
+      d="M8.5 19H8C4 19 2 18 2 13V8C2 4 4 2 8 2H16C20 2 22 4 22 8V13C22 17 20 19 16 19H15.5C15.19 19 14.89 19.15 14.7 19.4L13.2 21.4C12.54 22.28 11.46 22.28 10.8 21.4L9.3 19.4C9.11 19.15 8.81 19 8.5 19Z" 
+      stroke="currentColor" 
+      strokeWidth="1.8" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    />
+    <path d="M15.9965 11H16.0055" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M11.9955 11H12.0045" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M7.99451 11H8.00351" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 );
 
 const IconLogout = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-    <polyline points="16 17 21 12 16 7"/>
-    <line x1="21" y1="12" x2="9" y2="12"/>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path 
+      d="M8.9 7.56C9.21 3.96 11.06 2.49 15.11 2.49H15.24C19.71 2.49 21.5 4.28 21.5 8.75V15.27C21.5 19.74 19.71 21.53 15.24 21.53H15.11C11.09 21.53 9.24 20.08 8.91 16.54" 
+      stroke="currentColor" 
+      strokeWidth="1.8" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    />
+    <path d="M15 12H3.62" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M5.85 8.65L2.5 12L5.85 15.35" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 );
 
@@ -88,18 +103,18 @@ export default function Header() {
     <header className="site-header">
       <style>{`
         .site-header {
-          background-color: rgba(17, 24, 39, 0.95);
-          backdrop-filter: blur(12px);
-          border-bottom: 1px solid rgba(31, 41, 55, 0.8);
+          background-color: rgba(10, 15, 29, 0.92);
+          backdrop-filter: blur(16px);
+          border-bottom: 1px solid rgba(30, 41, 59, 0.8);
           color: white;
-          padding: 12px 18px;
+          padding: 12px 20px;
           display: flex;
           justify-content: space-between;
           align-items: center;
           position: sticky;
           top: 0;
           z-index: 50;
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
         }
 
         .nav-brand {
@@ -114,17 +129,18 @@ export default function Header() {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 38px;
-          height: 38px;
+          width: 40px;
+          height: 40px;
           border-radius: 12px;
-          background: linear-gradient(135deg, #3b82f6, #9333ea, #4f46e5);
+          background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
           padding: 1.5px;
+          box-shadow: 0 0 15px rgba(139, 92, 246, 0.25);
         }
 
         .logo-box-inner {
           width: 100%;
           height: 100%;
-          background-color: #111827;
+          background-color: #0f172a;
           border-radius: 10px;
           display: flex;
           align-items: center;
@@ -135,56 +151,85 @@ export default function Header() {
 
         .brand-subtitle {
           font-size: 11px;
-          color: #9ca3af;
+          color: #94a3b8;
           font-weight: 500;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.06em;
           text-transform: uppercase;
-          margin-top: 3px;
+          margin-top: 2px;
         }
 
         .nav-controls {
           display: flex;
           align-items: center;
-          gap: 14px;
+          gap: 12px;
         }
 
         .nav-item-btn {
-          color: #d1d5db;
+          color: #cbd5e1;
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 8px;
           text-decoration: none;
           font-size: 14px;
-          font-weight: 500;
-          padding: 6px 10px;
-          border-radius: 8px;
-          transition: all 0.2s;
+          font-weight: 600;
+          padding: 7px 12px;
+          border-radius: 10px;
+          transition: all 0.2s ease;
           position: relative;
+          border: 1px solid transparent;
         }
 
         .nav-item-btn:hover {
           color: #ffffff;
-          background-color: rgba(255, 255, 255, 0.08);
+          background-color: rgba(255, 255, 255, 0.06);
+          border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .profile-avatar {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #2563eb, #7c3aed);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 800;
+          font-size: 12px;
+          color: #ffffff;
+          box-shadow: 0 0 10px rgba(124, 58, 237, 0.3);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .unread-badge {
+          background: linear-gradient(135deg, #2563eb, #3b82f6);
+          color: #fff;
+          font-size: 10px;
+          padding: 2px 7px;
+          border-radius: 12px;
+          font-weight: 800;
+          box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
         }
 
         .btn-logout {
-          background-color: rgba(239, 68, 68, 0.12);
+          background-color: rgba(239, 68, 68, 0.1);
           color: #f87171;
           border: 1px solid rgba(239, 68, 68, 0.25);
           font-size: 14px;
-          font-weight: 500;
-          padding: 6px 12px;
-          border-radius: 8px;
+          font-weight: 600;
+          padding: 7px 14px;
+          border-radius: 10px;
           cursor: pointer;
           display: flex;
           align-items: center;
-          gap: 6px;
-          transition: all 0.2s;
+          gap: 8px;
+          transition: all 0.2s ease;
         }
 
         .btn-logout:hover {
-          background-color: #dc2626;
+          background-color: #ef4444;
           color: #ffffff;
+          box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+          border-color: transparent;
         }
 
         /* 📱 MOBILE OVERRIDE (< 768px): TATANGGALIN ANG TEXT AT IWAN ANG ICONS LANG */
@@ -193,7 +238,7 @@ export default function Header() {
             display: none !important;
           }
           .site-header {
-            padding: 10px 12px;
+            padding: 10px 14px;
           }
           .nav-controls {
             gap: 6px;
@@ -220,15 +265,14 @@ export default function Header() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {/* 🔧 FIXED: Inayos ang 'alignItems' mula sa 'itemsCenter' */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
-            <span style={{ fontSize: '1.15rem', fontWeight: 800, background: 'linear-gradient(to right, #60a5fa, #818cf8, #c084fc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <span style={{ fontSize: '1.2rem', fontWeight: 900, background: 'linear-gradient(to right, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               JB
             </span>
-            <span style={{ fontSize: '1.15rem', fontWeight: 600, color: '#fff' }}>
+            <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>
               PREMIUM
             </span>
-            <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#d8b4fe', border: '1px solid rgba(168, 85, 247, 0.3)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '5px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#e9d5ff', border: '1px solid rgba(168, 85, 247, 0.35)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               HUB
             </span>
           </div>
@@ -243,7 +287,7 @@ export default function Header() {
       <div className="nav-controls">
         {/* 👤 Profile Link */}
         <Link to="/profile" className="nav-item-btn" title="Profile">
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(to top right, #2563eb, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px', color: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+          <div className="profile-avatar">
             {userInitial}
           </div>
           <span className="hide-on-mobile">Profile</span>
@@ -256,7 +300,7 @@ export default function Header() {
 
           {/* LALABAS LANG PAG MAY UNREAD MESSAGES */}
           {messageCount > 0 && (
-            <span style={{ backgroundColor: '#2563eb', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '10px', fontWeight: 'bold' }}>
+            <span className="unread-badge">
               {messageCount}
             </span>
           )}
