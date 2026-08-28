@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import MainLayout from './components/layout/MainLayout';
+import PageAdGate from './components/PageAdGate';
 import LandingPage from './pages/public/LandingPage';
 import Login from './pages/public/Login';
 import Signup from './pages/public/Signup';
@@ -31,15 +32,21 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/admin-login" element={<AdminLogin />} />
 
-        {/* User Pages & Legal Pages with MainLayout (Header & Footer) */}
-        <Route element={<MainLayout />}>
+        {/* User Pages & Legal Pages Wrapped in PageAdGate + MainLayout */}
+        <Route
+          element={
+            <PageAdGate>
+              <MainLayout />
+            </PageAdGate>
+          }
+        >
           {/* Public Legal Routes */}
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/dmca" element={<DmcaPage />} />
           <Route path="/support" element={<SupportPage />} />
 
-          {/* Protected User Routes (Requires User Login) */}
+          {/* Protected User Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/home" element={<Home />} />
             <Route path="/activate" element={<ActivateCode />} />
@@ -49,7 +56,7 @@ function App() {
           </Route>
         </Route>
 
-        {/* Protected Secret Admin Route (Requires Admin Privilege) */}
+        {/* Protected Secret Admin Route (No Page Ads) */}
         <Route element={<ProtectedRoute adminOnly={true} />}>
           <Route path="/admin-vault-secret" element={<AdminDashboard />} />
         </Route>

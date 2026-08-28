@@ -13,11 +13,15 @@ export default function ProtectedRoute({ adminOnly = false }) {
     // Listen for auth state changes (sign out, session expiration)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session?.user);
-      setLoading(false);
+      if (session?.user) {
+        checkUser();
+      } else {
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [adminOnly]);
 
   const checkUser = async () => {
     try {
@@ -26,16 +30,20 @@ export default function ProtectedRoute({ adminOnly = false }) {
       if (user) {
         setIsAuthenticated(true);
 
-        // Fetch role if the route specifically requires admin privileges
+        // Fetch user profile to verify admin access
         if (adminOnly) {
-          const { data: profile } = await supabase
+          const { data: profile, error } = await supabase
             .from('profiles')
-            .select('role')
+            .select('*')
             .eq('id', user.id)
             .single();
 
-          if (profile?.role === 'admin') {
-            setIsAdmin(true);
+          if (!error && profile) {
+            const hasAdminAccess = 
+              profile.account_type?.toLowerCase() === 'admin' || 
+              profile.role?.toLowerCase() === 'admin';
+
+            setIsAdmin(hasAdminAccess);
           }
         }
       } else {

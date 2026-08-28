@@ -187,9 +187,13 @@ export default function AdminUsers() {
       (u.email && u.email.toLowerCase().includes(searchLower)) ||
       (u.id && u.id.toLowerCase().includes(searchLower));
 
-    const isVip = (u.account_type || "").toUpperCase() === "VIP";
+    const accountType = (u.account_type || u.role || "").toUpperCase();
+    const isAdmin = accountType === "ADMIN";
+    const isVip = accountType === "VIP";
+
+    if (filterType === "ADMIN") return matchesSearch && isAdmin;
     if (filterType === "VIP") return matchesSearch && isVip;
-    if (filterType === "STANDARD") return matchesSearch && !isVip;
+    if (filterType === "STANDARD") return matchesSearch && !isVip && !isAdmin;
     if (filterType === "ONLINE") return matchesSearch && onlineUserIds.has(u.id);
 
     return matchesSearch;
@@ -217,6 +221,7 @@ export default function AdminUsers() {
           >
             <option value="ALL">All Accounts ({users.length})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
+            <option value="ADMIN">Admin Only</option>
             <option value="VIP">VIP Only</option>
             <option value="STANDARD">Standard Only</option>
           </select>
@@ -232,7 +237,9 @@ export default function AdminUsers() {
       ) : (
         <div className="space-y-4">
           {filteredUsers.map((item) => {
-            const isVip = (item.account_type || "").toUpperCase() === "VIP";
+            const accountType = (item.account_type || item.role || "").toUpperCase();
+            const isAdminAccount = accountType === "ADMIN";
+            const isVip = accountType === "VIP";
             const isOnline = onlineUserIds.has(item.id);
             const isProcessing = actionInProgress === item.id;
 
@@ -266,12 +273,14 @@ export default function AdminUsers() {
 
                     <span
                       className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase border ${
-                        isVip
+                        isAdminAccount
+                          ? "bg-rose-500/20 text-rose-400 border-rose-500/30"
+                          : isVip
                           ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
                           : "bg-blue-500/20 text-blue-400 border-blue-500/30"
                       }`}
                     >
-                      {isVip ? "VIP 👑" : "STANDARD"}
+                      {isAdminAccount ? "ADMIN 🛡️" : isVip ? "VIP 👑" : "STANDARD"}
                     </span>
 
                     {item.is_banned && (
@@ -299,14 +308,16 @@ export default function AdminUsers() {
 
                   <button
                     onClick={() => handleToggleVip(item.id, item.account_type)}
-                    disabled={isProcessing}
+                    disabled={isProcessing || isAdminAccount}
                     className={`font-bold text-xs px-3.5 py-2 rounded-xl border transition-all cursor-pointer ${
-                      isVip
+                      isAdminAccount
+                        ? "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed"
+                        : isVip
                         ? "bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 border-purple-500/30"
                         : "bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border-emerald-500/30"
                     }`}
                   >
-                    {isVip ? "Demote" : "Promote 👑"}
+                    {isAdminAccount ? "Admin" : isVip ? "Demote" : "Promote 👑"}
                   </button>
 
                   <button

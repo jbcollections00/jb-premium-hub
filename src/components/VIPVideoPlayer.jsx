@@ -6,7 +6,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   const [timeLeft, setTimeLeft] = useState(5);
   const [canSkip, setCanSkip] = useState(false);
   const [checkingUser, setCheckingUser] = useState(true);
-  const [isVipUser, setIsVipUser] = useState(false);
+  const [isAdFreeUser, setIsAdFreeUser] = useState(false);
 
   const mainVideoRef = useRef(null);
 
@@ -20,31 +20,37 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
 
   const videoSrc = getCleanVideoUrl(mainVideoUrl);
 
-  // 1️⃣ Check User VIP Status & Apply Ad Logic
+  // Helper check for Admin or VIP status
+  const checkAdFreeStatus = (type, role) => {
+    const t = (type || '').toUpperCase();
+    const r = (role || '').toUpperCase();
+    return t === 'VIP' || t === 'ADMIN' || r === 'ADMIN';
+  };
+
+  // 1️⃣ Check User VIP / Admin Status & Apply Ad Logic
   useEffect(() => {
     let isMounted = true;
 
     const determineAdBehavior = async () => {
       setCheckingUser(true);
-      let isVip = false;
+      let isAdFree = false;
 
       if (accountType) {
-        isVip = accountType.toUpperCase() === 'VIP';
+        isAdFree = checkAdFreeStatus(accountType);
       } else if (userProfile) {
-        isVip = (userProfile.account_type || '').toUpperCase() === 'VIP';
+        isAdFree = checkAdFreeStatus(userProfile.account_type, userProfile.role);
       } else {
         try {
-          // Ligtas na check para hindi mag-trigger ng 400 Bad Request kung undefined ang user.id
           const { data: { user } } = await supabase.auth.getUser();
           if (user?.id) {
             const { data: profile, error } = await supabase
               .from('profiles')
-              .select('account_type')
+              .select('account_type, role')
               .eq('id', user.id)
               .maybeSingle();
 
             if (!error && profile) {
-              isVip = (profile.account_type || '').toUpperCase() === 'VIP';
+              isAdFree = checkAdFreeStatus(profile.account_type, profile.role);
             }
           }
         } catch (err) {
@@ -54,9 +60,9 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
 
       if (!isMounted) return;
 
-      setIsVipUser(isVip);
+      setIsAdFreeUser(isAdFree);
 
-      if (!isVip) {
+      if (!isAdFree) {
         const currentCount = parseInt(localStorage.getItem('std_video_watch_count') || '0', 10);
         const newCount = currentCount + 1;
         localStorage.setItem('std_video_watch_count', newCount.toString());
@@ -104,7 +110,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
 
   const openAdsterra = (e) => {
     if (e) e.stopPropagation();
-    if (adDirectLink) {
+    if (adDirectLink && !isAdFreeUser) {
       window.open(adDirectLink, '_blank', 'noopener,noreferrer');
     }
   };
@@ -152,15 +158,15 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
-      {/* 👑 VIP DOWNLOAD BUTTON */}
-      {isVipUser && !isPlayingAd && (
+      {/* 👑 VIP / ADMIN DOWNLOAD BUTTON */}
+      {isAdFreeUser && !isPlayingAd && (
         <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <button
             onClick={handleVipDownload}
             className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
           >
             <span className="text-base">💾</span>
-            <span>Download VIP</span>
+            <span>Download Video</span>
           </button>
         </div>
       )}
@@ -235,7 +241,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
           controls
           autoPlay
           playsInline
-          controlsList={isVipUser ? "" : "nodownload"}
+          controlsList={isAdFreeUser ? "" : "nodownload"}
           className="w-full h-full max-h-[65vh] object-contain"
           onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
         />
