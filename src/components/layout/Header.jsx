@@ -200,14 +200,34 @@ export default function Header() {
           border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
+        /* Container para precise absolute positioning ng Badge */
+        .icon-wrapper {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        /* Superscript Floating Badge */
         .unread-badge {
-          background: linear-gradient(135deg, #2563eb, #3b82f6);
-          color: #fff;
-          font-size: 10px;
-          padding: 2px 7px;
-          border-radius: 12px;
-          font-weight: 800;
-          box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+          position: absolute;
+          top: -6px;
+          right: -8px;
+          background: linear-gradient(135deg, #ef4444, #dc2626);
+          color: #ffffff;
+          font-size: 9px;
+          font-weight: 900;
+          min-width: 16px;
+          height: 16px;
+          padding: 0 4px;
+          border-radius: 9999px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+          border: 1.5px solid #0a0f1d;
+          line-height: 1;
+          pointer-events: none;
         }
 
         .btn-logout {
@@ -232,7 +252,7 @@ export default function Header() {
           border-color: transparent;
         }
 
-        /* 📱 MOBILE OVERRIDE (< 768px): TATANGGALIN ANG TEXT AT IWAN ANG ICONS LANG */
+        /* 📱 MOBILE OVERRIDE (< 768px) */
         @media (max-width: 768px) {
           .hide-on-mobile {
             display: none !important;
@@ -265,7 +285,7 @@ export default function Header() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
+          <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
             <span style={{ fontSize: '1.2rem', fontWeight: 900, background: 'linear-gradient(to right, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               JB
             </span>
@@ -295,15 +315,17 @@ export default function Header() {
 
         {/* 💬 Messages Link */}
         <Link to="/messages" className="nav-item-btn" title="Messages">
-          <IconMessage />
-          <span className="hide-on-mobile">Messages</span>
+          <div className="icon-wrapper">
+            <IconMessage />
 
-          {/* LALABAS LANG PAG MAY UNREAD MESSAGES */}
-          {messageCount > 0 && (
-            <span className="unread-badge">
-              {messageCount}
-            </span>
-          )}
+            {/* 🔴 SUPERSCRIPT UNREAD BADGE */}
+            {messageCount > 0 && (
+              <span className="unread-badge">
+                {messageCount > 99 ? '99+' : messageCount}
+              </span>
+            )}
+          </div>
+          <span className="hide-on-mobile">Messages</span>
         </Link>
 
         {/* 🚪 Logout Button */}

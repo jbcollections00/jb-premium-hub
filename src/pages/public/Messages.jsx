@@ -5,11 +5,14 @@ export default function Messages() {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // State to control mobile view toggle (Messenger style)
+  const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
 
   useEffect(() => {
     fetchUserMessages();
 
-    // Live Realtime listener para sa mga pagbabago sa database
+    // Live Realtime listener for admin messages changes
     const channel = supabase
       .channel("admin_messages_changes")
       .on(
@@ -26,7 +29,7 @@ export default function Messages() {
     };
   }, []);
 
-  // Function para sa sabay na pag-update ng UI at Database kapag nabasa ang message
+  // Update DB and Local State when message is read
   const markAsReadInDBAndLocal = async (msgId) => {
     setMessages((prev) =>
       prev.map((m) => (m.id === msgId ? { ...m, is_read: true } : m))
@@ -53,7 +56,6 @@ export default function Messages() {
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.user) {
-      // 🟢 FIX: Kukunin lang ang direct user messages O totoong global broadcast (kung saan user_id ay NULL)
       const { data, error } = await supabase
         .from("admin_messages")
         .select("*")
@@ -119,7 +121,9 @@ export default function Messages() {
     if (selectedMessage?.id === msgId) {
       const nextMsg = remaining.length > 0 ? remaining[0] : null;
       setSelectedMessage(nextMsg);
-      if (nextMsg && !nextMsg.is_read) {
+      if (!nextMsg) {
+        setIsMobileDetailOpen(false);
+      } else if (!nextMsg.is_read) {
         markAsReadInDBAndLocal(nextMsg.id);
       }
     }
@@ -138,6 +142,7 @@ export default function Messages() {
 
   const handleSelectMessage = (item) => {
     setSelectedMessage(item);
+    setIsMobileDetailOpen(true); // Opens message view on mobile
     if (!item.is_read) {
       markAsReadInDBAndLocal(item.id);
     }
@@ -243,7 +248,11 @@ export default function Messages() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-h-[60vh]">
             
             {/* 📥 Inbox List (Kaliwa) */}
-            <div className="md:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex flex-col">
+            <div
+              className={`md:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex flex-col ${
+                isMobileDetailOpen ? "hidden md:flex" : "flex"
+              }`}
+            >
               <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                   Inbox ({messages.length})
@@ -297,9 +306,21 @@ export default function Messages() {
             </div>
 
             {/* 💬 Reader Panel (Kanan) */}
-            <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
+            <div
+              className={`md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-lg flex flex-col justify-between ${
+                isMobileDetailOpen ? "flex" : "hidden md:flex"
+              }`}
+            >
               {selectedMessage ? (
                 <div className="flex-1 flex flex-col">
+                  {/* Mobile Back Button */}
+                  <button
+                    onClick={() => setIsMobileDetailOpen(false)}
+                    className="md:hidden mb-4 flex items-center gap-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl transition-all cursor-pointer w-fit"
+                  >
+                    ← Back to Messages
+                  </button>
+
                   {/* Sender & Action Bar */}
                   <div className="pb-6 border-b border-slate-800">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
@@ -321,7 +342,7 @@ export default function Messages() {
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
                         {selectedMessage.is_read ? (
                           <button
                             onClick={(e) => handleMarkAsUnread(selectedMessage.id, e)}
@@ -389,7 +410,7 @@ export default function Messages() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-sm py-12">
                   Pumili ng mensahe sa kaliwa upang mabasa ang kabuuan.
                 </div>
               )}
