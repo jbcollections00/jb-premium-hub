@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import MainLayout from './components/layout/MainLayout';
 import PageAdGate from './components/PageAdGate';
+import EventPopup from './components/EventPopup';
+
 import LandingPage from './pages/public/LandingPage';
 import Login from './pages/public/Login';
 import Signup from './pages/public/Signup';
@@ -11,6 +13,7 @@ import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
 import BuyVip from './pages/public/BuyVip';
+import Contest from './pages/public/Contest';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
@@ -24,6 +27,9 @@ import SupportPage from './pages/legal/SupportPage';
 function App() {
   return (
     <Router>
+      {/* Global Event Popup Modal */}
+      <EventPopup />
+
       <Routes>
         {/* Standalone Public Pages */}
         <Route path="/" element={<LandingPage />} />
@@ -53,6 +59,7 @@ function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/buy-vip" element={<BuyVip />} />
+            <Route path="/contest" element={<Contest />} />
           </Route>
         </Route>
 

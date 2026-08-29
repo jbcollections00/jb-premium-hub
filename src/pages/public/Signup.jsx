@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
 export default function Signup() {
@@ -13,12 +13,23 @@ export default function Signup() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // 1. I-save ang referral code mula sa URL papuntang localStorage para hindi mawala
+  useEffect(() => {
+    const refFromUrl = searchParams.get('ref');
+    if (refFromUrl) {
+      localStorage.setItem('jb_ref_code', refFromUrl);
+    }
+  }, [searchParams]);
 
   // Field validation
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   const isEmailValid = emailRegex.test(email.trim());
   const isPasswordValid = password.trim().length >= 6;
   const isNameValid = fullName.trim().length >= 2;
+
+  const activeRefCode = searchParams.get('ref') || localStorage.getItem('jb_ref_code');
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -37,7 +48,7 @@ export default function Signup() {
 
     try {
       // 1. Create Supabase Auth Account
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: trimmedEmail,
         password: trimmedPassword,
         options: {
@@ -49,7 +60,38 @@ export default function Signup() {
 
       if (error) throw error;
 
-      // 2. Immediate redirect to /home
+      const newUser = data?.user;
+
+      if (newUser) {
+        // 2. Gumawa ng Profile at sariling Referral Code para sa bagong user
+        const ownRefCode = newUser.id.slice(0, 8);
+        await supabase.from('profiles').upsert({
+          id: newUser.id,
+          referral_code: ownRefCode,
+          updated_at: new Date().toISOString()
+        });
+
+        // 3. I-link sa Referrer kung pumasok gamit ang referral link
+        if (activeRefCode) {
+          const { data: referrerProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('referral_code', activeRefCode)
+            .single();
+
+          if (referrerProfile && referrerProfile.id !== newUser.id) {
+            await supabase.from('referrals').insert({
+              referrer_id: referrerProfile.id,
+              referred_id: newUser.id,
+              status: 'pending'
+            });
+          }
+          // Linisin ang storage pagkatapos magamit
+          localStorage.removeItem('jb_ref_code');
+        }
+      }
+
+      // 4. Immediate redirect to /home
       navigate('/home');
     } catch (err) {
       setErrorMsg(err.message);
@@ -73,6 +115,13 @@ export default function Signup() {
           <p className="text-slate-400 text-xs mt-1">
             Sign up for instant access to standard media content
           </p>
+
+          {/* Referral Badge Notification */}
+          {activeRefCode && (
+            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full text-amber-400 text-[11px] font-semibold">
+              🎁 Invited by a friend (Ref Code: {activeRefCode})
+            </div>
+          )}
         </div>
 
         {errorMsg && (

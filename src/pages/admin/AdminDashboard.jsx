@@ -8,6 +8,7 @@ import AccessCodesTab from './AccessCodesTab';
 import AdminUsersTab from './AdminUsersTab';
 import AdminMessagesTab from './AdminMessagesTab'; 
 import AdminMediaTab from './AdminMediaTab';
+import AdminEventControl from '../../components/admin/AdminEventControl';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -131,6 +132,7 @@ export default function AdminDashboard() {
 
   const navItems = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+    { id: 'events', icon: '🏆', label: 'Contest & Events' },
     { id: 'tickets', icon: '🎧', label: 'Support Tickets', badge: pendingTicketsCount },
     { id: 'users', icon: '👥', label: 'Users', count: users.length },
     { id: 'messages', icon: '💬', label: 'Send Messages' },
@@ -240,6 +242,7 @@ export default function AdminDashboard() {
         )}
 
         {/* TAB COMPONENTS */}
+        {activeTab === 'events' && <AdminEventControl />}
         {activeTab === 'tickets' && <SupportTicketsTab />}
         {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}
         {activeTab === 'messages' && <AdminMessagesTab users={users} />}

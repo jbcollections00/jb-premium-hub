@@ -10,6 +10,10 @@ export default function Profile() {
   const [codeHistory, setCodeHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Referral & Contest State
+  const [contestData, setContestData] = useState(null);
+  const [copied, setCopied] = useState(false);
+
   // Profile Edit State
   const [displayName, setDisplayName] = useState("");
   const [updatingProfile, setUpdatingProfile] = useState(false);
@@ -57,17 +61,39 @@ export default function Profile() {
       setUser(user);
 
       if (user) {
-        const { data: profile } = await supabase
+        // 1. Fetch Profile Data (Auto-create referral code if missing)
+        let { data: profile } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", user.id)
           .single();
+
+        let userRefCode = profile?.referral_code;
+
+        if (!userRefCode) {
+          userRefCode = user.id.slice(0, 8);
+          await supabase
+            .from("profiles")
+            .upsert({ id: user.id, referral_code: userRefCode, updated_at: new Date().toISOString() });
+
+          profile = { ...profile, referral_code: userRefCode };
+        }
 
         if (profile) {
           setProfileData(profile);
           setDisplayName(profile.full_name || user.email?.split("@")[0] || "");
         }
 
+        // 2. Fetch Active Bi-Weekly Contest Data via RPC
+        const { data: contest } = await supabase.rpc("get_or_create_active_contest", {
+          p_user_id: user.id,
+        });
+
+        if (contest && contest.length > 0) {
+          setContestData(contest[0]);
+        }
+
+        // 3. Fetch Access Code Expiration
         const { data: activeCodes } = await supabase
           .from("access_codes")
           .select("expires_at")
@@ -84,6 +110,7 @@ export default function Profile() {
           setTimeLeft(null);
         }
 
+        // 4. Code History
         const { data: history } = await supabase
           .from("access_codes")
           .select("*")
@@ -112,6 +139,14 @@ export default function Profile() {
       seconds: Math.floor((difference / 1000) % 60),
       expired: false,
     };
+  };
+
+  const handleCopyReferral = () => {
+    const code = profileData?.referral_code || user?.id?.slice(0, 8);
+    const referralLink = `${window.location.origin}/signup?ref=${code}`;
+    navigator.clipboard.writeText(referralLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   };
 
   const handleUpdateProfile = async (e) => {
@@ -164,7 +199,6 @@ export default function Profile() {
     setDeleteError("");
 
     try {
-      // 1. Delete public profile record
       const { error: profileError } = await supabase
         .from("profiles")
         .delete()
@@ -172,10 +206,7 @@ export default function Profile() {
 
       if (profileError) throw profileError;
 
-      // 2. Sign user out from session
       await supabase.auth.signOut();
-
-      // 3. Redirect user back to auth page
       navigate("/admin-login");
     } catch (err) {
       setDeleteError("Failed to delete account: " + err.message);
@@ -307,18 +338,23 @@ export default function Profile() {
   const hasActiveVipDate = expirationDate ? new Date(expirationDate) > new Date() : false;
   const isVip = isAdmin || hasActiveVipDate;
 
+  const userReferralCode = profileData?.referral_code || user?.id?.slice(0, 8);
+  const referralUrl = `${window.location.origin}/signup?ref=${userReferralCode}`;
+  const qualifiedInvites = contestData?.qualified_referrals_count || 0;
+  const contestRound = contestData?.round_number || 1;
+
   const faqs = [
     {
+      q: "How does the Bi-Weekly Referral Contest work?",
+      a: "Invite friends using your unique link. When 10 invited friends watch 10+ videos in a single day (and you watch 10 videos too), you win a FREE 2-Week VIP Access Pass automatically stacked to your account!",
+    },
+    {
       q: "How do I extend my VIP status?",
-      a: "Obtain a new Access Code from the Admin and redeem it in the form above. Extra days will automatically stack onto your current expiration date.",
+      a: "Obtain an Access Code from Admin or win the Bi-Weekly Referral Contest. Extra days stack onto your current expiration date.",
     },
     {
       q: "What happens when my VIP membership expires?",
-      a: "Your account will automatically revert to Standard status, restricting access to exclusive VIP video content until renewed.",
-    },
-    {
-      q: "Will I lose my remaining balance if I activate a new code early?",
-      a: "No! Our stacking feature adds new days directly onto the end of your existing expiration date.",
+      a: "Your account reverts to Standard status, restricting access to exclusive VIP video content until renewed.",
     },
   ];
 
@@ -330,8 +366,69 @@ export default function Profile() {
         <div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Account Dashboard</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Manage your profile, active subscription status, and security settings.
+            Manage your profile, active subscription status, referrals, and security settings.
           </p>
+        </div>
+
+        {/* 🎁 REFERRAL & BI-WEEKLY CONTEST CARD */}
+        <div className="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full text-amber-400 text-xs font-bold uppercase">
+                🏆 Bi-Weekly Contest — Round #{contestRound}
+              </div>
+              <h2 className="text-xl font-bold text-white">Invite 10 Friends & Get 2 Weeks VIP FREE</h2>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Share your invite link below. When your referred users complete their daily watch goal, you earn progress toward your 14-Day VIP reward.
+              </p>
+            </div>
+
+            {/* Referral Code & Copy Box */}
+            <div className="w-full md:w-auto bg-slate-950/80 border border-slate-800 p-4 rounded-xl space-y-3 shrink-0">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Your Referral Code:</span>
+                <span className="font-mono text-amber-400 font-bold text-sm bg-slate-900 px-2.5 py-1 rounded border border-slate-800">
+                  {userReferralCode}
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={referralUrl}
+                  className="bg-slate-900 border border-slate-800 text-xs text-slate-300 rounded-lg px-3 py-2 w-48 font-mono focus:outline-none truncate"
+                />
+                <button
+                  onClick={handleCopyReferral}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-lg transition-all shrink-0 cursor-pointer"
+                >
+                  {copied ? "✓ Copied!" : "📋 Copy Link"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+            <div className="md:col-span-2 space-y-2">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-300">Qualified Referrals Progress</span>
+                <span className="text-amber-400">{qualifiedInvites} / 10 Invites</span>
+              </div>
+              <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                <div 
+                  className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all duration-500 rounded-full"
+                  style={{ width: `${Math.min((qualifiedInvites / 10) * 100, 100)}%` }}
+                ></div>
+              </div>
+            </div>
+
+            <div className="text-right text-xs">
+              <span className="text-slate-400 block">Reward:</span>
+              <span className="text-emerald-400 font-bold">🎉 +14 Days VIP Access</span>
+            </div>
+          </div>
         </div>
 
         {/* Top Section */}

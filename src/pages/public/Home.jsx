@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
+import EventPopup from "../../components/EventPopup";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -192,6 +193,10 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
+      
+      {/* 🚀 Active Event Popup Modal */}
+      <EventPopup />
+
       <div className="max-w-7xl mx-auto">
         
         {/* 👑 USER MEMBERSHIP STATUS BAR */}

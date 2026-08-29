@@ -9,6 +9,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
 
   const mainVideoRef = useRef(null);
+  const hasLoggedWatchRef = useRef(false);
 
   const CDN_DOMAIN = "https://cdn.jb-premium-hub.vip";
   
@@ -25,6 +26,26 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     const t = (type || '').toUpperCase();
     const r = (role || '').toUpperCase();
     return t === 'VIP' || t === 'ADMIN' || r === 'ADMIN';
+  };
+
+  // Reset video watch tracker state when video changes
+  useEffect(() => {
+    hasLoggedWatchRef.current = false;
+  }, [mainVideoUrl]);
+
+  // Log Video Watch for Referral Contest Qualification
+  const handleVideoPlay = async () => {
+    if (hasLoggedWatchRef.current) return;
+    hasLoggedWatchRef.current = true;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        await supabase.rpc('log_user_video_watch', { p_user_id: user.id });
+      }
+    } catch (err) {
+      console.error("Error logging video watch:", err);
+    }
   };
 
   // 1️⃣ Check User VIP / Admin Status & Apply Ad Logic
@@ -234,6 +255,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
           controls
           autoPlay
           playsInline
+          onPlay={handleVideoPlay}
           controlsList={isAdFreeUser ? "" : "nodownload"}
           className="w-full h-full max-h-[65vh] object-contain"
           onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
