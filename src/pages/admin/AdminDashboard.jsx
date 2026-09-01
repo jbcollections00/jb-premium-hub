@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
+import { 
+  ResponsiveContainer, 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  PieChart, 
+  Pie, 
+  Cell 
+} from 'recharts';
 
 // Child Components / Tabs
 import SupportTicketsTab from './SupportTicketsTab';
@@ -119,16 +130,62 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
+  // 🎯 Categorized User Calculations
   const vipUsersCount = users.filter(
-    (u) => u.account_type?.toLowerCase() === 'vip' || u.is_activated
+    (u) => u.account_type?.toLowerCase() === 'vip'
   ).length;
 
-  const adminUsersCount = users.filter(
-    (u) => u.account_type?.toLowerCase() === 'admin'
+  const guestUsersCount = users.filter(
+    (u) => u.is_anonymous || u.account_type?.toLowerCase() === 'guest' || u.account_type?.toLowerCase() === 'anonymous' || !u.email
   ).length;
 
-  const standardUsersCount = Math.max(0, users.length - vipUsersCount - adminUsersCount);
+  const standardUsersCount = users.filter(
+    (u) => 
+      (u.account_type?.toLowerCase() === 'standard' || !u.account_type) && 
+      !u.is_anonymous && 
+      u.email && 
+      u.account_type?.toLowerCase() !== 'vip' && 
+      u.account_type?.toLowerCase() !== 'admin'
+  ).length;
+
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
+
+  // 📊 Analytics Data Preparation
+  const pieChartData = [
+    { name: 'VIP Members', value: vipUsersCount, color: '#10b981' },
+    { name: 'Standard Users', value: standardUsersCount, color: '#3b82f6' },
+    { name: 'Guest Users', value: guestUsersCount, color: '#f59e0b' },
+  ].filter(item => item.value > 0);
+
+  // 📈 Calculate Last 7 Days Signup/Entry Trend
+  const getLast7DaysData = () => {
+    const result = [];
+    const now = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(now.getDate() - i);
+      const dateString = date.toISOString().split('T')[0];
+      const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+      const dayUsers = users.filter(u => u.created_at && u.created_at.startsWith(dateString));
+      const registeredCount = dayUsers.filter(u => u.email && !u.is_anonymous).length;
+      const guestCount = dayUsers.filter(u => u.is_anonymous || !u.email).length;
+
+      result.push({
+        day: dayLabel,
+        Registered: registeredCount,
+        Guests: guestCount,
+      });
+    }
+    return result;
+  };
+
+  const weeklyTrendData = getLast7DaysData();
+  const registeredOnlyCount = standardUsersCount + vipUsersCount;
+  const vipConversionRate = registeredOnlyCount > 0 
+    ? ((vipUsersCount / registeredOnlyCount) * 100).toFixed(1) 
+    : 0;
 
   const navItems = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
@@ -142,7 +199,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* ADAPTABLE SIDEBAR (Icons only on small screens, full labels on md+) */}
+      {/* ADAPTABLE SIDEBAR */}
       <aside className="w-16 md:w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-2 md:p-4 shrink-0 transition-all duration-300">
         <div>
           {/* Header Branding */}
@@ -176,7 +233,6 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
-                  {/* Badge displaying pending tickets or status */}
                   {item.badge > 0 && (
                     <>
                       <span className="hidden md:inline bg-amber-500 text-black font-black text-[10px] px-2 py-0.5 rounded-full ml-1 shrink-0">
@@ -204,15 +260,15 @@ export default function AdminDashboard() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
-        {/* DASHBOARD OVERVIEW */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6 max-w-6xl">
             <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">System Dashboard</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, tickets, and media stats.</p>
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">System Dashboard & Analytics</h1>
+              <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, growth metrics, and vault stats.</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* TOP STAT CARDS */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
                 <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Total Users</p>
                 <p className="text-2xl font-black text-purple-400 mt-1">{users.length}</p>
@@ -229,14 +285,101 @@ export default function AdminDashboard() {
               </div>
 
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
+                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Guest Users</p>
+                <p className="text-2xl font-black text-amber-400 mt-1">{guestUsersCount}</p>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
                 <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Vault Videos</p>
                 <p className="text-2xl font-black text-sky-400 mt-1">{totalMediaCount}</p>
               </div>
 
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
                 <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Pending Tickets</p>
-                <p className="text-2xl font-black text-amber-400 mt-1">{pendingTicketsCount}</p>
+                <p className="text-2xl font-black text-rose-400 mt-1">{pendingTicketsCount}</p>
               </div>
+            </div>
+
+            {/* ANALYTICS CHARTS SECTION */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* 1. User Tier Breakdown Chart */}
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-1">User Tier Distribution</h3>
+                  <p className="text-[11px] text-gray-400">Ratio of VIP vs Standard vs Guest Users</p>
+                </div>
+
+                <div className="h-52 my-2 flex items-center justify-center">
+                  {users.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieChartData}
+                          innerRadius={55}
+                          outerRadius={80}
+                          paddingAngle={4}
+                          dataKey="value"
+                        >
+                          {pieChartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '12px', fontSize: '12px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-xs text-gray-500">No user data available</p>
+                  )}
+                </div>
+
+                {/* Legend */}
+                <div className="flex justify-around pt-2 border-t border-gray-800 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                    <span className="text-gray-300 font-medium">VIP ({vipUsersCount})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                    <span className="text-gray-300 font-medium">Standard ({standardUsersCount})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                    <span className="text-gray-300 font-medium">Guest ({guestUsersCount})</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. 7-Day User Growth & Activity Chart */}
+              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl lg:col-span-2 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-1">Weekly Registration & Guest Activity</h3>
+                  <p className="text-[11px] text-gray-400">New user signups and guest logins over the last 7 days</p>
+                </div>
+
+                <div className="h-56 my-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={weeklyTrendData}>
+                      <XAxis dataKey="day" stroke="#6b7280" fontSize={12} tickLine={false} />
+                      <YAxis stroke="#6b7280" fontSize={12} allowDecimals={false} tickLine={false} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '12px', fontSize: '12px' }}
+                      />
+                      <Bar dataKey="Registered" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Guests" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Conversion Snapshot */}
+                <div className="flex items-center justify-between pt-3 border-t border-gray-800 text-xs text-gray-400">
+                  <span>VIP Upgrade Conversion Rate: <strong className="text-emerald-400 font-bold">{vipConversionRate}%</strong></span>
+                  <span>Active Ad Monetization Reach: <strong className="text-sky-400 font-bold">{users.length} Users</strong></span>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
