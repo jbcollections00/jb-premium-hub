@@ -40,7 +40,7 @@ export default function Login() {
       }
     } else {
       setLoading(false);
-      navigate('/profile');
+      navigate('/home');
     }
   };
 
@@ -59,7 +59,7 @@ export default function Login() {
       });
     } else {
       setGuestLoading(false);
-      navigate('/');
+      navigate('/home');
     }
   };
 
