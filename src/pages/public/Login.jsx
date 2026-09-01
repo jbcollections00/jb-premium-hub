@@ -8,6 +8,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
@@ -40,6 +41,25 @@ export default function Login() {
     } else {
       setLoading(false);
       navigate('/profile');
+    }
+  };
+
+  // Handle guest login (Anonymous Authentication)
+  const handleGuestLogin = async () => {
+    setGuestLoading(true);
+    setMsg({ type: '', text: '' });
+
+    const { error } = await supabase.auth.signInAnonymously();
+
+    if (error) {
+      setGuestLoading(false);
+      setMsg({ 
+        type: 'error', 
+        text: `Guest Access Error: ${error.message}. (Ensure Anonymous provider is enabled in Supabase)` 
+      });
+    } else {
+      setGuestLoading(false);
+      navigate('/');
     }
   };
 
@@ -183,12 +203,31 @@ export default function Login() {
 
           <button 
             type="submit"
-            disabled={loading || !email || !password}
+            disabled={loading || guestLoading || !email || !password}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
           >
             {loading ? 'Logging In...' : 'Log In'}
           </button>
         </form>
+
+        {/* Divider */}
+        <div className="relative flex items-center justify-center my-2">
+          <div className="border-t border-slate-800 w-full"></div>
+          <span className="bg-slate-900 px-3 text-[10px] text-slate-500 uppercase font-semibold absolute">
+            Or
+          </span>
+        </div>
+
+        {/* Guest Login Button */}
+        <button
+          type="button"
+          onClick={handleGuestLogin}
+          disabled={loading || guestLoading}
+          className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span>👤</span>
+          {guestLoading ? 'Entering as Guest...' : 'Continue as Guest'}
+        </button>
 
         <div className="text-center text-xs text-slate-400">
           Don't have an account?{' '}
