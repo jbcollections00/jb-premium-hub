@@ -32,6 +32,13 @@ export default function Home() {
 
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
+  // Determine user account tier and privileges
+  const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
+  const roleUpper = (userProfile?.role || "").toUpperCase();
+  const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
+  const isVIP = accountTypeUpper === "VIP";
+  const isAdFree = isVIP || isAdmin;
+
   // 🛡️ 1. Suppress Third-Party Ad Script Errors
   useEffect(() => {
     const handleGlobalError = (event) => {
@@ -48,6 +55,22 @@ export default function Home() {
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
 
+  // 📢 2. Trigger Monetag In-App Interstitial Ads (For Standard / Non-VIP Users)
+  useEffect(() => {
+    if (!isAdFree && typeof window.show_11699131 === "function") {
+      window.show_11699131({
+        type: "inApp",
+        inAppSettings: {
+          frequency: 2,
+          capping: 0.1,
+          interval: 30,
+          timeout: 5,
+          everyPage: false,
+        },
+      });
+    }
+  }, [isAdFree]);
+
   useEffect(() => {
     fetchUserProfile();
   }, []);
@@ -56,7 +79,7 @@ export default function Home() {
     fetchMedia(currentPage);
   }, [currentPage]);
 
-  // 2️⃣ Fetch Current Logged-In User Profile
+  // Fetch Current Logged-In User Profile
   const fetchUserProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -85,7 +108,7 @@ export default function Home() {
     }
   };
 
-  // 3️⃣ Fetch Video Media List
+  // Fetch Video Media List
   const fetchMedia = async (page = 1) => {
     setLoading(true);
     const from = (page - 1) * ITEMS_PER_PAGE;
@@ -117,6 +140,10 @@ export default function Home() {
   };
 
   const handleSelectMedia = (item) => {
+    // Mag-trigger din ng ad kapag nag-click ng video ang Standard user
+    if (!isAdFree && typeof window.show_11699131 === "function") {
+      window.show_11699131('pop').catch(() => {});
+    }
     setSelectedMedia(item);
   };
 
@@ -182,14 +209,6 @@ export default function Home() {
 
     setRedeemLoading(false);
   };
-
-  // Determine user account tier and privileges
-  const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
-  const roleUpper = (userProfile?.role || "").toUpperCase();
-
-  const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
-  const isVIP = accountTypeUpper === "VIP";
-  const isAdFree = isVIP || isAdmin;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
