@@ -8,6 +8,7 @@ export default function PageAdGate({ children, adDirectLink }) {
 
   const [isAdFree, setIsAdFree] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasAdBlock, setHasAdBlock] = useState(false);
 
   useEffect(() => {
     checkUserStatus();
@@ -39,9 +40,124 @@ export default function PageAdGate({ children, adDirectLink }) {
     }
   };
 
-  // Trigger Adsterra / Direct Link for Standard Users when clicking the page
+  // 🛡️ MULTI-LAYER ADBLOCK & BRAVE DETECTOR
+  useEffect(() => {
+    if (loading || isAdFree || isAdminPath) return;
+
+    const runAdBlockCheck = async () => {
+      // LAYER 1: Brave Browser Native API Detection
+      if (navigator.brave && (await navigator.brave.isBrave())) {
+        setHasAdBlock(true);
+        return;
+      }
+
+      // LAYER 2: Fetch Network Bait Check
+      try {
+        await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', {
+          method: 'HEAD',
+          mode: 'no-cors',
+        });
+      } catch (err) {
+        setHasAdBlock(true);
+        return;
+      }
+
+      // LAYER 3: DOM Honeypot Element Check (Brave / AdBlock Hiding Test)
+      const bait = document.createElement('div');
+      bait.className = 'adsbox ad-zone ad-placement banner-ad google-ad';
+      bait.style.position = 'absolute';
+      bait.style.top = '-9999px';
+      bait.style.left = '-9999px';
+      bait.style.height = '100px';
+      bait.style.width = '100px';
+      document.body.appendChild(bait);
+
+      setTimeout(() => {
+        if (
+          bait.offsetHeight === 0 ||
+          bait.clientHeight === 0 ||
+          window.getComputedStyle(bait).display === 'none' ||
+          window.getComputedStyle(bait).visibility === 'hidden'
+        ) {
+          setHasAdBlock(true);
+        }
+        bait.remove();
+      }, 300);
+    };
+
+    runAdBlockCheck();
+  }, [loading, isAdFree, isAdminPath]);
+
+  // 🟢 DYNAMIC AD SCRIPTS INJECTION
+  useEffect(() => {
+    const removeAllAds = () => {
+      const scriptIds = [
+        'adsterra-popunder',
+        'adsterra-socialbar',
+        'monetag-popunder',
+        'monetag-push',
+      ];
+      scriptIds.forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.remove();
+      });
+    };
+
+    if (loading || isAdFree || isAdminPath) {
+      removeAllAds();
+      return;
+    }
+
+    const handleScriptError = () => {
+      setHasAdBlock(true);
+    };
+
+    // 1. Adsterra Popunder
+    if (!document.getElementById('adsterra-popunder')) {
+      const script = document.createElement('script');
+      script.id = 'adsterra-popunder';
+      script.src = 'https://pl30918151.profitableratecpmnetwork.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js';
+      script.async = true;
+      script.onerror = handleScriptError;
+      document.body.appendChild(script);
+    }
+
+    // 2. Adsterra Social Bar
+    if (!document.getElementById('adsterra-socialbar')) {
+      const script = document.createElement('script');
+      script.id = 'adsterra-socialbar';
+      script.src = 'https://pl30918152.profitableratecpmnetwork.com/77/84/87/7784879ac907b760977addd43bca7b1a.js';
+      script.async = true;
+      script.onerror = handleScriptError;
+      document.body.appendChild(script);
+    }
+
+    // 3. Monetag Popunder
+    if (!document.getElementById('monetag-popunder')) {
+      const script = document.createElement('script');
+      script.id = 'monetag-popunder';
+      script.dataset.zone = '11700867';
+      script.src = 'https://al5sm.com/tag.min.js';
+      script.onerror = handleScriptError;
+      document.body.appendChild(script);
+    }
+
+    // 4. Monetag In-Page Push
+    if (!document.getElementById('monetag-push')) {
+      const script = document.createElement('script');
+      script.id = 'monetag-push';
+      script.dataset.zone = '11700875';
+      script.src = 'https://nap5k.com/tag.min.js';
+      script.onerror = handleScriptError;
+      document.body.appendChild(script);
+    }
+
+    return () => {
+      removeAllAds();
+    };
+  }, [loading, isAdFree, isAdminPath]);
+
   const handlePageClick = () => {
-    // 🚫 No ads on Admin routes or for Admin/VIP users
     if (isAdminPath || isAdFree) return;
 
     if (adDirectLink) {
@@ -53,14 +169,35 @@ export default function PageAdGate({ children, adDirectLink }) {
     }
   };
 
-  // 🛡️ Bypass wrappers completely if Admin route, loading, or Ad-Free user
   if (isAdminPath || isAdFree || loading) {
     return <>{children}</>;
   }
 
   return (
-    <div onClick={handlePageClick} className="w-full h-full min-h-screen">
-      {/* 📢 STANDARD USER ONLY ADS BANNER */}
+    <div onClick={handlePageClick} className="w-full h-full min-h-screen relative">
+      {/* 🛑 ADBLOCK & BRAVE DETECTOR OVERLAY */}
+      {hasAdBlock && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 text-center backdrop-blur-md">
+          <div className="bg-gray-900 border border-red-500/30 p-6 sm:p-8 rounded-2xl max-w-md shadow-2xl">
+            <span className="text-5xl">🛑</span>
+            <h3 className="text-xl font-black text-white mt-3">Ad Blocker / Brave Shields Detected</h3>
+            <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+              Paki-turn off ang iyong <strong className="text-white">Ad Blocker</strong> o <strong className="text-white">Brave Shields</strong> para ma-access ang libreng Vault, o mag-upgrade sa 
+              <span className="text-emerald-400 font-bold"> VIP Access</span> para sa 100% Ad-Free experience!
+            </p>
+            <div className="mt-6 flex flex-col gap-2">
+              <button 
+                onClick={() => window.location.reload()} 
+                className="w-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer"
+              >
+                Napatay ko na, Reload Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STANDARD USER ONLY ADS BANNER */}
       {!isAdFree && (
         <div className="bg-amber-500/10 border-b border-amber-500/20 text-center py-1.5 px-4 text-[11px] text-amber-400 font-bold flex items-center justify-center gap-2">
           <span>📢 Sponsored Page</span>
