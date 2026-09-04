@@ -2,10 +2,11 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
+import TopInviters from "../../components/TopInviters"; // Imported the TopInviters component
 
 const ITEMS_PER_PAGE = 50;
 
-// Helper para siguraduhing CDN URL ang gamit kahit may lumang link pa sa DB
+// Helper para siguraduhing CDN URL ang gamit kahit may lumang link pa sa DB[cite: 7]
 const getCdnUrl = (url) => {
   if (!url) return "";
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
@@ -16,30 +17,34 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
-  // 📄 Pagination State
+  // 📄 Pagination State[cite: 7]
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // 👤 User Account & Tier State
+  // 👤 User Account & Tier State[cite: 7]
   const [userProfile, setUserProfile] = useState(null);
 
-  // 🚪 Modals State
+  // 🚪 Modals State[cite: 7]
   const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [showReferralModal, setShowReferralModal] = useState(false); // Added Referral Modal state
 
-  // 🔑 Code Redemption Input State
+  // 🔑 Code Redemption Input State[cite: 7]
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
+  
+  // Link state
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
-  // Determine user account tier and privileges
+  // Determine user account tier and privileges[cite: 7]
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
   const isVIP = accountTypeUpper === "VIP";
   const isAdFree = isVIP || isAdmin;
 
-  // 🛡️ 1. Suppress Third-Party Ad Script Errors
+  // 🛡️ 1. Suppress Third-Party Ad Script Errors[cite: 7]
   useEffect(() => {
     const handleGlobalError = (event) => {
       if (
@@ -55,7 +60,7 @@ export default function Home() {
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
 
-  // 📢 2. Trigger Monetag In-App Interstitial Ads (For Standard / Non-VIP Users)
+  // 📢 2. Trigger Monetag In-App Interstitial Ads (For Standard / Non-VIP Users)[cite: 7]
   useEffect(() => {
     if (!isAdFree && typeof window.show_11699131 === "function") {
       window.show_11699131({
@@ -79,7 +84,7 @@ export default function Home() {
     fetchMedia(currentPage);
   }, [currentPage]);
 
-  // Fetch Current Logged-In User Profile
+  // Fetch Current Logged-In User Profile[cite: 7]
   const fetchUserProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -108,7 +113,7 @@ export default function Home() {
     }
   };
 
-  // Fetch Video Media List
+  // Fetch Video Media List[cite: 7]
   const fetchMedia = async (page = 1) => {
     setLoading(true);
     const from = (page - 1) * ITEMS_PER_PAGE;
@@ -140,7 +145,7 @@ export default function Home() {
   };
 
   const handleSelectMedia = (item) => {
-    // Mag-trigger din ng ad kapag nag-click ng video ang Standard user
+    // Mag-trigger din ng ad kapag nag-click ng video ang Standard user[cite: 7]
     if (!isAdFree && typeof window.show_11699131 === "function") {
       window.show_11699131('pop').catch(() => {});
     }
@@ -210,15 +215,26 @@ export default function Home() {
     setRedeemLoading(false);
   };
 
+  // Setup Invite link
+  const myInviteLink = userProfile 
+    ? `${window.location.origin}/signup?ref=${userProfile.id}`
+    : '';
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(myInviteLink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
       
-      {/* 🚀 Active Event Popup Modal */}
+      {/* 🚀 Active Event Popup Modal[cite: 7] */}
       <EventPopup />
 
       <div className="max-w-7xl mx-auto">
         
-        {/* 👑 USER MEMBERSHIP STATUS BAR */}
+        {/* 👑 USER MEMBERSHIP STATUS BAR[cite: 7] */}
         {userProfile && (
           <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3">
@@ -240,20 +256,28 @@ export default function Home() {
               </div>
             </div>
 
-            {!isAdFree && (
-              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
+              {/* Leaderboard/Referral Trigger Button */}
+              <button
+                onClick={() => setShowReferralModal(true)}
+                className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>🏆 Refer & Earn</span>
+              </button>
+            
+              {!isAdFree && (
                 <button
                   onClick={() => setShowRedeemModal(true)}
                   className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span>🔑 Upgrade VIP</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
-        {/* 📊 Vault Header Info */}
+        {/* 📊 Vault Header Info[cite: 7] */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
@@ -261,7 +285,7 @@ export default function Home() {
           </span>
         </div>
 
-        {/* 📦 Video Gallery Grid */}
+        {/* 📦 Video Gallery Grid[cite: 7] */}
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -323,7 +347,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 📄 Pagination Controls */}
+        {/* 📄 Pagination Controls[cite: 7] */}
         {totalPages > 1 && (
           <div className="flex justify-center items-center gap-3 mt-10 mb-6">
             <button
@@ -351,7 +375,7 @@ export default function Home() {
 
       </div>
 
-      {/* 🎬 Modal Video Player View */}
+      {/* 🎬 Modal Video Player View[cite: 7] */}
       {selectedMedia && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-3 md:p-6"
@@ -423,7 +447,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🔑 MODAL: REDEEM VIP CODE */}
+      {/* 🔑 MODAL: REDEEM VIP CODE[cite: 7] */}
       {showRedeemModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
@@ -459,6 +483,50 @@ export default function Home() {
                 {redeemLoading ? "Redeeming..." : "Redeem Code Now ➔"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🏆 MODAL: REFERRAL & LEADERBOARD */}
+      {showReferralModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-2xl relative shadow-2xl my-8">
+            <button
+              onClick={() => setShowReferralModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+            >
+              ✕
+            </button>
+            
+            <div className="mb-6 border-b border-slate-800 pb-6">
+              <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                <span>🔗</span> Your Invite Link
+              </h3>
+              <p className="text-slate-400 text-sm mb-4">
+                Share this link with your friends. Only registered accounts count towards the leaderboard.
+              </p>
+              
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={myInviteLink}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-300 font-mono focus:outline-none"
+                />
+                <button
+                  onClick={copyToClipboard}
+                  className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                    copiedLink 
+                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' 
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'
+                  }`}
+                >
+                  {copiedLink ? '✓ Copied!' : 'Copy Link'}
+                </button>
+              </div>
+            </div>
+
+            <TopInviters />
           </div>
         </div>
       )}

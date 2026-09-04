@@ -15,7 +15,7 @@ export default function Signup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // 1. I-save ang referral code mula sa URL papuntang localStorage para hindi mawala
+  // 1. I-save ang referral code mula sa URL papuntang localStorage para hindi mawala[cite: 6]
   useEffect(() => {
     const refFromUrl = searchParams.get('ref');
     if (refFromUrl) {
@@ -23,7 +23,7 @@ export default function Signup() {
     }
   }, [searchParams]);
 
-  // Field validation
+  // Field validation[cite: 6]
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   const isEmailValid = emailRegex.test(email.trim());
   const isPasswordValid = password.trim().length >= 6;
@@ -47,7 +47,7 @@ export default function Signup() {
     const trimmedPassword = password.trim();
 
     try {
-      // 1. Create Supabase Auth Account
+      // 1. Create Supabase Auth Account[cite: 6]
       const { data, error } = await supabase.auth.signUp({
         email: trimmedEmail,
         password: trimmedPassword,
@@ -63,35 +63,28 @@ export default function Signup() {
       const newUser = data?.user;
 
       if (newUser) {
-        // 2. Gumawa ng Profile at sariling Referral Code para sa bagong user
-        const ownRefCode = newUser.id.slice(0, 8);
-        await supabase.from('profiles').upsert({
+        // 2. I-setup ang profile data para sa database
+        const profileData = {
           id: newUser.id,
-          referral_code: ownRefCode,
-          updated_at: new Date().toISOString()
-        });
+          full_name: trimmedName,
+          email: trimmedEmail,
+        };
 
-        // 3. I-link sa Referrer kung pumasok gamit ang referral link
+        // 3. I-link sa Referrer kung pumasok gamit ang referral link at valid ito
+        if (activeRefCode && activeRefCode !== newUser.id) {
+          profileData.referred_by = activeRefCode;
+        }
+
+        const { error: profileError } = await supabase.from('profiles').upsert(profileData);
+        if (profileError) console.error("Error creating profile:", profileError.message);
+
+        // Linisin ang storage pagkatapos magamit[cite: 6]
         if (activeRefCode) {
-          const { data: referrerProfile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('referral_code', activeRefCode)
-            .single();
-
-          if (referrerProfile && referrerProfile.id !== newUser.id) {
-            await supabase.from('referrals').insert({
-              referrer_id: referrerProfile.id,
-              referred_id: newUser.id,
-              status: 'pending'
-            });
-          }
-          // Linisin ang storage pagkatapos magamit
           localStorage.removeItem('jb_ref_code');
         }
       }
 
-      // 4. Immediate redirect to /home
+      // 4. Immediate redirect to /home[cite: 6]
       navigate('/home');
     } catch (err) {
       setErrorMsg(err.message);
@@ -116,10 +109,10 @@ export default function Signup() {
             Sign up for instant access to standard media content
           </p>
 
-          {/* Referral Badge Notification */}
+          {/* Referral Badge Notification[cite: 6] */}
           {activeRefCode && (
             <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full text-amber-400 text-[11px] font-semibold">
-              🎁 Invited by a friend (Ref Code: {activeRefCode})
+              🎁 Invited by a friend (Ref: Validated)
             </div>
           )}
         </div>
@@ -131,7 +124,7 @@ export default function Signup() {
         )}
 
         <form onSubmit={handleSignup} className="space-y-4">
-          {/* Full Name Field */}
+          {/* Full Name Field[cite: 6] */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs font-semibold uppercase">Full Name</label>
@@ -151,7 +144,7 @@ export default function Signup() {
             />
           </div>
 
-          {/* Email Address Field */}
+          {/* Email Address Field[cite: 6] */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs font-semibold uppercase">Email Address</label>
@@ -171,7 +164,7 @@ export default function Signup() {
             />
           </div>
 
-          {/* Password Field with Toggle */}
+          {/* Password Field with Toggle[cite: 6] */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs font-semibold uppercase">Password</label>
@@ -200,7 +193,7 @@ export default function Signup() {
             </div>
           </div>
 
-          {/* 18+ Verification Checkbox */}
+          {/* 18+ Verification Checkbox[cite: 6] */}
           <div className="flex items-start gap-2.5 pt-1">
             <input 
               type="checkbox" 
@@ -215,7 +208,7 @@ export default function Signup() {
             </label>
           </div>
 
-          {/* Submit Button */}
+          {/* Submit Button[cite: 6] */}
           <button 
             type="submit" 
             disabled={loading || !is18Plus || !isEmailValid || !isPasswordValid || !isNameValid}

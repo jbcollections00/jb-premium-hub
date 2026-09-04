@@ -14,6 +14,7 @@ import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
 import BuyVip from './pages/public/BuyVip';
 import Contest from './pages/public/Contest';
+import LeaderboardPage from './pages/public/LeaderboardPage'; // 🏆 Bagong Import
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
@@ -60,6 +61,8 @@ function App() {
             <Route path="/messages" element={<Messages />} />
             <Route path="/buy-vip" element={<BuyVip />} />
             <Route path="/contest" element={<Contest />} />
+            {/* 🏆 Dedicated Leaderboard Route */}
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
           </Route>
         </Route>
 
