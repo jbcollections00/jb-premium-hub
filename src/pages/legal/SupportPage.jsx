@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Headset, Send, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Headset, Send, CheckCircle2, Loader2, AlertCircle, Paperclip } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 
 export default function SupportPage() {
@@ -7,6 +7,13 @@ export default function SupportPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
+  const [attachment, setAttachment] = useState(null);
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setAttachment(e.target.files[0]);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -14,7 +21,28 @@ export default function SupportPage() {
     setErrorMsg('');
 
     try {
-      // 📥 I-save ang ticket sa Supabase database
+      let attachmentUrl = null;
+
+      // 📤 1. Upload Attachment to Supabase Storage (if exists)
+      if (attachment) {
+        const fileExt = attachment.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `tickets/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('support_attachments') // Make sure this bucket exists in Supabase
+          .upload(filePath, attachment);
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+          .from('support_attachments')
+          .getPublicUrl(filePath);
+          
+        attachmentUrl = publicUrlData.publicUrl;
+      }
+
+      // 📥 2. Save ticket to Supabase database
       const { error } = await supabase
         .from('support_tickets')
         .insert([
@@ -23,17 +51,18 @@ export default function SupportPage() {
             email: formData.email,
             subject: formData.subject,
             message: formData.message,
+            attachment_url: attachmentUrl, // Ensure this column exists in your table
           },
         ]);
 
       if (error) throw error;
 
-      // Kung matagumpay:
       setSubmitted(true);
       setFormData({ name: '', email: '', subject: '', message: '' });
+      setAttachment(null);
     } catch (err) {
       console.error('Error submitting ticket:', err);
-      setErrorMsg('Nagkaroon ng problema sa pagpapadala ng mensahe. Pakisubukan muli.');
+      setErrorMsg('There was a problem submitting your request. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -49,7 +78,7 @@ export default function SupportPage() {
             <Headset className="w-8 h-8 text-emerald-500" /> Contact Support
           </h1>
           <p className="text-slate-400 text-sm mt-2">
-            May tanong o teknikal na usapin? Magpadala ng mensahe sa aming team.
+            Have a question or technical issue? Send a message to our team.
           </p>
         </div>
 
@@ -58,15 +87,15 @@ export default function SupportPage() {
           {submitted ? (
             <div className="text-center py-8 space-y-3">
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
-              <h2 className="text-xl font-bold text-white">Naisumite na ang iyong Mensahe!</h2>
+              <h2 className="text-xl font-bold text-white">Message Submitted!</h2>
               <p className="text-slate-400 text-sm max-w-md mx-auto">
-                Salamat sa pag-contact sa JB Support Team. Naitabi na ang iyong mensahe at tutugunan ito ng Admin sa lalong madaling panahon.
+                Thank you for contacting the JB Support Team. Your message has been received and will be reviewed by an Admin shortly.
               </p>
               <button 
                 onClick={() => setSubmitted(false)}
                 className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition-colors cursor-pointer"
               >
-                Magpadala ng panibagong mensahe
+                Send another message
               </button>
             </div>
           ) : (
@@ -82,11 +111,11 @@ export default function SupportPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Pangalan</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Name</label>
                   <input 
                     type="text" 
                     required
-                    placeholder="Juan Dela Cruz"
+                    placeholder="John Doe"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
@@ -97,7 +126,7 @@ export default function SupportPage() {
                   <input 
                     type="email" 
                     required
-                    placeholder="juan@example.com"
+                    placeholder="john@example.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
@@ -106,11 +135,11 @@ export default function SupportPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Paksa / Concern</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Subject / Concern</label>
                 <input 
                   type="text" 
                   required
-                  placeholder="Vault Access / Account Issue / Inquiries"
+                  placeholder="Vault Access / Account Issue / Inquiry"
                   value={formData.subject}
                   onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
@@ -118,29 +147,42 @@ export default function SupportPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Mensahe</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Message</label>
                 <textarea 
                   required
                   rows={5}
-                  placeholder="Isulat ang detalye ng iyong mensahe rito..."
+                  placeholder="Provide the details of your issue here..."
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
                 />
               </div>
 
+              {/* Attachment Field */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5" /> Attachment (Optional)
+                </label>
+                <input 
+                  type="file" 
+                  accept="image/*,.pdf,.doc,.docx"
+                  onChange={handleFileChange}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-400 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                />
+              </div>
+
               <button 
                 type="submit"
                 disabled={loading}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white font-medium text-sm py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/30"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white font-medium text-sm py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/30 mt-2"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Ipinapadala...
+                    <Loader2 className="w-4 h-4 animate-spin" /> Sending...
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" /> Ipadala ang Mensahe
+                    <Send className="w-4 h-4" /> Send Message
                   </>
                 )}
               </button>

@@ -47,7 +47,7 @@ export default function PageAdGate({ children, adDirectLink }) {
     const runAdBlockCheck = async () => {
       // LAYER 1: Brave Browser Native API Detection
       if (navigator.brave && (await navigator.brave.isBrave())) {
-        setHasAdBlock(true);
+        // setHasAdBlock(true); // PANSAMANTALA: Naka-disable
         return;
       }
 
@@ -58,7 +58,7 @@ export default function PageAdGate({ children, adDirectLink }) {
           mode: 'no-cors',
         });
       } catch (err) {
-        setHasAdBlock(true);
+        // setHasAdBlock(true); // PANSAMANTALA: Naka-disable
         return;
       }
 
@@ -79,7 +79,7 @@ export default function PageAdGate({ children, adDirectLink }) {
           window.getComputedStyle(bait).display === 'none' ||
           window.getComputedStyle(bait).visibility === 'hidden'
         ) {
-          setHasAdBlock(true);
+          // setHasAdBlock(true); // PANSAMANTALA: Naka-disable
         }
         bait.remove();
       }, 300);
@@ -109,7 +109,7 @@ export default function PageAdGate({ children, adDirectLink }) {
     }
 
     const handleScriptError = () => {
-      setHasAdBlock(true);
+      // setHasAdBlock(true); // PANSAMANTALA: Naka-disable
     };
 
     // 1. Adsterra Popunder
@@ -175,27 +175,16 @@ export default function PageAdGate({ children, adDirectLink }) {
 
   return (
     <div onClick={handlePageClick} className="w-full h-full min-h-screen relative">
-      {/* 🛑 ADBLOCK & BRAVE DETECTOR OVERLAY */}
+      {/* 🛑 ADBLOCK OVERLAY - PANSAMANTALANG NAKA-COMMENT OUT */}
+      {/* 
       {hasAdBlock && (
         <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 text-center backdrop-blur-md">
           <div className="bg-gray-900 border border-red-500/30 p-6 sm:p-8 rounded-2xl max-w-md shadow-2xl">
-            <span className="text-5xl">🛑</span>
-            <h3 className="text-xl font-black text-white mt-3">Ad Blocker / Brave Shields Detected</h3>
-            <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-              Paki-turn off ang iyong <strong className="text-white">Ad Blocker</strong> o <strong className="text-white">Brave Shields</strong> para ma-access ang libreng Vault, o mag-upgrade sa 
-              <span className="text-emerald-400 font-bold"> VIP Access</span> para sa 100% Ad-Free experience!
-            </p>
-            <div className="mt-6 flex flex-col gap-2">
-              <button 
-                onClick={() => window.location.reload()} 
-                className="w-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer"
-              >
-                Napatay ko na, Reload Page
-              </button>
-            </div>
+            ...
           </div>
         </div>
       )}
+      */}
 
       {/* STANDARD USER ONLY ADS BANNER */}
       {!isAdFree && (

@@ -463,25 +463,28 @@ export default function AccessCodesTab() {
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
                   2. Select Recipient ({filteredModalUsers.length} found):
                 </label>
-                <select
-                  value={targetUserId}
-                  onChange={(e) => setTargetUserId(e.target.value)}
-                  required
-                  size={5}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl p-2 text-white text-xs font-medium focus:outline-none focus:border-blue-500 cursor-pointer overflow-y-auto"
-                >
+                <div className="w-full bg-gray-800 border border-gray-700 rounded-xl max-h-48 overflow-y-auto p-1.5 space-y-1">
                   {filteredModalUsers.length === 0 ? (
-                    <option disabled className="text-gray-500 p-2">
+                    <div className="text-gray-500 p-3 text-xs text-center font-medium">
                       No user matches your search...
-                    </option>
+                    </div>
                   ) : (
                     filteredModalUsers.map((u) => (
-                      <option key={u.id} value={u.id} className="p-1.5 hover:bg-blue-600/30 rounded cursor-pointer">
+                      <button
+                        type="button"
+                        key={u.id}
+                        onClick={() => setTargetUserId(u.id)}
+                        className={`w-full text-left p-2.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                          targetUserId === u.id 
+                            ? 'bg-blue-600 text-white font-bold shadow-md' 
+                            : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                        }`}
+                      >
                         {u.email || u.full_name || 'Unnamed'} ({u.account_type || 'STANDARD'})
-                      </option>
+                      </button>
                     ))
                   )}
-                </select>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
