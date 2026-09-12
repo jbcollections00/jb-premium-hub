@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 
-export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile, accountType }) {
-  const [isPlayingAd, setIsPlayingAd] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(3);
-  const [canSkip, setCanSkip] = useState(false);
+export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType }) {
   const [checkingUser, setCheckingUser] = useState(true);
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
+  const [adClicks, setAdClicks] = useState(0);
 
   const mainVideoRef = useRef(null);
   const hasLoggedWatchRef = useRef(false);
@@ -28,12 +26,11 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     return t === 'VIP' || t === 'ADMIN' || r === 'ADMIN';
   };
 
-  // Reset video watch tracker state when video changes
   useEffect(() => {
     hasLoggedWatchRef.current = false;
   }, [mainVideoUrl]);
 
-  // Log Video Watch for Referral Contest Qualification
+  // Log Video Watch for Referral Contest
   const handleVideoPlay = async () => {
     if (hasLoggedWatchRef.current) return;
     hasLoggedWatchRef.current = true;
@@ -48,11 +45,11 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     }
   };
 
-  // 1️⃣ Check User VIP / Admin Status & Apply Ad Logic
+  // 1️⃣ Check User VIP / Admin Status & Load Click Memory
   useEffect(() => {
     let isMounted = true;
 
-    const determineAdBehavior = async () => {
+    const determineStatus = async () => {
       setCheckingUser(true);
       let isAdFree = false;
 
@@ -75,28 +72,21 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
             }
           }
         } catch (err) {
-          console.error("Error fetching user status for video player:", err);
+          console.error("Error fetching user status:", err);
         }
       }
 
       if (!isMounted) return;
-
       setIsAdFreeUser(isAdFree);
-
-      // 📢 Triggers pre-roll ad on EVERY video play for standard users
-      if (!isAdFree) {
-        setIsPlayingAd(true);
-        setTimeLeft(3);
-        setCanSkip(false);
-      } else {
-        setIsPlayingAd(false);
-      }
-
+      
+      // Load saved ad clicks from this browser session
+      const savedClicks = parseInt(sessionStorage.getItem('jb_video_clicks') || '0');
+      setAdClicks(savedClicks);
       setCheckingUser(false);
     };
 
     if (mainVideoUrl) {
-      determineAdBehavior();
+      determineStatus();
     }
     
     return () => {
@@ -104,52 +94,32 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     };
   }, [mainVideoUrl, accountType, userProfile]);
 
-  // 2️⃣ 5-Second Countdown Timer for Skip Ad button
-  useEffect(() => {
-    if (!isPlayingAd || checkingUser) return;
+  // 2️⃣ The 3-Click Tab-Under Logic
+  const handleAdShieldClick = (e) => {
+    if (isAdFreeUser) return;
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setCanSkip(true);
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (adClicks < 3) {
+      e.preventDefault();
+      e.stopPropagation();
 
-    return () => clearInterval(timer);
-  }, [isPlayingAd, checkingUser]);
+      const nextClicks = adClicks + 1;
+      
+      // Save new click count so the new tab remembers it
+      sessionStorage.setItem('jb_video_clicks', nextClicks.toString());
+      setAdClicks(nextClicks);
 
-  const openAdsterra = (e) => {
-    if (e) e.stopPropagation();
-    if (adDirectLink && !isAdFreeUser) {
-      window.open(adDirectLink, '_blank', 'noopener,noreferrer');
+      // 1. Open the CURRENT site in a NEW tab
+      window.open(window.location.href, '_blank');
+
+      // 2. Redirect the CURRENT tab to your Adsterra Direct Link
+      window.location.href = 'https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea';
     }
   };
 
-  const handleSkipAd = (e) => {
-    e.stopPropagation();
-    if (!canSkip) return;
-
-    openAdsterra();
-    setIsPlayingAd(false);
-  };
-
-  const handleOverlayClick = () => {
-    openAdsterra();
-    if (canSkip) {
-      setIsPlayingAd(false);
-    }
-  };
-
-  // 💾 INSTANT DIRECT DOWNLOAD HANDLER
+  // 💾 INSTANT DIRECT DOWNLOAD HANDLER (VIP ONLY)
   const handleVipDownload = (e) => {
     if (e) e.stopPropagation();
     if (!videoSrc) return;
-
-    openAdsterra();
 
     const link = document.createElement("a");
     link.href = videoSrc;
@@ -169,11 +139,14 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
     );
   }
 
+  // Define if the user has full access to the video yet
+  const canPlayVideo = isAdFreeUser || adClicks >= 3;
+
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
       {/* 👑 VIP / ADMIN DOWNLOAD BUTTON */}
-      {isAdFreeUser && !isPlayingAd && (
+      {isAdFreeUser && (
         <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <button
             onClick={handleVipDownload}
@@ -185,82 +158,36 @@ export default function VIPVideoPlayer({ mainVideoUrl, adDirectLink, userProfile
         </div>
       )}
 
-      {isPlayingAd ? (
-        <div 
-          className="relative w-full h-full min-h-[320px] md:min-h-[420px] flex flex-col justify-between p-4 md:p-6 bg-slate-950/90 cursor-pointer backdrop-blur-sm"
-          onClick={handleOverlayClick}
+      {/* 🛡️ INVISIBLE AD SHIELD */}
+      {!canPlayVideo && (
+        <div
+          onClick={handleAdShieldClick}
+          className="absolute inset-0 z-50 cursor-pointer flex flex-col items-center justify-center bg-black/40 hover:bg-black/20 transition-all"
+          title="Click to play video"
         >
-          <div className="flex items-center justify-between z-20">
-            <div className="flex items-center gap-1.5 bg-yellow-500 text-black px-2.5 py-1 rounded-md font-extrabold text-[11px] tracking-wider uppercase shadow-md">
-              <span>📢 Ad</span>
-              <span className="text-[9px] opacity-80">• Sponsored Stream</span>
-            </div>
-
-            <div className="bg-black/80 text-slate-300 px-3 py-1 rounded-lg text-xs font-medium border border-slate-700/50 backdrop-blur-md">
-              {canSkip ? (
-                <span className="text-emerald-400 font-bold">✓ Stream Ready!</span>
-              ) : (
-                <span>Unlocking in <b className="text-yellow-400">{timeLeft}s</b></span>
-              )}
-            </div>
+          {/* Optional visual cue so they know to click */}
+          <div className="w-16 h-16 bg-red-600/80 text-white rounded-full flex items-center justify-center shadow-2xl animate-pulse">
+            <svg className="w-8 h-8 fill-current ml-1" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
           </div>
-
-          <div className="my-auto text-center flex flex-col items-center justify-center gap-3 z-10">
-            <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center border border-red-500/30 animate-pulse shadow-lg">
-              <svg className="w-8 h-8 fill-current ml-1" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </div>
-            <h3 className="text-white text-base md:text-lg font-bold">
-              Click anywhere to start video & support high-speed server
-            </h3>
-            <p className="text-slate-400 text-xs">
-              (Opens sponsor offer in new tab)
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between z-20 gap-2">
-            <button
-              type="button"
-              onClick={openAdsterra}
-              className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl border border-slate-600/50 backdrop-blur-md transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <span>🔗 Visit Advertiser</span>
-            </button>
-
-            {canSkip ? (
-              <button
-                type="button"
-                onClick={handleSkipAd}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl border border-blue-400/30 text-xs md:text-sm shadow-lg shadow-blue-600/30 transition-all cursor-pointer flex items-center gap-1.5 hover:scale-105 active:scale-95"
-              >
-                <span>Skip Ad & Play</span>
-                <span className="text-base">➔</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="bg-slate-800/80 text-slate-500 px-4 py-2 rounded-xl text-xs font-medium border border-slate-700/50 cursor-not-allowed"
-              >
-                Wait {timeLeft}s to skip...
-              </button>
-            )}
-          </div>
+          <p className="text-white mt-3 font-bold text-sm tracking-wide text-shadow-md">
+            Tap to Play ({3 - adClicks} clicks remaining)
+          </p>
         </div>
-      ) : (
-        <video
-          ref={mainVideoRef}
-          src={videoSrc}
-          controls
-          autoPlay
-          playsInline
-          onPlay={handleVideoPlay}
-          controlsList={isAdFreeUser ? "" : "nodownload"}
-          className="w-full h-full max-h-[65vh] object-contain"
-          onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
-        />
       )}
+
+      {/* 🎥 ACTUAL VIDEO PLAYER */}
+      <video
+        ref={mainVideoRef}
+        src={videoSrc}
+        controls={canPlayVideo}
+        playsInline
+        onPlay={handleVideoPlay}
+        controlsList={isAdFreeUser ? "" : "nodownload"}
+        className="w-full h-full max-h-[65vh] object-contain"
+        onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
+      />
     </div>
   );
 }
