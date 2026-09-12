@@ -2,11 +2,10 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
-import TopInviters from "../../components/TopInviters"; // Imported the TopInviters component
+import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
 
-// Helper para siguraduhing CDN URL ang gamit kahit may lumang link pa sa DB[cite: 7]
 const getCdnUrl = (url) => {
   if (!url) return "";
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
@@ -17,34 +16,27 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
-  // 📄 Pagination State[cite: 7]
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // 👤 User Account & Tier State[cite: 7]
   const [userProfile, setUserProfile] = useState(null);
 
-  // 🚪 Modals State[cite: 7]
   const [showRedeemModal, setShowRedeemModal] = useState(false);
-  const [showReferralModal, setShowReferralModal] = useState(false); // Added Referral Modal state
+  const [showReferralModal, setShowReferralModal] = useState(false);
 
-  // 🔑 Code Redemption Input State[cite: 7]
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
   
-  // Link state
   const [copiedLink, setCopiedLink] = useState(false);
 
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
-  // Determine user account tier and privileges[cite: 7]
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
   const isVIP = accountTypeUpper === "VIP";
   const isAdFree = isVIP || isAdmin;
 
-  // 🛡️ 1. Suppress Third-Party Ad Script Errors[cite: 7]
   useEffect(() => {
     const handleGlobalError = (event) => {
       if (
@@ -60,7 +52,6 @@ export default function Home() {
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
 
-  // 📢 2. Trigger Monetag In-App Interstitial Ads (For Standard / Non-VIP Users)[cite: 7]
   useEffect(() => {
     if (!isAdFree && typeof window.show_11699131 === "function") {
       window.show_11699131({
@@ -84,7 +75,20 @@ export default function Home() {
     fetchMedia(currentPage);
   }, [currentPage]);
 
-  // Fetch Current Logged-In User Profile[cite: 7]
+  // 🔗 Auto-open Video Modal kapag may `?v=ID` sa URL
+  useEffect(() => {
+    if (mediaList.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const videoId = params.get("v");
+      if (videoId) {
+        const found = mediaList.find((m) => String(m.id) === String(videoId));
+        if (found) {
+          setSelectedMedia(found);
+        }
+      }
+    }
+  }, [mediaList]);
+
   const fetchUserProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -113,7 +117,6 @@ export default function Home() {
     }
   };
 
-  // Fetch Video Media List[cite: 7]
   const fetchMedia = async (page = 1) => {
     setLoading(true);
     const from = (page - 1) * ITEMS_PER_PAGE;
@@ -144,12 +147,25 @@ export default function Home() {
     }
   };
 
+  // 🎥 Open Video at ilagay ang `?v=ID` sa URL bar
   const handleSelectMedia = (item) => {
-    // Mag-trigger din ng ad kapag nag-click ng video ang Standard user[cite: 7]
     if (!isAdFree && typeof window.show_11699131 === "function") {
       window.show_11699131('pop').catch(() => {});
     }
     setSelectedMedia(item);
+    
+    // I-update ang address bar URL
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", item.id);
+    window.history.pushState({}, "", url);
+  };
+
+  // ❌ Close Video at linisin ang `?v=ID` sa URL bar
+  const handleCloseMedia = () => {
+    setSelectedMedia(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("v");
+    window.history.pushState({}, "", url);
   };
 
   const handleRedeemCode = async (e) => {
@@ -215,7 +231,6 @@ export default function Home() {
     setRedeemLoading(false);
   };
 
-  // Setup Invite link
   const myInviteLink = userProfile 
     ? `${window.location.origin}/signup?ref=${userProfile.id}`
     : '';
@@ -229,12 +244,10 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
       
-      {/* 🚀 Active Event Popup Modal[cite: 7] */}
       <EventPopup />
 
       <div className="max-w-7xl mx-auto">
         
-        {/* 👑 USER MEMBERSHIP STATUS BAR[cite: 7] */}
         {userProfile && (
           <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3">
@@ -257,7 +270,6 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
-              {/* Leaderboard/Referral Trigger Button */}
               <button
                 onClick={() => setShowReferralModal(true)}
                 className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 cursor-pointer flex items-center justify-center gap-1.5"
@@ -277,7 +289,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 📊 Vault Header Info[cite: 7] */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
@@ -285,7 +296,6 @@ export default function Home() {
           </span>
         </div>
 
-        {/* 📦 Video Gallery Grid[cite: 7] */}
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -347,7 +357,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 📄 Pagination Controls[cite: 7] */}
         {totalPages > 1 && (
           <div className="flex justify-center items-center gap-3 mt-10 mb-6">
             <button
@@ -375,11 +384,11 @@ export default function Home() {
 
       </div>
 
-      {/* 🎬 Modal Video Player View[cite: 7] */}
+      {/* 🎬 Modal Video Player View */}
       {selectedMedia && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-3 md:p-6"
-          onClick={() => setSelectedMedia(null)}
+          onClick={handleCloseMedia}
         >
           <div 
             className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative"
@@ -396,7 +405,7 @@ export default function Home() {
               </div>
 
               <button
-                onClick={() => setSelectedMedia(null)}
+                onClick={handleCloseMedia}
                 className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50"
               >
                 ✕
@@ -413,27 +422,6 @@ export default function Home() {
                   accountType={userProfile?.account_type}
                 />
               </div>
-
-              {!isAdFree && (
-                <div className="w-full max-w-4xl mt-3 p-3 bg-slate-950 border border-red-900/30 rounded-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
-                      AD
-                    </span>
-                    <p className="text-slate-300 text-xs hidden sm:block">
-                      Click here to support VIP Server Access & unlock high-speed stream
-                    </p>
-                  </div>
-                  <a
-                    href={AD_DIRECT_LINK}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
-                  >
-                    Visit Sponsor 🚀
-                  </a>
-                </div>
-              )}
             </div>
 
             {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
@@ -447,7 +435,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🔑 MODAL: REDEEM VIP CODE[cite: 7] */}
       {showRedeemModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
@@ -487,7 +474,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 MODAL: REFERRAL & LEADERBOARD */}
       {showReferralModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-2xl relative shadow-2xl my-8">

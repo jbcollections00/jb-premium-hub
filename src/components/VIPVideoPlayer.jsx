@@ -11,6 +11,9 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
 
   const CDN_DOMAIN = "https://cdn.jb-premium-hub.vip";
   
+  // 🎬 KITA COUNTER: Ilang video ang pwedeng panoorin bago bumalik ang ads (Halimbawa: 3 videos)
+  const MAX_VIDEOS_ALLOWED = 3;
+
   const getCleanVideoUrl = (url) => {
     if (!url) return "";
     let formattedUrl = url.startsWith("http") ? url : `${CDN_DOMAIN}/${url}`;
@@ -19,7 +22,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
 
   const videoSrc = getCleanVideoUrl(mainVideoUrl);
 
-  // Helper check for Admin or VIP status
   const checkAdFreeStatus = (type, role) => {
     const t = (type || '').toUpperCase();
     const r = (role || '').toUpperCase();
@@ -30,7 +32,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
     hasLoggedWatchRef.current = false;
   }, [mainVideoUrl]);
 
-  // Log Video Watch for Referral Contest
   const handleVideoPlay = async () => {
     if (hasLoggedWatchRef.current) return;
     hasLoggedWatchRef.current = true;
@@ -45,7 +46,7 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
     }
   };
 
-  // 1️⃣ Check User VIP / Admin Status & Load Click Memory
+  // 🔄 Bilang ng Napanood na Video bago mag-Reset ang Ads
   useEffect(() => {
     let isMounted = true;
 
@@ -79,9 +80,28 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
       if (!isMounted) return;
       setIsAdFreeUser(isAdFree);
       
-      // Load saved ad clicks from this browser session
-      const savedClicks = parseInt(sessionStorage.getItem('jb_video_clicks') || '0');
-      setAdClicks(savedClicks);
+      if (!isAdFree) {
+        const savedClicks = parseInt(sessionStorage.getItem('jb_video_clicks') || '0');
+        let watchedCount = parseInt(sessionStorage.getItem('jb_watched_since_ads') || '0');
+
+        // Kung unlocked na ang ads (3 clicks done na), dagdagan ang count kapag nagbukas ng panibagong video
+        if (savedClicks >= 3) {
+          watchedCount += 1;
+
+          // Kapag lumagpas na sa MAX_VIDEOS_ALLOWED (3 videos), I-RESET ULIT ANG ADS!
+          if (watchedCount > MAX_VIDEOS_ALLOWED) {
+            sessionStorage.setItem('jb_video_clicks', '0');
+            sessionStorage.setItem('jb_watched_since_ads', '0');
+            setAdClicks(0);
+          } else {
+            sessionStorage.setItem('jb_watched_since_ads', watchedCount.toString());
+            setAdClicks(3);
+          }
+        } else {
+          setAdClicks(savedClicks);
+        }
+      }
+
       setCheckingUser(false);
     };
 
@@ -94,7 +114,6 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
     };
   }, [mainVideoUrl, accountType, userProfile]);
 
-  // 2️⃣ The 3-Click Tab-Under Logic
   const handleAdShieldClick = (e) => {
     if (isAdFreeUser) return;
 
@@ -103,20 +122,28 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
       e.stopPropagation();
 
       const nextClicks = adClicks + 1;
-      
-      // Save new click count so the new tab remembers it
       sessionStorage.setItem('jb_video_clicks', nextClicks.toString());
+
+      // Sa 3rd click, simulan na ang bilang ng 1st video
+      if (nextClicks >= 3) {
+        sessionStorage.setItem('jb_watched_since_ads', '1');
+      }
+
       setAdClicks(nextClicks);
 
-      // 1. Open the CURRENT site in a NEW tab
-      window.open(window.location.href, '_blank');
+      const currentUrl = window.location.href;
 
-      // 2. Redirect the CURRENT tab to your Adsterra Direct Link
+      // 1. Bubuksan ang eksaktong video sa bagong tab
+      const newSiteTab = window.open(currentUrl, '_blank');
+      if (newSiteTab) {
+        newSiteTab.focus();
+      }
+
+      // 2. Ang lumang tab ay pupunta sa Adsterra Direct Link
       window.location.href = 'https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea';
     }
   };
 
-  // 💾 INSTANT DIRECT DOWNLOAD HANDLER (VIP ONLY)
   const handleVipDownload = (e) => {
     if (e) e.stopPropagation();
     if (!videoSrc) return;
@@ -139,13 +166,12 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
     );
   }
 
-  // Define if the user has full access to the video yet
   const canPlayVideo = isAdFreeUser || adClicks >= 3;
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
-      {/* 👑 VIP / ADMIN DOWNLOAD BUTTON */}
+      {/* 👑 VIP DOWNLOAD BUTTON */}
       {isAdFreeUser && (
         <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <button
@@ -162,22 +188,11 @@ export default function VIPVideoPlayer({ mainVideoUrl, userProfile, accountType 
       {!canPlayVideo && (
         <div
           onClick={handleAdShieldClick}
-          className="absolute inset-0 z-50 cursor-pointer flex flex-col items-center justify-center bg-black/40 hover:bg-black/20 transition-all"
-          title="Click to play video"
-        >
-          {/* Optional visual cue so they know to click */}
-          <div className="w-16 h-16 bg-red-600/80 text-white rounded-full flex items-center justify-center shadow-2xl animate-pulse">
-            <svg className="w-8 h-8 fill-current ml-1" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </div>
-          <p className="text-white mt-3 font-bold text-sm tracking-wide text-shadow-md">
-            Tap to Play ({3 - adClicks} clicks remaining)
-          </p>
-        </div>
+          className="absolute inset-0 z-50 cursor-pointer bg-transparent"
+        />
       )}
 
-      {/* 🎥 ACTUAL VIDEO PLAYER */}
+      {/* 🎥 VIDEO PLAYER */}
       <video
         ref={mainVideoRef}
         src={videoSrc}
