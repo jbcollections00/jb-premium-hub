@@ -6,16 +6,13 @@ export default function AccessCodesTab() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form State (VIP only, fixed 30 days)
   const [customCode, setCustomCode] = useState('');
   const [directSendUser, setDirectSendUser] = useState('');
   const [generating, setGenerating] = useState(false);
 
-  // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
 
-  // Modal State for Sending Existing Code
   const [selectedCodeForSend, setSelectedCodeForSend] = useState(null);
   const [targetUserId, setTargetUserId] = useState('');
   const [modalUserSearch, setModalUserSearch] = useState('');
@@ -47,7 +44,6 @@ export default function AccessCodesTab() {
     return `VIP-${randomChars}`;
   };
 
-  // 🚀 GENERATE CODE (Strictly 30-Day VIP)
   const handleGenerateCode = async (e) => {
     e.preventDefault();
     setGenerating(true);
@@ -56,7 +52,7 @@ export default function AccessCodesTab() {
       ? customCode.trim().toUpperCase()
       : generateRandomCode();
 
-    const codeDuration = 30; // Strictly 30 days
+    const codeDuration = 30;
 
     const { data: newCodeData, error: codeErr } = await supabase
       .from('access_codes')
@@ -102,10 +98,8 @@ export default function AccessCodesTab() {
     fetchData();
   };
 
-  // 📩 SEND CODE TO USER FUNCTION
   const sendMessageToUser = async (userId, code, days = 30) => {
     const durationLabel = `${days} Days Duration`;
-
     const title = `🔑 Your VIP Access Code`;
     const message = `Hello! Here is your new VIP Access Code (${durationLabel}):\n\nCode: ${code}\n\nPlease copy this code and redeem it on your Profile page to activate your VIP membership. Enjoy!`;
 
@@ -122,7 +116,6 @@ export default function AccessCodesTab() {
     return error;
   };
 
-  // Send Existing Unused Code via Modal
   const handleSendExistingCode = async (e) => {
     e.preventDefault();
     if (!selectedCodeForSend || !targetUserId) {
@@ -149,6 +142,21 @@ export default function AccessCodesTab() {
     setSendingMessage(false);
   };
 
+  // 🛠️ ONE-CLICK FIX FOR MISSING DATES (e.g., VIP-M5NBRR)
+  const handleFixMissingDate = async (codeId) => {
+    const { error } = await supabase
+      .from('access_codes')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', codeId);
+
+    if (error) {
+      alert('Failed to update date: ' + error.message);
+    } else {
+      alert('✅ Successfully set timestamp! Dynamic countdown is now active.');
+      fetchData();
+    }
+  };
+
   const handleDeleteCode = async (codeId) => {
     if (!confirm('Are you sure you want to delete this access code?')) return;
     const { error } = await supabase.from('access_codes').delete().eq('id', codeId);
@@ -159,7 +167,6 @@ export default function AccessCodesTab() {
     }
   };
 
-  // ⏳ HELPER: Determine expiration date (VIP only)
   const getExpDate = (c) => {
     const duration = c.duration_days || 30;
     if (c.expires_at) {
@@ -175,7 +182,6 @@ export default function AccessCodesTab() {
     return null;
   };
 
-  // ⏱️ HELPER: Calculate dynamic remaining time badge
   const getRemainingTime = (c) => {
     const expDate = getExpDate(c);
     if (!expDate) return 'ACTIVE';
@@ -192,7 +198,6 @@ export default function AccessCodesTab() {
     return `${mins}M LEFT`;
   };
 
-  // Filter Users inside Modal
   const filteredModalUsers = users.filter((u) => {
     const query = modalUserSearch.toLowerCase();
     const email = u.email ? u.email.toLowerCase() : '';
@@ -201,14 +206,12 @@ export default function AccessCodesTab() {
     return email.includes(query) || name.includes(query) || id.includes(query);
   });
 
-  // Strict VIP Code Filtering (Excludes all Standard codes)
   const vipCodesOnly = codes.filter((c) => {
     const type = (c.type || '').toUpperCase();
     const codeStr = (c.code || '').toUpperCase();
     return type === 'VIP' || codeStr.includes('VIP');
   });
 
-  // VIP Metrics
   const totalCodesCount = vipCodesOnly.length;
   const availableCodesCount = vipCodesOnly.filter((c) => !c.is_used).length;
 
@@ -250,7 +253,6 @@ export default function AccessCodesTab() {
         </p>
       </div>
 
-      {/* 📊 STATS OVERVIEW */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Total VIP Codes</p>
@@ -270,7 +272,6 @@ export default function AccessCodesTab() {
         </div>
       </div>
 
-      {/* 🔑 GENERATE ACCESS CODE FORM */}
       <form onSubmit={handleGenerateCode} className="bg-gray-900 border border-gray-800 p-5 rounded-2xl space-y-4 shadow-xl">
         <h2 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Generate & Direct Send VIP Access Code</h2>
 
@@ -324,7 +325,6 @@ export default function AccessCodesTab() {
         </div>
       </form>
 
-      {/* 🔍 SEARCH & FILTERS */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
         <input
           type="text"
@@ -348,7 +348,6 @@ export default function AccessCodesTab() {
         </div>
       </div>
 
-      {/* 📋 CODES LIST */}
       {loading ? (
         <div className="p-12 text-center text-gray-500 text-xs">Loading VIP access codes...</div>
       ) : filteredCodes.length === 0 ? (
@@ -406,7 +405,17 @@ export default function AccessCodesTab() {
                     </button>
                   )}
 
-                  {isActive && (
+                  {isActive && remainingText === 'ACTIVE' && (
+                    <button
+                      onClick={() => handleFixMissingDate(c.id)}
+                      className="bg-amber-600/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 font-bold text-[11px] px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                      title="Click to set start date for countdown"
+                    >
+                      ⏱️ Fix Date
+                    </button>
+                  )}
+
+                  {isActive && remainingText !== 'ACTIVE' && (
                     <span className="bg-sky-950 text-sky-400 border border-sky-800 font-mono text-[11px] font-bold px-3 py-1.5 rounded-xl">
                       ⏳ {remainingText}
                     </span>
@@ -432,7 +441,6 @@ export default function AccessCodesTab() {
         </div>
       )}
 
-      {/* 📩 SEND CODE MODAL WITH LIVE USER SEARCH */}
       {selectedCodeForSend && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
@@ -444,7 +452,6 @@ export default function AccessCodesTab() {
             </p>
 
             <form onSubmit={handleSendExistingCode} className="space-y-4">
-              {/* 🔍 LIVE USER SEARCH FILTER */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
                   1. Search User:
@@ -458,7 +465,6 @@ export default function AccessCodesTab() {
                 />
               </div>
 
-              {/* 👥 SELECT RECIPIENT DROPDOWN */}
               <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
                   2. Select Recipient ({filteredModalUsers.length} found):

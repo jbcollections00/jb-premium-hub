@@ -83,6 +83,8 @@ export default function AdminMediaTab() {
     mediaList.forEach((item) => {
       const cleanKey = normalizeTitle(item.title);
       if (!cleanKey) return;
+      if (searchQuery && !item.title?.toLowerCase().includes(searchQuery.toLowerCase())) return;
+
       if (!groups[cleanKey]) {
         groups[cleanKey] = [];
       }
@@ -92,14 +94,14 @@ export default function AdminMediaTab() {
     return Object.entries(groups)
       .filter(([cleanTitle, items]) => items.length > 1 && !ignoredDuplicates.includes(cleanTitle))
       .map(([cleanTitle, items]) => ({ cleanTitle, items }));
-  }, [mediaList, ignoredDuplicates]);
+  }, [mediaList, ignoredDuplicates, searchQuery]);
 
   const totalDuplicatesCount = useMemo(() => {
     return duplicateGroups.reduce((acc, group) => acc + (group.items.length - 1), 0);
   }, [duplicateGroups]);
 
   const handleMarkGroupAsOk = (cleanTitle) => {
-    setIgnoredDuplicates((prev) => [...prev, cleanTitle]);
+    setIgnoredDuplicates((prev) => Array.from(new Set([...prev, cleanTitle])));
   };
 
   const handleResetIgnored = () => {
@@ -575,8 +577,8 @@ export default function AdminMediaTab() {
                   ✨ Walang natagpuang duplicate na video sa iyong Vault!
                 </div>
               ) : (
-                duplicateGroups.map((group, idx) => (
-                  <div key={idx} className="bg-slate-900/60 border border-amber-500/30 rounded-2xl p-5 space-y-4 shadow-xl">
+                duplicateGroups.map((group) => (
+                  <div key={group.cleanTitle} className="bg-slate-900/60 border border-amber-500/30 rounded-2xl p-5 space-y-4 shadow-xl">
                     <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-amber-400 text-xs font-bold">📂 Match Group:</span>

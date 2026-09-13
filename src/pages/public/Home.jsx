@@ -16,10 +16,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
+  const [activeCategory, setActiveCategory] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
   const [userProfile, setUserProfile] = useState(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
@@ -34,8 +36,8 @@ export default function Home() {
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
-  const isVIP = accountTypeUpper === "VIP";
-  const isAdFree = isVIP || isAdmin;
+  const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
+  const isAdFree = isAdmin || isVIP;
 
   useEffect(() => {
     const handleGlobalError = (event) => {
@@ -52,8 +54,9 @@ export default function Home() {
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
 
+  // 🚫 Trigger ads ONLY after profile is loaded and ONLY if user is NOT ad-free
   useEffect(() => {
-    if (!isAdFree && typeof window.show_11699131 === "function") {
+    if (profileLoaded && !isAdFree && typeof window.show_11699131 === "function") {
       window.show_11699131({
         type: "inApp",
         inAppSettings: {
@@ -65,15 +68,15 @@ export default function Home() {
         },
       });
     }
-  }, [isAdFree]);
+  }, [isAdFree, profileLoaded]);
 
   useEffect(() => {
     fetchUserProfile();
   }, []);
 
   useEffect(() => {
-    fetchMedia(currentPage);
-  }, [currentPage]);
+    fetchMedia(currentPage, activeCategory);
+  }, [currentPage, activeCategory]);
 
   // 🔗 Auto-open Video Modal kapag may `?v=ID` sa URL
   useEffect(() => {
@@ -114,18 +117,26 @@ export default function Home() {
       }
     } catch (err) {
       console.error("Profile load error:", err);
+    } finally {
+      setProfileLoaded(true);
     }
   };
 
-  const fetchMedia = async (page = 1) => {
+  const fetchMedia = async (page = 1, category = "all") => {
     setLoading(true);
     const from = (page - 1) * ITEMS_PER_PAGE;
     const to = from + ITEMS_PER_PAGE - 1;
 
-    const { data, count, error } = await supabase
+    let query = supabase
       .from("media")
       .select("*", { count: "exact" })
-      .eq("type", "video")
+      .eq("type", "video");
+
+    if (category === "pinay_asian") {
+      query = query.or("category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%");
+    }
+
+    const { data, count, error } = await query
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -147,20 +158,37 @@ export default function Home() {
     }
   };
 
-  // 🎥 Open Video at ilagay ang `?v=ID` sa URL bar
+  const handleCategoryChange = (catKey) => {
+    setActiveCategory(catKey);
+    setCurrentPage(1);
+  };
+
+  // 🛠️ Fast Category Updater for Admin
+  const handleUpdateCategory = async (videoId, newCategory) => {
+    const { error } = await supabase
+      .from("media")
+      .update({ category: newCategory })
+      .eq("id", videoId);
+
+    if (error) {
+      alert("Failed to update category: " + error.message);
+    } else {
+      fetchMedia(currentPage, activeCategory);
+    }
+  };
+
+  // 🎥 Open Video (trigger pop-up ad ONLY if profile is loaded and NOT ad-free)
   const handleSelectMedia = (item) => {
-    if (!isAdFree && typeof window.show_11699131 === "function") {
+    if (profileLoaded && !isAdFree && typeof window.show_11699131 === "function") {
       window.show_11699131('pop').catch(() => {});
     }
     setSelectedMedia(item);
     
-    // I-update ang address bar URL
     const url = new URL(window.location.href);
     url.searchParams.set("v", item.id);
     window.history.pushState({}, "", url);
   };
 
-  // ❌ Close Video at linisin ang `?v=ID` sa URL bar
   const handleCloseMedia = () => {
     setSelectedMedia(null);
     const url = new URL(window.location.href);
@@ -195,7 +223,11 @@ export default function Home() {
 
     const { error: markUsedErr } = await supabase
       .from("access_codes")
-      .update({ is_used: true, used_by: userProfile.id })
+      .update({ 
+        is_used: true, 
+        used_by: userProfile.id,
+        used_at: new Date().toISOString()
+      })
       .eq("id", codeData.id);
 
     if (markUsedErr) {
@@ -289,11 +321,36 @@ export default function Home() {
           </div>
         )}
 
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
-          <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+          <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
             Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
           </span>
+        </div>
+
+        {/* 🗂️ Category Navigation Tabs */}
+        <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
+          <button
+            onClick={() => handleCategoryChange("all")}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeCategory === "all"
+                ? "bg-red-600 text-white shadow-lg shadow-red-600/25"
+                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+            }`}
+          >
+            <span>🔥</span> All Videos
+          </button>
+          
+          <button
+            onClick={() => handleCategoryChange("pinay_asian")}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeCategory === "pinay_asian"
+                ? "bg-red-600 text-white shadow-lg shadow-red-600/25"
+                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+            }`}
+          >
+            <span>🇵🇭</span> Pinay / Asian
+          </button>
         </div>
 
         {loading ? (
@@ -303,7 +360,7 @@ export default function Home() {
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
             <p className="text-slate-400 text-base md:text-lg">
-              Wala pang available na videos sa Vault.
+              Wala pang available na videos sa kategoryang ito.
             </p>
           </div>
         ) : (
@@ -312,46 +369,68 @@ export default function Home() {
               <div
                 key={item.id}
                 onClick={() => handleSelectMedia(item)}
-                className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1"
+                className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
               >
-                <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
-                  {item.thumbnail_url ? (
-                    <img
-                      src={getCdnUrl(item.thumbnail_url)}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : item.media_url ? (
-                    <video
-                      src={`${getCdnUrl(item.media_url)}#t=1`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                      preload="metadata"
-                      muted
-                      playsInline
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-slate-900 flex items-center justify-center">
-                      <span className="text-slate-600 text-xs font-semibold">No Display</span>
-                    </div>
-                  )}
+                <div>
+                  <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                    {item.thumbnail_url ? (
+                      <img
+                        src={getCdnUrl(item.thumbnail_url)}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : item.media_url ? (
+                      <video
+                        src={`${getCdnUrl(item.media_url)}#t=1`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                        preload="metadata"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-900 flex items-center justify-center">
+                        <span className="text-slate-600 text-xs font-semibold">No Display</span>
+                      </div>
+                    )}
 
-                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                    <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                      <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                      <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
                     </div>
+                  </div>
+
+                  <div className="p-4">
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">
+                      Video
+                    </span>
+                    <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">
+                      {item.title}
+                    </h3>
                   </div>
                 </div>
 
-                <div className="p-4">
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">
-                    Video
-                  </span>
-                  <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">
-                    {item.title}
-                  </h3>
-                </div>
+                {/* 🛡️ Admin Quick Category Editor */}
+                {isAdmin && (
+                  <div 
+                    className="p-3 pt-0 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40 mt-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      Tag Category:
+                    </span>
+                    <select
+                      value={item.category || "general"}
+                      onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
+                      className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
+                    >
+                      <option value="general">🔥 General</option>
+                      <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
+                    </select>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -417,9 +496,10 @@ export default function Home() {
                 <VIPVideoPlayer
                   key={selectedMedia.id}
                   mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
-                  adDirectLink={AD_DIRECT_LINK}
+                  adDirectLink={isAdFree ? null : AD_DIRECT_LINK}
                   userProfile={userProfile}
                   accountType={userProfile?.account_type}
+                  isAdFree={isAdFree}
                 />
               </div>
             </div>
