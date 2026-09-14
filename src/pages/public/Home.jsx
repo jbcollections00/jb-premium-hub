@@ -16,8 +16,23 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
-  const [activeCategory, setActiveCategory] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
+  // ⚡ Kukunin ang category sa URL kung meron, default is "all"
+  const [activeCategory, setActiveCategory] = useState(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("cat") || "all";
+    }
+    return "all";
+  });
+
+  // ⚡ Kukunin ang page sa URL kung meron, default is 1
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (typeof window !== "undefined") {
+      const page = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
+      return isNaN(page) ? 1 : page;
+    }
+    return 1;
+  });
+  
   const [totalCount, setTotalCount] = useState(0);
 
   const [userProfile, setUserProfile] = useState(null);
@@ -134,6 +149,12 @@ export default function Home() {
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
+      
+      // Update the URL without reloading the page so it stays accurate
+      const url = new URL(window.location.href);
+      url.searchParams.set("page", newPage);
+      window.history.replaceState({}, "", url);
+      
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -141,6 +162,12 @@ export default function Home() {
   const handleCategoryChange = (catKey) => {
     setActiveCategory(catKey);
     setCurrentPage(1);
+
+    // Update the URL
+    const url = new URL(window.location.href);
+    url.searchParams.set("cat", catKey);
+    url.searchParams.set("page", 1);
+    window.history.replaceState({}, "", url);
   };
 
   const handleUpdateCategory = async (videoId, newCategory) => {
@@ -156,23 +183,22 @@ export default function Home() {
     }
   };
 
-  // ⚡ Tab Hijacking logic
   const handleSelectMedia = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!isAdFree) {
-      // 1. Bubukas sa bagong tab ang video at awtomatikong mag-a-auto open ang modal via ?v= parameter
-      const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}`;
+      // ⚡ Ipasa ang current page at category sa pagbukas ng bagong tab
+      const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}&page=${currentPage}&cat=${activeCategory}`;
       window.open(videoUrl, "_blank", "noopener,noreferrer");
 
-      // 2. Ang kasalukuyang tab ay ire-redirect papuntang Ad Direct Link
       window.location.href = AD_DIRECT_LINK;
     } else {
-      // Para sa VIP / Admin (Ad-Free)
       setSelectedMedia(item);
       const url = new URL(window.location.href);
       url.searchParams.set("v", item.id);
+      url.searchParams.set("page", currentPage);
+      url.searchParams.set("cat", activeCategory);
       window.history.replaceState({}, "", url);
     }
   };
@@ -184,7 +210,7 @@ export default function Home() {
     }
     setSelectedMedia(null);
     const url = new URL(window.location.href);
-    url.searchParams.delete("v");
+    url.searchParams.delete("v"); // Aalisin lang ang video ID pero mananatili ang page number
     window.history.replaceState({}, "", url);
   };
 
