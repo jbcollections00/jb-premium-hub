@@ -11,31 +11,44 @@ const getCdnUrl = (url) => {
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
 
-// 📢 Reusable Component para sa Ad Banner / Scripts
+// 📢 Reusable Component para sa pag-render ng Ad Scripts/Iframes
 function AdContainer({ className, label, scriptCode }) {
-  const adRef = useRef(null);
+  const iframeRef = useRef(null);
 
   useEffect(() => {
-    if (scriptCode && adRef.current) {
-      adRef.current.innerHTML = "";
-      const container = document.createElement("div");
-      container.innerHTML = scriptCode;
-      Array.from(container.querySelectorAll("script")).forEach((oldScript) => {
-        const newScript = document.createElement("script");
-        Array.from(oldScript.attributes).forEach((attr) =>
-          newScript.setAttribute(attr.name, attr.value)
-        );
-        newScript.appendChild(document.createTextNode(oldScript.innerHTML));
-        oldScript.parentNode.replaceChild(newScript, oldScript);
-      });
-      adRef.current.appendChild(container);
+    if (scriptCode && iframeRef.current) {
+      try {
+        const doc = iframeRef.current.contentWindow.document;
+        doc.open();
+        doc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <style>
+                body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }
+              </style>
+            </head>
+            <body>
+              ${scriptCode}
+            </body>
+          </html>
+        `);
+        doc.close();
+      } catch (e) {
+        console.error("Ad loading error:", e);
+      }
     }
   }, [scriptCode]);
 
   return (
-    <div className={`bg-slate-900/60 border border-slate-800/80 rounded-2xl flex flex-col items-center justify-center text-slate-500 text-xs overflow-hidden ${className}`}>
+    <div className={`bg-slate-900/60 border border-slate-800/80 rounded-2xl flex items-center justify-center text-slate-500 text-xs overflow-hidden ${className}`}>
       {scriptCode ? (
-        <div ref={adRef} className="w-full h-full flex items-center justify-center" />
+        <iframe
+          ref={iframeRef}
+          title={label || "Advertisement"}
+          className="w-full h-full border-0 overflow-hidden"
+          scrolling="no"
+        />
       ) : (
         <span className="font-mono text-slate-500 text-[11px] uppercase tracking-wider">{label || "[ ADVERTISEMENT BANNER ]"}</span>
       )}
@@ -48,7 +61,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
-  // ⚡ Kukunin ang category sa URL kung meron, default is "all"
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("cat") || "all";
@@ -56,7 +68,6 @@ export default function Home() {
     return "all";
   });
 
-  // ⚡ Kukunin ang page sa URL kung meron, default is 1
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== "undefined") {
       const page = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
@@ -64,21 +75,37 @@ export default function Home() {
     }
     return 1;
   });
-  
-  const [totalCount, setTotalCount] = useState(0);
 
+  const [totalCount, setTotalCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
-
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
-  
   const [copiedLink, setCopiedLink] = useState(false);
 
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
+
+  // 🎯 Adsterra Code Snippets
+  const BANNER_300x250_SCRIPT = `
+    <script type="text/javascript">
+      atOptions = {
+        'key' : 'b34ceb41f59688ea67157fc3adaa80c5',
+        'format' : 'iframe',
+        'height' : 250,
+        'width' : 300,
+        'params' : {}
+      };
+    </script>
+    <script type="text/javascript" src="https://deeprootedpressure.com/b34ceb41f59688ea67157fc3adaa80c5/invoke.js"></script>
+  `;
+
+  const NATIVE_BANNER_SCRIPT = `
+    <script async="async" data-cfasync="false" src="https://deeprootedpressure.com/755f4f26f73d8f7961a49b0368535c3f/invoke.js"></script>
+    <div id="container-755f4f26f73d8f7961a49b0368535c3f"></div>
+  `;
 
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
@@ -172,11 +199,9 @@ export default function Home() {
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
-      
       const url = new URL(window.location.href);
       url.searchParams.set("page", newPage);
       window.history.replaceState({}, "", url);
-      
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -184,7 +209,6 @@ export default function Home() {
   const handleCategoryChange = (catKey) => {
     setActiveCategory(catKey);
     setCurrentPage(1);
-
     const url = new URL(window.location.href);
     url.searchParams.set("cat", catKey);
     url.searchParams.set("page", 1);
@@ -211,7 +235,6 @@ export default function Home() {
     if (!isAdFree) {
       const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}&page=${currentPage}&cat=${activeCategory}`;
       window.open(videoUrl, "_blank", "noopener,noreferrer");
-
       window.location.href = AD_DIRECT_LINK;
     } else {
       setSelectedMedia(item);
@@ -286,7 +309,7 @@ export default function Home() {
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
       <EventPopup />
 
-      {/* 📢 Top Notice Bar (Standard Users Only) */}
+      {/* 📢 Single Top Notice Bar */}
       {!isAdFree && (
         <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs py-2 px-4 text-center font-medium flex items-center justify-center gap-2">
           <span>📢 <strong>Sponsored Page</strong> (Upgrade to VIP to remove page ads)</span>
@@ -299,25 +322,33 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main Layout Grid with Side Ads */}
-      <div className="flex-1 flex justify-center w-full">
+      {/* Main Container Layout */}
+      <div className="flex-1 flex justify-center w-full max-w-[1600px] mx-auto">
         
         {/* 👈 LEFT SIDE AD */}
         {!isAdFree && (
-          <aside className="hidden lg:flex flex-col items-center w-48 xl:w-56 p-4 shrink-0">
+          <aside className="hidden xl:flex flex-col items-center w-56 p-4 shrink-0">
             <div className="sticky top-6 w-full h-[600px]">
-              <AdContainer className="w-full h-full" label="[ SIDE AD ]" />
+              <AdContainer 
+                className="w-full h-full" 
+                label="[ SIDE AD ]" 
+                scriptCode={BANNER_300x250_SCRIPT}
+              />
             </div>
           </aside>
         )}
 
-        {/* 🏢 CENTER CONTENT */}
-        <main className="flex-1 max-w-7xl px-4 py-6 md:p-8 w-full min-w-0">
+        {/* 🏢 CENTER CONTENT AREA */}
+        <main className="flex-1 px-4 py-6 md:p-8 w-full min-w-0">
           
-          {/* 🖼️ TOP BANNER AD SLOT */}
+          {/* 🖼️ TOP BANNER AD (Native Banner 4:1) */}
           {!isAdFree && (
             <div className="mb-6 w-full">
-              <AdContainer className="w-full h-24 md:h-32" label="[ ADVERTISEMENT BANNER ]" />
+              <AdContainer 
+                className="w-full h-36 md:h-44" 
+                label="[ ADVERTISEMENT BANNER ]" 
+                scriptCode={NATIVE_BANNER_SCRIPT}
+              />
             </div>
           )}
 
@@ -468,9 +499,13 @@ export default function Home() {
 
         {/* 👉 RIGHT SIDE AD */}
         {!isAdFree && (
-          <aside className="hidden lg:flex flex-col items-center w-48 xl:w-56 p-4 shrink-0">
+          <aside className="hidden xl:flex flex-col items-center w-56 p-4 shrink-0">
             <div className="sticky top-6 w-full h-[600px]">
-              <AdContainer className="w-full h-full" label="[ SIDE AD ]" />
+              <AdContainer 
+                className="w-full h-full" 
+                label="[ SIDE AD ]" 
+                scriptCode={BANNER_300x250_SCRIPT}
+              />
             </div>
           </aside>
         )}
