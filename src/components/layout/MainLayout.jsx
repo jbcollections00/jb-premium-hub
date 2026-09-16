@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import Header from './Header';
 import Footer from './Footer';
+import AdsterraNativeBanner from '../AdsterraNativeBanner';
+
+const ADSTERRA_POPUNDER = 'https://pl30918151.effectivecpmnetwork.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js';
+const ADSTERRA_SOCIALBAR = 'https://pl30918152.effectivecpmnetwork.com/77/84/87/7784879ac907b760977addd43bca7b1a.js';
 
 export default function MainLayout() {
   const location = useLocation();
@@ -15,55 +19,56 @@ export default function MainLayout() {
   useEffect(() => {
     let isMounted = true;
 
-    const init = async () => {
+    const fetchSettingsAndUser = async () => {
       try {
-        // Fetch global ad settings
-        const { data: settingsData } = await supabase
-          .from('site_settings')
-          .select('ads_enabled')
-          .eq('id', 1)
-          .maybeSingle();
+        const [settingsRes, sessionRes] = await Promise.all([
+          supabase.from('site_settings').select('ads_enabled').eq('id', 1).maybeSingle(),
+          supabase.auth.getSession()
+        ]);
 
-        if (settingsData !== null && isMounted) {
-          setAdsEnabled(settingsData.ads_enabled);
+        if (!isMounted) return;
+
+        if (settingsRes.data) {
+          setAdsEnabled(settingsRes.data.ads_enabled);
         }
 
-        // Fetch user tier
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user?.id && isMounted) {
+        const session = sessionRes.data?.session;
+
+        if (session?.user?.id) {
           const { data, error } = await supabase
             .from('profiles')
-            .select('*')
+            .select('account_type, role')
             .eq('id', session.user.id)
             .maybeSingle();
 
           if (!error && data) {
             const accountType = (data.account_type || '').toLowerCase();
             const role = (data.role || '').toLowerCase();
-
-            if (accountType === 'vip' || accountType === 'admin' || role === 'admin') {
-              setIsStandardUser(false);
-            }
+            setIsStandardUser(!(accountType === 'vip' || accountType === 'admin' || role === 'admin'));
           }
+        } else {
+          setIsStandardUser(true);
         }
       } catch (err) {
         console.error('Error verifying settings or user tier:', err);
       } finally {
-        if (isMounted) {
-          setLoadingAuth(false);
-        }
+        if (isMounted) setLoadingAuth(false);
       }
     };
 
-    init();
+    fetchSettingsAndUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      fetchSettingsAndUser();
+    });
 
     return () => {
       isMounted = false;
+      subscription?.unsubscribe();
     };
   }, []);
 
-  // 📢 ADSTERRA SCRIPT INJECTION (Only if enabled globally & for Standard Users)
+  // Injection for Popunder & Socialbar
   useEffect(() => {
     const showAds = !loadingAuth && isStandardUser && !isAdminPage && adsEnabled;
 
@@ -71,7 +76,7 @@ export default function MainLayout() {
       if (!document.getElementById('adsterra-popunder')) {
         const script1 = document.createElement('script');
         script1.id = 'adsterra-popunder';
-        script1.src = 'https://pl30918151.effectivecpmnetwork.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js';
+        script1.src = ADSTERRA_POPUNDER;
         script1.async = true;
         document.head.appendChild(script1);
       }
@@ -79,17 +84,15 @@ export default function MainLayout() {
       if (!document.getElementById('adsterra-socialbar')) {
         const script2 = document.createElement('script');
         script2.id = 'adsterra-socialbar';
-        script2.src = 'https://pl30918152.effectivecpmnetwork.com/77/84/87/7784879ac907b760977addd43bca7b1a.js';
+        script2.src = ADSTERRA_SOCIALBAR;
         script2.async = true;
         document.body.appendChild(script2);
       }
     }
 
     return () => {
-      const pop = document.getElementById('adsterra-popunder');
-      const soc = document.getElementById('adsterra-socialbar');
-      if (pop) pop.remove();
-      if (soc) soc.remove();
+      document.getElementById('adsterra-popunder')?.remove();
+      document.getElementById('adsterra-socialbar')?.remove();
 
       const injectedNodes = document.querySelectorAll(
         '[id*="at-container"], [class*="at-element"], [id*="adsterra"], [src*="effectivecpmnetwork"], iframe[src*="effectivecpmnetwork"]'
@@ -98,10 +101,16 @@ export default function MainLayout() {
     };
   }, [loadingAuth, isStandardUser, isAdminPage, adsEnabled]);
 
+  const showAds = !loadingAuth && isStandardUser && !isAdminPage && adsEnabled;
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-between">
       <div>
         <Header />
+        
+        {/* 🖼️ Native Banner visible globally on every page */}
+        {showAds && <AdsterraNativeBanner />}
+
         <main className="w-full">
           <Outlet />
         </main>

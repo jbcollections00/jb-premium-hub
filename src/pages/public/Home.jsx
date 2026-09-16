@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
@@ -10,32 +10,6 @@ const getCdnUrl = (url) => {
   if (!url) return "";
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
-
-function AdsterraNativeBanner({ className }) {
-  const adRef = useRef(null);
-
-  useEffect(() => {
-    if (!adRef.current) return;
-    adRef.current.innerHTML = "";
-
-    const containerDiv = document.createElement("div");
-    containerDiv.id = "container-755f4f26f73d8f7961a49b0368535c3f";
-
-    const script = document.createElement("script");
-    script.async = true;
-    script.setAttribute("data-cfasync", "false");
-    script.src = "https://deeprootedpressure.com/755f4f26f73d8f7961a49b0368535c3f/invoke.js";
-
-    adRef.current.appendChild(containerDiv);
-    adRef.current.appendChild(script);
-  }, []);
-
-  return (
-    <div className={`bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden p-3 min-h-[120px] flex items-center justify-center ${className || ""}`}>
-      <div ref={adRef} className="w-full" />
-    </div>
-  );
-}
 
 export default function Home() {
   const [mediaList, setMediaList] = useState([]);
@@ -306,13 +280,6 @@ export default function Home() {
                 </button>
               )}
             </div>
-          </div>
-        )}
-
-        {/* 🖼️ TOP NATIVE BANNER AD (POSITIONED HERE) */}
-        {showAds && (
-          <div className="mb-8 w-full">
-            <AdsterraNativeBanner />
           </div>
         )}
 
