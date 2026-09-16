@@ -11,47 +11,28 @@ const getCdnUrl = (url) => {
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
 
-// 📢 Reusable Component para sa pag-render ng Ad Scripts/Iframes
-function AdContainer({ className, label, scriptCode }) {
-  const iframeRef = useRef(null);
+function AdsterraNativeBanner({ className }) {
+  const adRef = useRef(null);
 
   useEffect(() => {
-    if (scriptCode && iframeRef.current) {
-      try {
-        const doc = iframeRef.current.contentWindow.document;
-        doc.open();
-        doc.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <style>
-                body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }
-              </style>
-            </head>
-            <body>
-              ${scriptCode}
-            </body>
-          </html>
-        `);
-        doc.close();
-      } catch (e) {
-        console.error("Ad loading error:", e);
-      }
-    }
-  }, [scriptCode]);
+    if (!adRef.current) return;
+    adRef.current.innerHTML = "";
+
+    const containerDiv = document.createElement("div");
+    containerDiv.id = "container-755f4f26f73d8f7961a49b0368535c3f";
+
+    const script = document.createElement("script");
+    script.async = true;
+    script.setAttribute("data-cfasync", "false");
+    script.src = "https://deeprootedpressure.com/755f4f26f73d8f7961a49b0368535c3f/invoke.js";
+
+    adRef.current.appendChild(containerDiv);
+    adRef.current.appendChild(script);
+  }, []);
 
   return (
-    <div className={`bg-slate-900/60 border border-slate-800/80 rounded-2xl flex items-center justify-center text-slate-500 text-xs overflow-hidden ${className}`}>
-      {scriptCode ? (
-        <iframe
-          ref={iframeRef}
-          title={label || "Advertisement"}
-          className="w-full h-full border-0 overflow-hidden"
-          scrolling="no"
-        />
-      ) : (
-        <span className="font-mono text-slate-500 text-[11px] uppercase tracking-wider">{label || "[ ADVERTISEMENT BANNER ]"}</span>
-      )}
+    <div className={`bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden p-3 min-h-[120px] flex items-center justify-center ${className || ""}`}>
+      <div ref={adRef} className="w-full" />
     </div>
   );
 }
@@ -78,7 +59,7 @@ export default function Home() {
 
   const [totalCount, setTotalCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
-  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [adsEnabled, setAdsEnabled] = useState(true);
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
@@ -88,47 +69,17 @@ export default function Home() {
 
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
-  // 🎯 Adsterra Code Snippets
-  const BANNER_300x250_SCRIPT = `
-    <script type="text/javascript">
-      atOptions = {
-        'key' : 'b34ceb41f59688ea67157fc3adaa80c5',
-        'format' : 'iframe',
-        'height' : 250,
-        'width' : 300,
-        'params' : {}
-      };
-    </script>
-    <script type="text/javascript" src="https://deeprootedpressure.com/b34ceb41f59688ea67157fc3adaa80c5/invoke.js"></script>
-  `;
-
-  const NATIVE_BANNER_SCRIPT = `
-    <script async="async" data-cfasync="false" src="https://deeprootedpressure.com/755f4f26f73d8f7961a49b0368535c3f/invoke.js"></script>
-    <div id="container-755f4f26f73d8f7961a49b0368535c3f"></div>
-  `;
-
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
   const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
   const isAdFree = isAdmin || isVIP;
 
-  useEffect(() => {
-    const handleGlobalError = (event) => {
-      if (
-        event.message?.includes("appendChild") ||
-        event.message?.includes("null") ||
-        (event.filename && event.filename.includes("fb5310e"))
-      ) {
-        event.preventDefault();
-      }
-    };
-    window.addEventListener("error", handleGlobalError);
-    return () => window.removeEventListener("error", handleGlobalError);
-  }, []);
+  const showAds = adsEnabled && !isAdFree;
 
   useEffect(() => {
     fetchUserProfile();
+    fetchAdSettings();
   }, []);
 
   useEffect(() => {
@@ -146,31 +97,36 @@ export default function Home() {
     }
   }, [mediaList]);
 
+  const fetchAdSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from("site_settings")
+        .select("ads_enabled")
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (data !== null && data.ads_enabled !== undefined) {
+        setAdsEnabled(data.ads_enabled);
+      }
+    } catch (err) {
+      console.error("Error loading ad settings:", err);
+    }
+  };
+
   const fetchUserProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) return;
 
-      let { data: profile, error } = await supabase
+      let { data: profile } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profile && !error) {
-        const { data: newProfile } = await supabase
-          .from("profiles")
-          .upsert([{ id: user.id, account_type: "standard" }])
-          .select()
-          .maybeSingle();
-        profile = newProfile;
-      }
-
       if (profile) setUserProfile(profile);
     } catch (err) {
       console.error("Profile load error:", err);
-    } finally {
-      setProfileLoaded(true);
     }
   };
 
@@ -215,35 +171,21 @@ export default function Home() {
     window.history.replaceState({}, "", url);
   };
 
-  const handleUpdateCategory = async (videoId, newCategory) => {
-    const { error } = await supabase
-      .from("media")
-      .update({ category: newCategory })
-      .eq("id", videoId);
-
-    if (error) {
-      alert("Failed to update category: " + error.message);
-    } else {
-      fetchMedia(currentPage, activeCategory);
-    }
-  };
-
   const handleSelectMedia = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!isAdFree) {
-      const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}&page=${currentPage}&cat=${activeCategory}`;
-      window.open(videoUrl, "_blank", "noopener,noreferrer");
-      window.location.href = AD_DIRECT_LINK;
-    } else {
-      setSelectedMedia(item);
-      const url = new URL(window.location.href);
-      url.searchParams.set("v", item.id);
-      url.searchParams.set("page", currentPage);
-      url.searchParams.set("cat", activeCategory);
-      window.history.replaceState({}, "", url);
+    // Trigger direct link popunder ONLY when clicking a video card
+    if (showAds && AD_DIRECT_LINK) {
+      window.open(AD_DIRECT_LINK, "_blank", "noopener,noreferrer");
     }
+
+    setSelectedMedia(item);
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", item.id);
+    url.searchParams.set("page", currentPage);
+    url.searchParams.set("cat", activeCategory);
+    window.history.replaceState({}, "", url);
   };
 
   const handleCloseMedia = (e) => {
@@ -306,11 +248,11 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between">
       <EventPopup />
 
-      {/* 📢 Single Top Notice Bar */}
-      {!isAdFree && (
+      {/* 📢 TOP WARNING BANNER */}
+      {showAds && (
         <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs py-2 px-4 text-center font-medium flex items-center justify-center gap-2">
           <span>📢 <strong>Sponsored Page</strong> (Upgrade to VIP to remove page ads)</span>
           <button 
@@ -322,194 +264,144 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main Container Layout */}
-      <div className="flex-1 flex justify-center w-full max-w-[1600px] mx-auto">
+      {/* 🏢 MAIN CENTER CONTENT */}
+      <main className="w-full max-w-7xl mx-auto px-4 py-6 md:p-8 flex-1">
         
-        {/* 👈 LEFT SIDE AD */}
-        {!isAdFree && (
-          <aside className="hidden xl:flex flex-col items-center w-56 p-4 shrink-0">
-            <div className="sticky top-6 w-full h-[600px]">
-              <AdContainer 
-                className="w-full h-full" 
-                label="[ SIDE AD ]" 
-                scriptCode={BANNER_300x250_SCRIPT}
-              />
+        {/* User Account Panel */}
+        {userProfile && (
+          <div className="mb-6 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-white text-base">
+                    {userProfile.full_name || userProfile.email || "Member Account"}
+                  </h2>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isAdmin ? 'bg-purple-600 text-white' : isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
+                    {isAdmin ? "ADMIN" : isVIP ? "VIP" : "STANDARD"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos • Ad Supported"}
+                </p>
+              </div>
             </div>
-          </aside>
+
+            <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
+              <button
+                onClick={() => setShowReferralModal(true)}
+                className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>🏆 Refer & Earn</span>
+              </button>
+            
+              {!isAdFree && (
+                <button
+                  onClick={() => setShowRedeemModal(true)}
+                  className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>🔑 Upgrade VIP</span>
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
-        {/* 🏢 CENTER CONTENT AREA */}
-        <main className="flex-1 px-4 py-6 md:p-8 w-full min-w-0">
-          
-          {/* 🖼️ TOP BANNER AD (Native Banner 4:1) */}
-          {!isAdFree && (
-            <div className="mb-6 w-full">
-              <AdContainer 
-                className="w-full h-36 md:h-44" 
-                label="[ ADVERTISEMENT BANNER ]" 
-                scriptCode={NATIVE_BANNER_SCRIPT}
-              />
-            </div>
-          )}
+        {/* 🖼️ TOP NATIVE BANNER AD (POSITIONED HERE) */}
+        {showAds && (
+          <div className="mb-8 w-full">
+            <AdsterraNativeBanner />
+          </div>
+        )}
 
-          {userProfile && (
-            <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                  {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
-                </div>
+        {/* Title & Filters */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
+          <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
+            Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
+          <button
+            onClick={() => handleCategoryChange("all")}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "all" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            <span>🔥</span> All Videos
+          </button>
+          <button
+            onClick={() => handleCategoryChange("pinay_asian")}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "pinay_asian" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            <span>🇵🇭</span> Pinay / Asian
+          </button>
+        </div>
+
+        {/* Video Grid */}
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+          </div>
+        ) : mediaList.length === 0 ? (
+          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+            <p className="text-slate-400">Wala pang available na videos sa kategoryang ito.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {mediaList.map((item) => (
+              <div
+                key={item.id}
+                onClick={(e) => handleSelectMedia(e, item)}
+                className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
+              >
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-bold text-white text-base">
-                      {userProfile.full_name || userProfile.email || "Member Account"}
-                    </h2>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isAdmin ? 'bg-purple-600 text-white' : isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
-                      {isAdmin ? "ADMIN" : isVIP ? "VIP" : "STANDARD"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos • Ad Supported"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
-                <button
-                  onClick={() => setShowReferralModal(true)}
-                  className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>🏆 Refer & Earn</span>
-                </button>
-              
-                {!isAdFree && (
-                  <button
-                    onClick={() => setShowRedeemModal(true)}
-                    className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>🔑 Upgrade VIP</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
-            <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-              Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
-            <button
-              onClick={() => handleCategoryChange("all")}
-              className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "all" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
-            >
-              <span>🔥</span> All Videos
-            </button>
-            <button
-              onClick={() => handleCategoryChange("pinay_asian")}
-              className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "pinay_asian" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
-            >
-              <span>🇵🇭</span> Pinay / Asian
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="flex justify-center items-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
-            </div>
-          ) : mediaList.length === 0 ? (
-            <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-              <p className="text-slate-400">Wala pang available na videos sa kategoryang ito.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {mediaList.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={(e) => handleSelectMedia(e, item)}
-                  className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
-                      {item.thumbnail_url ? (
-                        <img
-                          src={getCdnUrl(item.thumbnail_url)}
-                          alt={item.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                        />
-                      ) : item.media_url ? (
-                        <video
-                          src={`${getCdnUrl(item.media_url)}#t=1`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                          preload="metadata"
-                          muted
-                          playsInline
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                          No Display
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                        <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                          <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                        </div>
+                  <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                    {item.thumbnail_url ? (
+                      <img
+                        src={getCdnUrl(item.thumbnail_url)}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                    ) : item.media_url ? (
+                      <video
+                        src={`${getCdnUrl(item.media_url)}#t=1`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                        preload="metadata"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
+                        No Display
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                      <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                       </div>
                     </div>
-                    <div className="p-4">
-                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">Video</span>
-                      <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
-                    </div>
                   </div>
-
-                  {isAdmin && (
-                    <div 
-                      className="p-3 pt-0 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40 mt-1"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                        Tag Category:
-                      </span>
-                      <select
-                        value={item.category || "general"}
-                        onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
-                        className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
-                      >
-                        <option value="general">🔥 General</option>
-                        <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
-                      </select>
-                    </div>
-                  )}
+                  <div className="p-4">
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">Video</span>
+                    <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-3 mt-10 mb-6">
-              <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">← Previous</button>
-              <span className="text-xs text-slate-400 font-semibold px-2">Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{totalPages}</strong></span>
-              <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">Next →</button>
-            </div>
-          )}
-        </main>
-
-        {/* 👉 RIGHT SIDE AD */}
-        {!isAdFree && (
-          <aside className="hidden xl:flex flex-col items-center w-56 p-4 shrink-0">
-            <div className="sticky top-6 w-full h-[600px]">
-              <AdContainer 
-                className="w-full h-full" 
-                label="[ SIDE AD ]" 
-                scriptCode={BANNER_300x250_SCRIPT}
-              />
-            </div>
-          </aside>
+              </div>
+            ))}
+          </div>
         )}
-      </div>
+
+        {totalPages > 1 && (
+          <div className="flex justify-center items-center gap-3 mt-10 mb-6">
+            <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">← Previous</button>
+            <span className="text-xs text-slate-400 font-semibold px-2">Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{totalPages}</strong></span>
+            <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">Next →</button>
+          </div>
+        )}
+      </main>
 
       {/* 🎬 Modal Video Player View */}
       {selectedMedia && (
@@ -528,19 +420,13 @@ export default function Home() {
                 <VIPVideoPlayer
                   key={selectedMedia.id}
                   mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
-                  adDirectLink={isAdFree ? null : AD_DIRECT_LINK}
+                  adDirectLink={showAds ? AD_DIRECT_LINK : null}
                   userProfile={userProfile}
                   accountType={userProfile?.account_type}
-                  isAdFree={isAdFree}
+                  isAdFree={!showAds}
                 />
               </div>
             </div>
-            
-            {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
-              <div className="px-4 py-3 md:px-6 border-t border-slate-800/80 bg-slate-950/60 shrink-0">
-                <p className="text-slate-400 text-xs md:text-sm line-clamp-2">{selectedMedia.description}</p>
-              </div>
-            )}
           </div>
         </div>
       )}
