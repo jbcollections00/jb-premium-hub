@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
@@ -10,6 +10,38 @@ const getCdnUrl = (url) => {
   if (!url) return "";
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
+
+// 📢 Reusable Component para sa Ad Banner / Scripts
+function AdContainer({ className, label, scriptCode }) {
+  const adRef = useRef(null);
+
+  useEffect(() => {
+    if (scriptCode && adRef.current) {
+      adRef.current.innerHTML = "";
+      const container = document.createElement("div");
+      container.innerHTML = scriptCode;
+      Array.from(container.querySelectorAll("script")).forEach((oldScript) => {
+        const newScript = document.createElement("script");
+        Array.from(oldScript.attributes).forEach((attr) =>
+          newScript.setAttribute(attr.name, attr.value)
+        );
+        newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+        oldScript.parentNode.replaceChild(newScript, oldScript);
+      });
+      adRef.current.appendChild(container);
+    }
+  }, [scriptCode]);
+
+  return (
+    <div className={`bg-slate-900/60 border border-slate-800/80 rounded-2xl flex flex-col items-center justify-center text-slate-500 text-xs overflow-hidden ${className}`}>
+      {scriptCode ? (
+        <div ref={adRef} className="w-full h-full flex items-center justify-center" />
+      ) : (
+        <span className="font-mono text-slate-500 text-[11px] uppercase tracking-wider">{label || "[ ADVERTISEMENT BANNER ]"}</span>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const [mediaList, setMediaList] = useState([]);
@@ -67,15 +99,6 @@ export default function Home() {
     window.addEventListener("error", handleGlobalError);
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
-
-  useEffect(() => {
-    if (profileLoaded && !isAdFree && typeof window.show_11699131 === "function") {
-      window.show_11699131({
-        type: "inApp",
-        inAppSettings: { frequency: 2, capping: 0.1, interval: 30, timeout: 5, everyPage: false },
-      });
-    }
-  }, [isAdFree, profileLoaded]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -150,7 +173,6 @@ export default function Home() {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
       
-      // Update the URL without reloading the page so it stays accurate
       const url = new URL(window.location.href);
       url.searchParams.set("page", newPage);
       window.history.replaceState({}, "", url);
@@ -163,7 +185,6 @@ export default function Home() {
     setActiveCategory(catKey);
     setCurrentPage(1);
 
-    // Update the URL
     const url = new URL(window.location.href);
     url.searchParams.set("cat", catKey);
     url.searchParams.set("page", 1);
@@ -188,7 +209,6 @@ export default function Home() {
     e.stopPropagation();
 
     if (!isAdFree) {
-      // ⚡ Ipasa ang current page at category sa pagbukas ng bagong tab
       const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}&page=${currentPage}&cat=${activeCategory}`;
       window.open(videoUrl, "_blank", "noopener,noreferrer");
 
@@ -210,7 +230,7 @@ export default function Home() {
     }
     setSelectedMedia(null);
     const url = new URL(window.location.href);
-    url.searchParams.delete("v"); // Aalisin lang ang video ID pero mananatili ang page number
+    url.searchParams.delete("v");
     window.history.replaceState({}, "", url);
   };
 
@@ -263,152 +283,196 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col">
       <EventPopup />
 
-      <div className="max-w-7xl mx-auto">
-        {userProfile && (
-          <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
-            <div className="flex items-center gap-3">
-              <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-white text-base">
-                    {userProfile.full_name || userProfile.email || "Member Account"}
-                  </h2>
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isAdmin ? 'bg-purple-600 text-white' : isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
-                    {isAdmin ? "ADMIN" : isVIP ? "VIP" : "STANDARD"}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos • Ad Supported"}
-                </p>
-              </div>
-            </div>
+      {/* 📢 Top Notice Bar (Standard Users Only) */}
+      {!isAdFree && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs py-2 px-4 text-center font-medium flex items-center justify-center gap-2">
+          <span>📢 <strong>Sponsored Page</strong> (Upgrade to VIP to remove page ads)</span>
+          <button 
+            onClick={() => setShowRedeemModal(true)}
+            className="underline font-bold hover:text-white transition-colors cursor-pointer"
+          >
+            Upgrade VIP
+          </button>
+        </div>
+      )}
 
-            <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
-              <button
-                onClick={() => setShowReferralModal(true)}
-                className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <span>🏆 Refer & Earn</span>
-              </button>
-            
-              {!isAdFree && (
-                <button
-                  onClick={() => setShowRedeemModal(true)}
-                  className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>🔑 Upgrade VIP</span>
-                </button>
-              )}
+      {/* Main Layout Grid with Side Ads */}
+      <div className="flex-1 flex justify-center w-full">
+        
+        {/* 👈 LEFT SIDE AD */}
+        {!isAdFree && (
+          <aside className="hidden lg:flex flex-col items-center w-48 xl:w-56 p-4 shrink-0">
+            <div className="sticky top-6 w-full h-[600px]">
+              <AdContainer className="w-full h-full" label="[ SIDE AD ]" />
             </div>
-          </div>
+          </aside>
         )}
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
-          <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-            Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
-          </span>
-        </div>
+        {/* 🏢 CENTER CONTENT */}
+        <main className="flex-1 max-w-7xl px-4 py-6 md:p-8 w-full min-w-0">
+          
+          {/* 🖼️ TOP BANNER AD SLOT */}
+          {!isAdFree && (
+            <div className="mb-6 w-full">
+              <AdContainer className="w-full h-24 md:h-32" label="[ ADVERTISEMENT BANNER ]" />
+            </div>
+          )}
 
-        <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
-          <button
-            onClick={() => handleCategoryChange("all")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "all" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
-          >
-            <span>🔥</span> All Videos
-          </button>
-          <button
-            onClick={() => handleCategoryChange("pinay_asian")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "pinay_asian" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
-          >
-            <span>🇵🇭</span> Pinay / Asian
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
-          </div>
-        ) : mediaList.length === 0 ? (
-          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-            <p className="text-slate-400">Wala pang available na videos sa kategoryang ito.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {mediaList.map((item) => (
-              <div
-                key={item.id}
-                onClick={(e) => handleSelectMedia(e, item)}
-                className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
-                    {item.thumbnail_url ? (
-                      <img
-                        src={getCdnUrl(item.thumbnail_url)}
-                        alt={item.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        loading="lazy"
-                      />
-                    ) : item.media_url ? (
-                      <video
-                        src={`${getCdnUrl(item.media_url)}#t=1`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                        preload="metadata"
-                        muted
-                        playsInline
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                        No Display
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                      <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                        <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">Video</span>
-                    <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
-                  </div>
+          {userProfile && (
+            <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                  {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
                 </div>
-
-                {isAdmin && (
-                  <div 
-                    className="p-3 pt-0 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40 mt-1"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      Tag Category:
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-bold text-white text-base">
+                      {userProfile.full_name || userProfile.email || "Member Account"}
+                    </h2>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isAdmin ? 'bg-purple-600 text-white' : isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
+                      {isAdmin ? "ADMIN" : isVIP ? "VIP" : "STANDARD"}
                     </span>
-                    <select
-                      value={item.category || "general"}
-                      onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
-                      className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
-                    >
-                      <option value="general">🔥 General</option>
-                      <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
-                    </select>
                   </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos • Ad Supported"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
+                <button
+                  onClick={() => setShowReferralModal(true)}
+                  className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>🏆 Refer & Earn</span>
+                </button>
+              
+                {!isAdFree && (
+                  <button
+                    onClick={() => setShowRedeemModal(true)}
+                    className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>🔑 Upgrade VIP</span>
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
 
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center gap-3 mt-10 mb-6">
-            <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">← Previous</button>
-            <span className="text-xs text-slate-400 font-semibold px-2">Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{totalPages}</strong></span>
-            <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">Next →</button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
+            <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
+              Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
+            </span>
           </div>
+
+          <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
+            <button
+              onClick={() => handleCategoryChange("all")}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "all" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
+            >
+              <span>🔥</span> All Videos
+            </button>
+            <button
+              onClick={() => handleCategoryChange("pinay_asian")}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "pinay_asian" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
+            >
+              <span>🇵🇭</span> Pinay / Asian
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center items-center py-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+            </div>
+          ) : mediaList.length === 0 ? (
+            <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+              <p className="text-slate-400">Wala pang available na videos sa kategoryang ito.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {mediaList.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={(e) => handleSelectMedia(e, item)}
+                  className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                      {item.thumbnail_url ? (
+                        <img
+                          src={getCdnUrl(item.thumbnail_url)}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                        />
+                      ) : item.media_url ? (
+                        <video
+                          src={`${getCdnUrl(item.media_url)}#t=1`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                          preload="metadata"
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
+                          No Display
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                        <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                          <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">Video</span>
+                      <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
+                    </div>
+                  </div>
+
+                  {isAdmin && (
+                    <div 
+                      className="p-3 pt-0 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40 mt-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                        Tag Category:
+                      </span>
+                      <select
+                        value={item.category || "general"}
+                        onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
+                        className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
+                      >
+                        <option value="general">🔥 General</option>
+                        <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-3 mt-10 mb-6">
+              <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1 || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">← Previous</button>
+              <span className="text-xs text-slate-400 font-semibold px-2">Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{totalPages}</strong></span>
+              <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">Next →</button>
+            </div>
+          )}
+        </main>
+
+        {/* 👉 RIGHT SIDE AD */}
+        {!isAdFree && (
+          <aside className="hidden lg:flex flex-col items-center w-48 xl:w-56 p-4 shrink-0">
+            <div className="sticky top-6 w-full h-[600px]">
+              <AdContainer className="w-full h-full" label="[ SIDE AD ]" />
+            </div>
+          </aside>
         )}
       </div>
 
