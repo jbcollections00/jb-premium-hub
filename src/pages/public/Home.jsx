@@ -5,6 +5,7 @@ import EventPopup from "../../components/EventPopup";
 import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
+const MAX_ADS_PER_SESSION = 3; // ⚡ Limit ads to 3 per session
 
 const getCdnUrl = (url) => {
   if (!url) return "";
@@ -16,6 +17,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
+  // ⚡ Session state to keep track of how many ads the user has viewed
+  const [adCount, setAdCount] = useState(() => {
+    if (typeof window !== "undefined") {
+      return parseInt(sessionStorage.getItem("ad_count") || "0", 10);
+    }
+    return 0;
+  });
+
+  // ⚡ Kukunin ang category sa URL kung meron, default is "all"
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("cat") || "all";
@@ -23,6 +33,7 @@ export default function Home() {
     return "all";
   });
 
+  // ⚡ Kukunin ang page sa URL kung meron, default is 1
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== "undefined") {
       const page = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
@@ -30,15 +41,18 @@ export default function Home() {
     }
     return 1;
   });
-
+  
   const [totalCount, setTotalCount] = useState(0);
+
   const [userProfile, setUserProfile] = useState(null);
-  const [adsEnabled, setAdsEnabled] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
+
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
+  
   const [copiedLink, setCopiedLink] = useState(false);
 
   const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
@@ -49,11 +63,32 @@ export default function Home() {
   const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
   const isAdFree = isAdmin || isVIP;
 
-  const showAds = adsEnabled && !isAdFree;
+  useEffect(() => {
+    const handleGlobalError = (event) => {
+      if (
+        event.message?.includes("appendChild") ||
+        event.message?.includes("null") ||
+        (event.filename && event.filename.includes("fb5310e"))
+      ) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("error", handleGlobalError);
+    return () => window.removeEventListener("error", handleGlobalError);
+  }, []);
+
+  // ⚡ Limit third-party script popup frequency and capping
+  useEffect(() => {
+    if (profileLoaded && !isAdFree && adCount < MAX_ADS_PER_SESSION && typeof window.show_11699131 === "function") {
+      window.show_11699131({
+        type: "inApp",
+        inAppSettings: { frequency: 2, capping: 3, interval: 30, timeout: 5, everyPage: false },
+      });
+    }
+  }, [isAdFree, profileLoaded, adCount]);
 
   useEffect(() => {
     fetchUserProfile();
-    fetchAdSettings();
   }, []);
 
   useEffect(() => {
@@ -71,36 +106,31 @@ export default function Home() {
     }
   }, [mediaList]);
 
-  const fetchAdSettings = async () => {
-    try {
-      const { data } = await supabase
-        .from("site_settings")
-        .select("ads_enabled")
-        .eq("id", 1)
-        .maybeSingle();
-
-      if (data !== null && data.ads_enabled !== undefined) {
-        setAdsEnabled(data.ads_enabled);
-      }
-    } catch (err) {
-      console.error("Error loading ad settings:", err);
-    }
-  };
-
   const fetchUserProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) return;
 
-      let { data: profile } = await supabase
+      let { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
+      if (!profile && !error) {
+        const { data: newProfile } = await supabase
+          .from("profiles")
+          .upsert([{ id: user.id, account_type: "standard" }])
+          .select()
+          .maybeSingle();
+        profile = newProfile;
+      }
+
       if (profile) setUserProfile(profile);
     } catch (err) {
       console.error("Profile load error:", err);
+    } finally {
+      setProfileLoaded(true);
     }
   };
 
@@ -129,9 +159,11 @@ export default function Home() {
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
+      
       const url = new URL(window.location.href);
       url.searchParams.set("page", newPage);
       window.history.replaceState({}, "", url);
+      
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -139,27 +171,50 @@ export default function Home() {
   const handleCategoryChange = (catKey) => {
     setActiveCategory(catKey);
     setCurrentPage(1);
+
     const url = new URL(window.location.href);
     url.searchParams.set("cat", catKey);
     url.searchParams.set("page", 1);
     window.history.replaceState({}, "", url);
   };
 
+  const handleUpdateCategory = async (videoId, newCategory) => {
+    const { error } = await supabase
+      .from("media")
+      .update({ category: newCategory })
+      .eq("id", videoId);
+
+    if (error) {
+      alert("Failed to update category: " + error.message);
+    } else {
+      fetchMedia(currentPage, activeCategory);
+    }
+  };
+
+  // ⚡ Handle ad redirect counter
   const handleSelectMedia = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Trigger direct link popunder ONLY when clicking a video card
-    if (showAds && AD_DIRECT_LINK) {
-      window.open(AD_DIRECT_LINK, "_blank", "noopener,noreferrer");
-    }
+    // Trigger ad only if user is NOT VIP/Admin AND has seen fewer than 3 ads
+    if (!isAdFree && adCount < MAX_ADS_PER_SESSION) {
+      const nextAdCount = adCount + 1;
+      setAdCount(nextAdCount);
+      sessionStorage.setItem("ad_count", String(nextAdCount));
 
-    setSelectedMedia(item);
-    const url = new URL(window.location.href);
-    url.searchParams.set("v", item.id);
-    url.searchParams.set("page", currentPage);
-    url.searchParams.set("cat", activeCategory);
-    window.history.replaceState({}, "", url);
+      const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}&page=${currentPage}&cat=${activeCategory}`;
+      window.open(videoUrl, "_blank", "noopener,noreferrer");
+
+      window.location.href = AD_DIRECT_LINK;
+    } else {
+      // Direct modal playback once max ads are reached or for VIP/Admin users
+      setSelectedMedia(item);
+      const url = new URL(window.location.href);
+      url.searchParams.set("v", item.id);
+      url.searchParams.set("page", currentPage);
+      url.searchParams.set("cat", activeCategory);
+      window.history.replaceState({}, "", url);
+    }
   };
 
   const handleCloseMedia = (e) => {
@@ -222,28 +277,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between">
+    <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
       <EventPopup />
 
-      {/* 📢 TOP WARNING BANNER */}
-      {showAds && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs py-2 px-4 text-center font-medium flex items-center justify-center gap-2">
-          <span>📢 <strong>Sponsored Page</strong> (Upgrade to VIP to remove page ads)</span>
-          <button 
-            onClick={() => setShowRedeemModal(true)}
-            className="underline font-bold hover:text-white transition-colors cursor-pointer"
-          >
-            Upgrade VIP
-          </button>
-        </div>
-      )}
-
-      {/* 🏢 MAIN CENTER CONTENT */}
-      <main className="w-full max-w-7xl mx-auto px-4 py-6 md:p-8 flex-1">
-        
-        {/* User Account Panel */}
+      <div className="max-w-7xl mx-auto">
         {userProfile && (
-          <div className="mb-6 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+          <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3">
               <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
                 {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
@@ -283,7 +322,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Title & Filters */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
@@ -306,7 +344,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Video Grid */}
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -356,6 +393,25 @@ export default function Home() {
                     <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
                   </div>
                 </div>
+
+                {isAdmin && (
+                  <div 
+                    className="p-3 pt-0 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40 mt-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      Tag Category:
+                    </span>
+                    <select
+                      value={item.category || "general"}
+                      onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
+                      className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
+                    >
+                      <option value="general">🔥 General</option>
+                      <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
+                    </select>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -368,7 +424,7 @@ export default function Home() {
             <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages || loading} className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer">Next →</button>
           </div>
         )}
-      </main>
+      </div>
 
       {/* 🎬 Modal Video Player View */}
       {selectedMedia && (
@@ -387,13 +443,19 @@ export default function Home() {
                 <VIPVideoPlayer
                   key={selectedMedia.id}
                   mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
-                  adDirectLink={showAds ? AD_DIRECT_LINK : null}
+                  adDirectLink={isAdFree || adCount >= MAX_ADS_PER_SESSION ? null : AD_DIRECT_LINK}
                   userProfile={userProfile}
                   accountType={userProfile?.account_type}
-                  isAdFree={!showAds}
+                  isAdFree={isAdFree || adCount >= MAX_ADS_PER_SESSION}
                 />
               </div>
             </div>
+            
+            {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
+              <div className="px-4 py-3 md:px-6 border-t border-slate-800/80 bg-slate-950/60 shrink-0">
+                <p className="text-slate-400 text-xs md:text-sm line-clamp-2">{selectedMedia.description}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
