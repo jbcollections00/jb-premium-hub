@@ -5,7 +5,7 @@ import EventPopup from "../../components/EventPopup";
 import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
-const MAX_ADS_PER_SESSION = 3; // ⚡ Limit ads to 3 per session
+const MAX_ADS_PER_SESSION = 2; // ⚡ Limit ads to 3 per session
 
 const getCdnUrl = (url) => {
   if (!url) return "";
@@ -101,7 +101,16 @@ export default function Home() {
       const videoId = params.get("v");
       if (videoId) {
         const found = mediaList.find((m) => String(m.id) === String(videoId));
-        if (found) setSelectedMedia(found);
+        if (found) {
+          setSelectedMedia(found);
+          // ⚡ Smooth scroll background directly to target video when loaded via URL parameter
+          setTimeout(() => {
+            const el = document.getElementById(`video-${videoId}`);
+            if (el) {
+              el.scrollIntoView({ block: "center" });
+            }
+          }, 100);
+        }
       }
     }
   }, [mediaList]);
@@ -222,10 +231,23 @@ export default function Home() {
       e.preventDefault();
       e.stopPropagation();
     }
+    
+    const closedVideoId = selectedMedia?.id;
     setSelectedMedia(null);
+
     const url = new URL(window.location.href);
     url.searchParams.delete("v");
     window.history.replaceState({}, "", url);
+
+    // ⚡ Preserve scroll position by smoothly scrolling back to the clicked video card
+    if (closedVideoId) {
+      setTimeout(() => {
+        const el = document.getElementById(`video-${closedVideoId}`);
+        if (el) {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }, 50);
+    }
   };
 
   const handleRedeemCode = async (e) => {
@@ -357,6 +379,7 @@ export default function Home() {
             {mediaList.map((item) => (
               <div
                 key={item.id}
+                id={`video-${item.id}`}
                 onClick={(e) => handleSelectMedia(e, item)}
                 className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
               >
