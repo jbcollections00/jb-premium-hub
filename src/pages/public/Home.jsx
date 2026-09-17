@@ -5,7 +5,7 @@ import EventPopup from "../../components/EventPopup";
 import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
-const MAX_ADS_PER_SESSION = 2; // ⚡ Limit ads to 3 per session
+const MAX_ADS_PER_SESSION = 2;
 
 const getCdnUrl = (url) => {
   if (!url) return "";
@@ -17,7 +17,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
-  // ⚡ Session state to keep track of how many ads the user has viewed
   const [adCount, setAdCount] = useState(() => {
     if (typeof window !== "undefined") {
       return parseInt(sessionStorage.getItem("ad_count") || "0", 10);
@@ -25,7 +24,6 @@ export default function Home() {
     return 0;
   });
 
-  // ⚡ Kukunin ang category sa URL kung meron, default is "all"
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("cat") || "all";
@@ -33,7 +31,6 @@ export default function Home() {
     return "all";
   });
 
-  // ⚡ Kukunin ang page sa URL kung meron, default is 1
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== "undefined") {
       const page = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
@@ -55,7 +52,8 @@ export default function Home() {
   
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
+  // ⚡ Updated Smartlink Ad Direct Link
+  const AD_DIRECT_LINK = "https://deeprootedpressure.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
@@ -68,7 +66,7 @@ export default function Home() {
       if (
         event.message?.includes("appendChild") ||
         event.message?.includes("null") ||
-        (event.filename && event.filename.includes("fb5310e"))
+        (event.filename && (event.filename.includes("fb5310e") || event.filename.includes("7784879")))
       ) {
         event.preventDefault();
       }
@@ -77,15 +75,20 @@ export default function Home() {
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
 
-  // ⚡ Limit third-party script popup frequency and capping
+  // ⚡ Dynamically load Native Banner Container script for standard ad-supported users
   useEffect(() => {
-    if (profileLoaded && !isAdFree && adCount < MAX_ADS_PER_SESSION && typeof window.show_11699131 === "function") {
-      window.show_11699131({
-        type: "inApp",
-        inAppSettings: { frequency: 2, capping: 3, interval: 30, timeout: 5, everyPage: false },
-      });
+    if (profileLoaded && !isAdFree) {
+      const script = document.createElement("script");
+      script.src = "https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js";
+      script.async = true;
+      script.setAttribute("data-cfasync", "false");
+      
+      const container = document.getElementById("container-07daf68a9e786bf55c0980163fb30853");
+      if (container && !container.hasChildNodes()) {
+        container.appendChild(script);
+      }
     }
-  }, [isAdFree, profileLoaded, adCount]);
+  }, [profileLoaded, isAdFree]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -103,7 +106,6 @@ export default function Home() {
         const found = mediaList.find((m) => String(m.id) === String(videoId));
         if (found) {
           setSelectedMedia(found);
-          // ⚡ Smooth scroll background directly to target video when loaded via URL parameter
           setTimeout(() => {
             const el = document.getElementById(`video-${videoId}`);
             if (el) {
@@ -200,12 +202,10 @@ export default function Home() {
     }
   };
 
-  // ⚡ Handle ad redirect counter
   const handleSelectMedia = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Trigger ad only if user is NOT VIP/Admin AND has seen fewer than 3 ads
     if (!isAdFree && adCount < MAX_ADS_PER_SESSION) {
       const nextAdCount = adCount + 1;
       setAdCount(nextAdCount);
@@ -216,7 +216,6 @@ export default function Home() {
 
       window.location.href = AD_DIRECT_LINK;
     } else {
-      // Direct modal playback once max ads are reached or for VIP/Admin users
       setSelectedMedia(item);
       const url = new URL(window.location.href);
       url.searchParams.set("v", item.id);
@@ -239,7 +238,6 @@ export default function Home() {
     url.searchParams.delete("v");
     window.history.replaceState({}, "", url);
 
-    // ⚡ Preserve scroll position by smoothly scrolling back to the clicked video card
     if (closedVideoId) {
       setTimeout(() => {
         const el = document.getElementById(`video-${closedVideoId}`);
@@ -365,6 +363,13 @@ export default function Home() {
             <span>🇵🇭</span> Pinay / Asian
           </button>
         </div>
+
+        {/* ⚡ Inline Ad Container (Displays only for standard users) */}
+        {!isAdFree && (
+          <div className="mb-8 flex justify-center items-center min-h-[90px] overflow-hidden rounded-2xl bg-slate-900/40 border border-slate-800/80 p-2">
+            <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center items-center py-20">
