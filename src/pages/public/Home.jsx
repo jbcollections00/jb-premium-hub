@@ -52,7 +52,6 @@ export default function Home() {
   
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // ⚡ Updated Smartlink Ad Direct Link
   const AD_DIRECT_LINK = "https://deeprootedpressure.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
@@ -75,7 +74,6 @@ export default function Home() {
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
 
-  // ⚡ Dynamically load Native Banner Container script for standard ad-supported users
   useEffect(() => {
     if (profileLoaded && !isAdFree) {
       const script = document.createElement("script");
@@ -364,7 +362,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* ⚡ Inline Ad Container (Displays only for standard users) */}
         {!isAdFree && (
           <div className="mb-8 flex justify-center items-center min-h-[90px] overflow-hidden rounded-2xl bg-slate-900/40 border border-slate-800/80 p-2">
             <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
@@ -401,7 +398,7 @@ export default function Home() {
                       <video
                         src={`${getCdnUrl(item.media_url)}#t=1`}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                        preload="metadata"
+                        preload="none"
                         muted
                         playsInline
                       />
@@ -454,7 +451,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* 🎬 Modal Video Player View */}
       {selectedMedia && (
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-3 md:p-6" onClick={handleCloseMedia}>
           <div className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
@@ -488,7 +484,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🔑 Redeem Code Modal */}
       {showRedeemModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
@@ -528,7 +523,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🏆 Referral Modal */}
       {showReferralModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-2xl relative shadow-2xl my-8">
