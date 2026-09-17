@@ -222,6 +222,7 @@ export default function Home() {
     url.searchParams.set("v", item.id);
     url.searchParams.set("page", currentPage);
     url.searchParams.set("cat", activeCategory);
+    url.searchParams.delete("step"); // Linisin ang ad step counter para sa bagong video
     window.history.replaceState({}, "", url);
   };
 
@@ -236,6 +237,7 @@ export default function Home() {
 
     const url = new URL(window.location.href);
     url.searchParams.delete("v");
+    url.searchParams.delete("step"); // Linisin din ang ad step counter kapag isinara ang modal
     window.history.replaceState({}, "", url);
 
     if (closedVideoId) {

@@ -88,8 +88,10 @@ export default function VIPVideoPlayer({
   };
 
   const handlePlayOverlayClick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     // 1. VIP / Admin -> Direct Play (No Ads)
     if (effectiveIsAdFree) {
@@ -100,22 +102,21 @@ export default function VIPVideoPlayer({
     // 2. Standard User 3-Step Ad Logic
     const currentStep = getStepFromUrl();
 
-    if (currentStep === 1) {
-      // Step 1: Open Tab 2 with step=2, redirect current tab to Smartlink
+    if (currentStep < 3) {
+      // Ihanda ang URL para sa bagong tab na may updated step
       const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set("step", "2");
-      window.open(nextUrl.toString(), "_blank");
+      nextUrl.searchParams.set("step", String(currentStep + 1));
 
-      window.location.href = SMARTLINK_AD_URL;
-    } else if (currentStep === 2) {
-      // Step 2: Open Tab 3 with step=3, redirect current tab to Smartlink
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set("step", "3");
-      window.open(nextUrl.toString(), "_blank");
+      // 1. Unang i-open ang bagong tab para sa Video Page (Step + 1)
+      const newTab = window.open(nextUrl.toString(), "_blank");
+      if (newTab) {
+        newTab.focus();
+      }
 
+      // 2. Pagkatapos ay ire-direct ang lumang tab papunta sa Smartlink Ad
       window.location.href = SMARTLINK_AD_URL;
     } else {
-      // Step >= 3: Play video directly
+      // Step >= 3: Diretso nang mag-play ang video
       startVideoPlay();
     }
   };
