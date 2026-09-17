@@ -5,7 +5,6 @@ import EventPopup from "../../components/EventPopup";
 import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
-const MAX_ADS_PER_SESSION = 2;
 
 const getCdnUrl = (url) => {
   if (!url) return "";
@@ -16,13 +15,6 @@ export default function Home() {
   const [mediaList, setMediaList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
-
-  const [adCount, setAdCount] = useState(() => {
-    if (typeof window !== "undefined") {
-      return parseInt(sessionStorage.getItem("ad_count") || "0", 10);
-    }
-    return 0;
-  });
 
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
@@ -40,16 +32,13 @@ export default function Home() {
   });
   
   const [totalCount, setTotalCount] = useState(0);
-
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
-
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
-  
   const [copiedLink, setCopiedLink] = useState(false);
 
   const AD_DIRECT_LINK = "https://deeprootedpressure.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
@@ -73,20 +62,6 @@ export default function Home() {
     window.addEventListener("error", handleGlobalError);
     return () => window.removeEventListener("error", handleGlobalError);
   }, []);
-
-  useEffect(() => {
-    if (profileLoaded && !isAdFree) {
-      const script = document.createElement("script");
-      script.src = "https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js";
-      script.async = true;
-      script.setAttribute("data-cfasync", "false");
-      
-      const container = document.getElementById("container-07daf68a9e786bf55c0980163fb30853");
-      if (container && !container.hasChildNodes()) {
-        container.appendChild(script);
-      }
-    }
-  }, [profileLoaded, isAdFree]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -204,23 +179,17 @@ export default function Home() {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!isAdFree && adCount < MAX_ADS_PER_SESSION) {
-      const nextAdCount = adCount + 1;
-      setAdCount(nextAdCount);
-      sessionStorage.setItem("ad_count", String(nextAdCount));
-
-      const videoUrl = `${window.location.origin}${window.location.pathname}?v=${item.id}&page=${currentPage}&cat=${activeCategory}`;
-      window.open(videoUrl, "_blank", "noopener,noreferrer");
-
-      window.location.href = AD_DIRECT_LINK;
-    } else {
-      setSelectedMedia(item);
-      const url = new URL(window.location.href);
-      url.searchParams.set("v", item.id);
-      url.searchParams.set("page", currentPage);
-      url.searchParams.set("cat", activeCategory);
-      window.history.replaceState({}, "", url);
+    if (!isAdFree) {
+      window.open(AD_DIRECT_LINK, "_blank", "noopener,noreferrer");
     }
+
+    setSelectedMedia(item);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", item.id);
+    url.searchParams.set("page", currentPage);
+    url.searchParams.set("cat", activeCategory);
+    window.history.replaceState({}, "", url);
   };
 
   const handleCloseMedia = (e) => {
@@ -362,12 +331,6 @@ export default function Home() {
           </button>
         </div>
 
-        {!isAdFree && (
-          <div className="mb-8 flex justify-center items-center min-h-[90px] overflow-hidden rounded-2xl bg-slate-900/40 border border-slate-800/80 p-2">
-            <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
-          </div>
-        )}
-
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -398,7 +361,7 @@ export default function Home() {
                       <video
                         src={`${getCdnUrl(item.media_url)}#t=1`}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                        preload="none"
+                        preload="metadata"
                         muted
                         playsInline
                       />
@@ -467,10 +430,10 @@ export default function Home() {
                 <VIPVideoPlayer
                   key={selectedMedia.id}
                   mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
-                  adDirectLink={isAdFree || adCount >= MAX_ADS_PER_SESSION ? null : AD_DIRECT_LINK}
+                  adDirectLink={null}
                   userProfile={userProfile}
                   accountType={userProfile?.account_type}
-                  isAdFree={isAdFree || adCount >= MAX_ADS_PER_SESSION}
+                  isAdFree={true}
                 />
               </div>
             </div>
