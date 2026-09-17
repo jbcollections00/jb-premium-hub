@@ -13,7 +13,6 @@ import {
   Cell 
 } from 'recharts';
 
-// Child Components / Tabs
 import SupportTicketsTab from './SupportTicketsTab';
 import AccessCodesTab from './AccessCodesTab';
 import AdminUsersTab from './AdminUsersTab';
@@ -41,7 +40,6 @@ export default function AdminDashboard() {
   }, [navigate]);
 
   const fetchData = async () => {
-    // 1. Fetch Users
     const { data: usersData, error: usersError } = await supabase
       .from('profiles')
       .select('*')
@@ -53,7 +51,6 @@ export default function AdminDashboard() {
       setUsers(usersData);
     }
 
-    // 2. Fetch Vault Media Count
     const { count: mediaCount, error: mediaError } = await supabase
       .from('media')
       .select('id', { count: 'exact', head: true });
@@ -64,7 +61,6 @@ export default function AdminDashboard() {
       setTotalMediaCount(mediaCount);
     }
 
-    // 3. Fetch Support Tickets
     const { data: ticketsData, error: ticketsError } = await supabase
       .from('support_tickets')
       .select('*')
@@ -130,7 +126,6 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  // 🎯 Categorized User Calculations
   const vipUsersCount = users.filter(
     (u) => u.account_type?.toLowerCase() === 'vip'
   ).length;
@@ -150,14 +145,12 @@ export default function AdminDashboard() {
 
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
-  // 📊 Analytics Data Preparation
   const pieChartData = [
     { name: 'VIP Members', value: vipUsersCount, color: '#10b981' },
     { name: 'Standard Users', value: standardUsersCount, color: '#3b82f6' },
     { name: 'Guest Users', value: guestUsersCount, color: '#f59e0b' },
   ].filter(item => item.value > 0);
 
-  // 📈 Calculate Last 7 Days Signup/Entry Trend
   const getLast7DaysData = () => {
     const result = [];
     const now = new Date();
@@ -199,10 +192,8 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* ADAPTABLE SIDEBAR */}
       <aside className="w-16 md:w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-2 md:p-4 shrink-0 transition-all duration-300">
         <div>
-          {/* Header Branding */}
           <div className="flex items-center justify-center md:justify-start gap-2 mb-8 px-1 md:px-2">
             <span className="text-2xl shrink-0">🛡️</span>
             <div className="hidden md:block overflow-hidden">
@@ -211,7 +202,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Navigation Links */}
           <nav className="flex flex-col gap-1.5">
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
@@ -247,7 +237,6 @@ export default function AdminDashboard() {
           </nav>
         </div>
 
-        {/* Logout Button */}
         <button
           onClick={handleAdminLogout}
           title="Admin Logout"
@@ -258,7 +247,6 @@ export default function AdminDashboard() {
         </button>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
         {activeTab === 'dashboard' && (
           <div className="space-y-6 max-w-6xl">
@@ -267,7 +255,6 @@ export default function AdminDashboard() {
               <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, growth metrics, and vault stats.</p>
             </div>
 
-            {/* TOP STAT CARDS */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
                 <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Total Users</p>
@@ -300,10 +287,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* ANALYTICS CHARTS SECTION */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* 1. User Tier Breakdown Chart */}
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white mb-1">User Tier Distribution</h3>
@@ -335,7 +319,6 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {/* Legend */}
                 <div className="flex justify-around pt-2 border-t border-gray-800 text-xs">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
@@ -352,7 +335,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 2. 7-Day User Growth & Activity Chart */}
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl lg:col-span-2 flex flex-col justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white mb-1">Weekly Registration & Guest Activity</h3>
@@ -373,18 +355,15 @@ export default function AdminDashboard() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* Conversion Snapshot */}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-800 text-xs text-gray-400">
                   <span>VIP Upgrade Conversion Rate: <strong className="text-emerald-400 font-bold">{vipConversionRate}%</strong></span>
-                  <span>Active Ad Monetization Reach: <strong className="text-sky-400 font-bold">{users.length} Users</strong></span>
+                  <span>Registered Accounts: <strong className="text-sky-400 font-bold">{users.length} Users</strong></span>
                 </div>
               </div>
-
             </div>
           </div>
         )}
 
-        {/* TAB COMPONENTS */}
         {activeTab === 'events' && <AdminEventControl />}
         {activeTab === 'tickets' && <SupportTicketsTab />}
         {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}

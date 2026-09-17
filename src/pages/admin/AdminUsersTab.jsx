@@ -16,10 +16,7 @@ export default function AdminUsers() {
     fetchUsers();
 
     const setupPresence = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user || !isMounted) return;
 
       const existingChannel = supabase
@@ -83,7 +80,6 @@ export default function AdminUsers() {
     }
 
     const displayName = userAccount.full_name || userAccount.email || userAccount.id;
-
     if (!window.confirm(`Are you sure you want to log in as "${displayName}"?`)) return;
 
     try {
@@ -200,169 +196,129 @@ export default function AdminUsers() {
   });
 
   return (
-    <div className="p-4 sm:p-6 bg-slate-950 text-white min-h-screen">
-      <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6">
+    <div className="space-y-6 max-w-6xl">
+      <div>
+        <h1 className="text-2xl font-black text-white tracking-tight">User Management</h1>
+        <p className="text-xs text-gray-400 mt-1">
+          Monitor online active users, toggle membership tiers, impersonate accounts, and manage user status.
+        </p>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
         <div className="relative w-full md:w-1/2">
           <input
             type="text"
-            placeholder="🔍 Search Name, Email, or ID..."
+            placeholder="🔍 Search Name, Email, or User ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+            className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-red-500"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <label className="text-xs text-slate-400 shrink-0">Filter:</label>
+          <label className="text-xs text-gray-400 shrink-0">Filter:</label>
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="bg-slate-900 border border-slate-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer w-full md:w-auto"
+            className="bg-gray-900 border border-gray-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer w-full md:w-auto"
           >
             <option value="ALL">All Accounts ({users.length})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
-            <option value="ADMIN">Admin Only</option>
-            <option value="VIP">VIP Only</option>
-            <option value="STANDARD">Standard Only</option>
+            <option value="ADMIN">Admins Only</option>
+            <option value="VIP">VIP Members</option>
+            <option value="STANDARD">Standard Users</option>
           </select>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400 text-xs">Loading users...</div>
-      ) : filteredUsers.length === 0 ? (
-        <div className="text-center py-12 bg-slate-900/50 border border-slate-800 rounded-2xl text-slate-400 text-sm">
-          No user accounts found matching your search criteria.
-        </div>
+        <div className="text-center py-12 text-gray-500 text-xs">Loading user profiles...</div>
       ) : (
-        <div className="space-y-4">
-          {filteredUsers.map((item) => {
-            const accountType = (item.account_type || item.role || "").toUpperCase();
-            const isAdminAccount = accountType === "ADMIN";
-            const isVip = accountType === "VIP";
-            const isOnline = onlineUserIds.has(item.id);
-            const isProcessing = actionInProgress === item.id;
+        <div className="overflow-x-auto bg-gray-900 border border-gray-800 rounded-2xl shadow-xl">
+          <table className="w-full text-left text-xs text-gray-300">
+            <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="p-4">User Details</th>
+                <th className="p-4">Account Tier</th>
+                <th className="p-4">Status</th>
+                <th className="p-4">Joined Date</th>
+                <th className="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/60">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="p-8 text-center text-gray-500">
+                    No user accounts match your search or filter criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((u) => {
+                  const isOnline = onlineUserIds.has(u.id);
+                  const isVip = (u.account_type || "").toUpperCase() === "VIP";
 
-            return (
-              <div
-                key={item.id}
-                className={`bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg hover:border-slate-700 transition-all ${
-                  isProcessing ? "opacity-50 pointer-events-none" : ""
-                }`}
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                        isOnline
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                          : "bg-slate-800 text-slate-500 border-slate-700"
-                      }`}
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          isOnline ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
-                        }`}
-                      ></span>
-                      {isOnline ? "ONLINE" : "OFFLINE"}
-                    </span>
-
-                    <h3 className="font-bold text-white text-base">
-                      {item.full_name || "Unnamed User"}
-                    </h3>
-
-                    <span
-                      className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase border ${
-                        isAdminAccount
-                          ? "bg-rose-500/20 text-rose-400 border-rose-500/30"
-                          : isVip
-                          ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                          : "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                      }`}
-                    >
-                      {isAdminAccount ? "ADMIN 🛡️" : isVip ? "VIP 👑" : "STANDARD"}
-                    </span>
-
-                    {item.is_banned && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-950/60 text-rose-400 border border-rose-800/50">
-                        BANNED 🚫
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-300 font-medium break-all">
-                    {item.email || "No email linked"}
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-mono truncate max-w-xs sm:max-w-none">
-                    ID: {item.id}
-                  </p>
-                </div>
-
-                {/* ADAPTABLE ACTION BUTTONS (Icons only on small screens, Icon + Label on sm+) */}
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                  {/* View as User Button */}
-                  <button
-                    onClick={() => handleAccessAccount(item)}
-                    disabled={isProcessing}
-                    className="bg-amber-600/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/30 font-bold text-xs p-2 sm:px-3 sm:py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
-                    title="View as User"
-                  >
-                    <span className="text-sm">👁️</span>
-                    <span className="hidden sm:inline">View as User</span>
-                  </button>
-
-                  {/* Promote / Demote Button */}
-                  <button
-                    onClick={() => handleToggleVip(item.id, item.account_type)}
-                    disabled={isProcessing || isAdminAccount}
-                    title={isAdminAccount ? "Admin Account" : isVip ? "Demote User" : "Promote User"}
-                    className={`font-bold text-xs p-2 sm:px-3.5 sm:py-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
-                      isAdminAccount
-                        ? "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed"
-                        : isVip
-                        ? "bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 border-purple-500/30"
-                        : "bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border-emerald-500/30"
-                    }`}
-                  >
-                    <span className="text-sm">
-                      {isAdminAccount ? "🛡️" : isVip ? "⬇️" : "👑"}
-                    </span>
-                    <span className="hidden sm:inline">
-                      {isAdminAccount ? "Admin" : isVip ? "Demote" : "Promote"}
-                    </span>
-                  </button>
-
-                  {/* Ban / Unban Button */}
-                  <button
-                    onClick={() => handleBanUser(item.id, item.is_banned)}
-                    disabled={isProcessing}
-                    title={item.is_banned ? "Unban User" : "Ban User"}
-                    className={`font-bold text-xs p-2 sm:px-3.5 sm:py-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
-                      item.is_banned
-                        ? "bg-amber-900/40 hover:bg-amber-800 text-amber-300 border-amber-500/30"
-                        : "bg-orange-950/50 hover:bg-orange-900 text-orange-400 border-orange-800/40"
-                    }`}
-                  >
-                    <span className="text-sm">{item.is_banned ? "🔓" : "🚫"}</span>
-                    <span className="hidden sm:inline">
-                      {item.is_banned ? "Unban" : "Ban"}
-                    </span>
-                  </button>
-
-                  {/* Delete Button */}
-                  <button
-                    onClick={() => handleDeleteUser(item.id)}
-                    disabled={isProcessing}
-                    title="Delete User"
-                    className="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-300 border border-slate-700/60 hover:border-rose-500/40 font-bold text-xs p-2 sm:px-3 sm:py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <span className="text-sm">🗑️</span>
-                    <span className="hidden sm:inline">Delete</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                  return (
+                    <tr key={u.id} className="hover:bg-gray-800/40 transition-colors">
+                      <td className="p-4">
+                        <div className="font-bold text-white">{u.full_name || u.email || 'Unnamed User'}</div>
+                        <div className="text-[10px] text-gray-500 font-mono truncate max-w-xs">{u.id}</div>
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                          isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                        }`}>
+                          {u.account_type || 'STANDARD'}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        {u.is_banned ? (
+                          <span className="text-rose-400 font-bold">🚫 Banned</span>
+                        ) : isOnline ? (
+                          <span className="text-emerald-400 font-bold">🟢 Online</span>
+                        ) : (
+                          <span className="text-gray-500">Offline</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-gray-400">
+                        {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="p-4 text-right space-x-2">
+                        <button
+                          disabled={actionInProgress === u.id}
+                          onClick={() => handleToggleVip(u.id, u.account_type)}
+                          className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
+                        >
+                          {isVip ? 'Demote VIP' : 'Make VIP'}
+                        </button>
+                        <button
+                          disabled={actionInProgress === u.id}
+                          onClick={() => handleAccessAccount(u)}
+                          className="px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
+                        >
+                          Impersonate
+                        </button>
+                        <button
+                          disabled={actionInProgress === u.id}
+                          onClick={() => handleBanUser(u.id, u.is_banned)}
+                          className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
+                        >
+                          {u.is_banned ? 'Unban' : 'Ban'}
+                        </button>
+                        <button
+                          disabled={actionInProgress === u.id}
+                          onClick={() => handleDeleteUser(u.id)}
+                          className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer"
+                          title="Delete User"
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
