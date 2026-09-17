@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
+const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
+
 export default function Signup() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -11,11 +13,24 @@ export default function Signup() {
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [hasTriggeredSignupAd, setHasTriggeredSignupAd] = useState(false);
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // 1. I-save ang referral code mula sa URL papuntang localStorage para hindi mawala[cite: 6]
+  // Dynamic Injection ng Adsterra Popunder Script
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  // Save referral code from URL
   useEffect(() => {
     const refFromUrl = searchParams.get('ref');
     if (refFromUrl) {
@@ -23,7 +38,6 @@ export default function Signup() {
     }
   }, [searchParams]);
 
-  // Field validation[cite: 6]
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   const isEmailValid = emailRegex.test(email.trim());
   const isPasswordValid = password.trim().length >= 6;
@@ -39,6 +53,14 @@ export default function Signup() {
       return;
     }
 
+    // 1st Click: Trigger Popunder Ad
+    if (!hasTriggeredSignupAd) {
+      window.open(POPUNDER_AD_URL, "_blank");
+      setHasTriggeredSignupAd(true);
+      return;
+    }
+
+    // 2nd Click: Submit Signup
     setLoading(true);
     setErrorMsg('');
 
@@ -47,7 +69,6 @@ export default function Signup() {
     const trimmedPassword = password.trim();
 
     try {
-      // 1. Create Supabase Auth Account[cite: 6]
       const { data, error } = await supabase.auth.signUp({
         email: trimmedEmail,
         password: trimmedPassword,
@@ -63,14 +84,12 @@ export default function Signup() {
       const newUser = data?.user;
 
       if (newUser) {
-        // 2. I-setup ang profile data para sa database
         const profileData = {
           id: newUser.id,
           full_name: trimmedName,
           email: trimmedEmail,
         };
 
-        // 3. I-link sa Referrer kung pumasok gamit ang referral link at valid ito
         if (activeRefCode && activeRefCode !== newUser.id) {
           profileData.referred_by = activeRefCode;
         }
@@ -78,13 +97,11 @@ export default function Signup() {
         const { error: profileError } = await supabase.from('profiles').upsert(profileData);
         if (profileError) console.error("Error creating profile:", profileError.message);
 
-        // Linisin ang storage pagkatapos magamit[cite: 6]
         if (activeRefCode) {
           localStorage.removeItem('jb_ref_code');
         }
       }
 
-      // 4. Immediate redirect to /home[cite: 6]
       navigate('/home');
     } catch (err) {
       setErrorMsg(err.message);
@@ -109,7 +126,6 @@ export default function Signup() {
             Sign up for instant access to standard media content
           </p>
 
-          {/* Referral Badge Notification[cite: 6] */}
           {activeRefCode && (
             <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full text-amber-400 text-[11px] font-semibold">
               🎁 Invited by a friend (Ref: Validated)
@@ -124,7 +140,6 @@ export default function Signup() {
         )}
 
         <form onSubmit={handleSignup} className="space-y-4">
-          {/* Full Name Field[cite: 6] */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs font-semibold uppercase">Full Name</label>
@@ -144,7 +159,6 @@ export default function Signup() {
             />
           </div>
 
-          {/* Email Address Field[cite: 6] */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs font-semibold uppercase">Email Address</label>
@@ -164,7 +178,6 @@ export default function Signup() {
             />
           </div>
 
-          {/* Password Field with Toggle[cite: 6] */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs font-semibold uppercase">Password</label>
@@ -193,7 +206,6 @@ export default function Signup() {
             </div>
           </div>
 
-          {/* 18+ Verification Checkbox[cite: 6] */}
           <div className="flex items-start gap-2.5 pt-1">
             <input 
               type="checkbox" 
@@ -208,7 +220,6 @@ export default function Signup() {
             </label>
           </div>
 
-          {/* Submit Button[cite: 6] */}
           <button 
             type="submit" 
             disabled={loading || !is18Plus || !isEmailValid || !isPasswordValid || !isNameValid}

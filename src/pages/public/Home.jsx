@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
@@ -6,10 +6,46 @@ import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
 
+// Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
+const USE_CUSTOM_CDN = false;
+
+// --- ADSTERRA CONFIGURATION ---
+const ADSTERRA_SOCIALBAR_URL = "https://deeprootedpressure.com/77/84/87/7784879ac907b760977addd43bca7b1a.js";
+
 const getCdnUrl = (url) => {
   if (!url) return "";
+  if (!USE_CUSTOM_CDN) return url;
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
+
+// Single Native Banner Component for Top Placement
+function TopNativeBanner() {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    containerRef.current.innerHTML = '';
+
+    const adDiv = document.createElement('div');
+    adDiv.id = 'container-07daf68a9e786bf55c0980163fb30853';
+
+    const invokeScript = document.createElement('script');
+    invokeScript.type = 'text/javascript';
+    invokeScript.async = true;
+    invokeScript.setAttribute('data-cfasync', 'false');
+    invokeScript.src = 'https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js';
+
+    containerRef.current.appendChild(adDiv);
+    containerRef.current.appendChild(invokeScript);
+  }, []);
+
+  return (
+    <div className="w-full flex flex-col items-center justify-center mb-6 p-3 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+      <span className="text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest">Advertisement</span>
+      <div ref={containerRef} className="w-full flex justify-center min-h-[90px]" />
+    </div>
+  );
+}
 
 export default function Home() {
   const [mediaList, setMediaList] = useState([]);
@@ -33,7 +69,6 @@ export default function Home() {
   
   const [totalCount, setTotalCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
-  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
@@ -41,27 +76,31 @@ export default function Home() {
   const [redeemLoading, setRedeemLoading] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const AD_DIRECT_LINK = "https://deeprootedpressure.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
-
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
   const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
   const isAdFree = isAdmin || isVIP;
 
+  // Load Socialbar Script dynamically at top-level body for non-VIP users
   useEffect(() => {
-    const handleGlobalError = (event) => {
-      if (
-        event.message?.includes("appendChild") ||
-        event.message?.includes("null") ||
-        (event.filename && (event.filename.includes("fb5310e") || event.filename.includes("7784879")))
-      ) {
-        event.preventDefault();
+    if (isAdFree) return;
+
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = ADSTERRA_SOCIALBAR_URL;
+    script.id = "adsterra-socialbar";
+    script.async = true;
+
+    document.body.appendChild(script);
+
+    return () => {
+      const existingScript = document.getElementById("adsterra-socialbar");
+      if (existingScript) {
+        existingScript.remove();
       }
     };
-    window.addEventListener("error", handleGlobalError);
-    return () => window.removeEventListener("error", handleGlobalError);
-  }, []);
+  }, [isAdFree]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -113,8 +152,6 @@ export default function Home() {
       if (profile) setUserProfile(profile);
     } catch (err) {
       console.error("Profile load error:", err);
-    } finally {
-      setProfileLoaded(true);
     }
   };
 
@@ -178,10 +215,6 @@ export default function Home() {
   const handleSelectMedia = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
-
-    if (!isAdFree) {
-      window.open(AD_DIRECT_LINK, "_blank", "noopener,noreferrer");
-    }
 
     setSelectedMedia(item);
 
@@ -264,10 +297,13 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">
+    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
       <EventPopup />
 
       <div className="max-w-7xl mx-auto">
+        {/* NATIVE BANNER: Strictly placed at top (Standard Users Only) */}
+        {!isAdFree && <TopNativeBanner />}
+
         {userProfile && (
           <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3">
@@ -284,7 +320,7 @@ export default function Home() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos • Ad Supported"}
+                  {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos"}
                 </p>
               </div>
             </div>
@@ -433,7 +469,7 @@ export default function Home() {
                   adDirectLink={null}
                   userProfile={userProfile}
                   accountType={userProfile?.account_type}
-                  isAdFree={true}
+                  isAdFree={isAdFree}
                 />
               </div>
             </div>

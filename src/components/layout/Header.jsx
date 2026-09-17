@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
+const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
+
 // 🎨 Modernized Vector SVG Icons
 const IconMessage = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -40,13 +42,11 @@ export default function Header() {
   useEffect(() => {
     fetchMessageCount();
 
-    // Nakikinig sa local event kapag nag-read/unread/delete sa Messages.jsx
     const handleUpdate = () => {
       fetchMessageCount();
     };
     window.addEventListener("messagesUpdated", handleUpdate);
 
-    // Realtime Supabase listener para sa bagong mensahe
     const channel = supabase
       .channel("header_unread_messages")
       .on(
@@ -73,13 +73,11 @@ export default function Header() {
         return;
       }
 
-      // Kunin ang user initial para sa profile icon
       const email = session.user.email || "";
       if (email) {
         setUserInitial(email.charAt(0).toUpperCase());
       }
 
-      // Pinipigilan din ang pagbilang ng duplicates sa badge counter
       const { count, error } = await supabase
         .from("admin_messages")
         .select("*", { count: "exact", head: true })
@@ -97,6 +95,17 @@ export default function Header() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/');
+  };
+
+  // 🚀 Function para sa Popunder at pagbukas ng Profile/Messages sa bagong tab
+  const handleTabFlipNav = (targetPath, e) => {
+    if (e) e.preventDefault();
+
+    // 1. Bubuksan ang totoong destinasyon sa bagong tab
+    window.open(window.location.origin + targetPath, "_blank");
+
+    // 2. Ire-redirect ang dating tab papunta sa Popunder Ad
+    window.location.href = POPUNDER_AD_URL;
   };
 
   return (
@@ -177,6 +186,7 @@ export default function Header() {
           transition: all 0.2s ease;
           position: relative;
           border: 1px solid transparent;
+          cursor: pointer;
         }
 
         .nav-item-btn:hover {
@@ -200,7 +210,6 @@ export default function Header() {
           border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        /* Container para precise absolute positioning ng Badge */
         .icon-wrapper {
           position: relative;
           display: inline-flex;
@@ -208,7 +217,6 @@ export default function Header() {
           justify-content: center;
         }
 
-        /* Superscript Floating Badge */
         .unread-badge {
           position: absolute;
           top: -6px;
@@ -252,7 +260,6 @@ export default function Header() {
           border-color: transparent;
         }
 
-        /* 📱 MOBILE OVERRIDE (< 768px) */
         @media (max-width: 768px) {
           .hide-on-mobile {
             display: none !important;
@@ -305,20 +312,29 @@ export default function Header() {
 
       {/* 2️⃣ User Controls */}
       <div className="nav-controls">
-        {/* 👤 Profile Link */}
-        <Link to="/profile" className="nav-item-btn" title="Profile">
+        {/* 👤 Profile Link (Popunder Trigger) */}
+        <a 
+          href="/profile" 
+          onClick={(e) => handleTabFlipNav('/profile', e)} 
+          className="nav-item-btn" 
+          title="Profile"
+        >
           <div className="profile-avatar">
             {userInitial}
           </div>
           <span className="hide-on-mobile">Profile</span>
-        </Link>
+        </a>
 
-        {/* 💬 Messages Link */}
-        <Link to="/messages" className="nav-item-btn" title="Messages">
+        {/* 💬 Messages Link (Popunder Trigger) */}
+        <a 
+          href="/messages" 
+          onClick={(e) => handleTabFlipNav('/messages', e)} 
+          className="nav-item-btn" 
+          title="Messages"
+        >
           <div className="icon-wrapper">
             <IconMessage />
 
-            {/* 🔴 SUPERSCRIPT UNREAD BADGE */}
             {messageCount > 0 && (
               <span className="unread-badge">
                 {messageCount > 99 ? '99+' : messageCount}
@@ -326,7 +342,7 @@ export default function Header() {
             )}
           </div>
           <span className="hide-on-mobile">Messages</span>
-        </Link>
+        </a>
 
         {/* 🚪 Logout Button */}
         <button onClick={handleLogout} className="btn-logout" title="Logout">

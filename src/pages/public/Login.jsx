@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
+
+const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -12,11 +14,36 @@ export default function Login() {
   const [resending, setResending] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
+  // Ad Tracker States
+  const [hasTriggeredLoginAd, setHasTriggeredLoginAd] = useState(false);
+  const [hasTriggeredGuestAd, setHasTriggeredGuestAd] = useState(false);
+
   const navigate = useNavigate();
+
+  // Dynamic Injection ng Adsterra Popunder Script
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   // Handle standard user login
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    // 1st Click: Trigger Popunder Ad
+    if (!hasTriggeredLoginAd) {
+      window.open(POPUNDER_AD_URL, "_blank");
+      setHasTriggeredLoginAd(true);
+      return;
+    }
+
+    // 2nd Click: Perform Login
     setLoading(true);
     setMsg({ type: '', text: '' });
 
@@ -46,6 +73,14 @@ export default function Login() {
 
   // Handle guest login (Anonymous Authentication)
   const handleGuestLogin = async () => {
+    // 1st Click: Trigger Popunder Ad
+    if (!hasTriggeredGuestAd) {
+      window.open(POPUNDER_AD_URL, "_blank");
+      setHasTriggeredGuestAd(true);
+      return;
+    }
+
+    // 2nd Click: Perform Guest Login
     setGuestLoading(true);
     setMsg({ type: '', text: '' });
 
@@ -63,7 +98,6 @@ export default function Login() {
     }
   };
 
-  // Handle resending unconfirmed account emails
   const handleResendConfirmation = async () => {
     if (!email.trim()) {
       setMsg({ type: 'error', text: 'Please enter your email address first.' });
@@ -90,7 +124,6 @@ export default function Login() {
     }
   };
 
-  // Handle inline password reset link request
   const handleForgotPassword = async () => {
     if (!email.trim()) {
       setMsg({ type: 'error', text: 'Please enter your email address first.' });
@@ -157,7 +190,6 @@ export default function Login() {
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
-          {/* Email Address Field */}
           <div>
             <label className="text-slate-400 text-xs block mb-1">Email Address</label>
             <input 
@@ -170,7 +202,6 @@ export default function Login() {
             />
           </div>
 
-          {/* Password Field with Eye Toggle */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-400 text-xs">Password</label>
@@ -210,7 +241,6 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Divider */}
         <div className="relative flex items-center justify-center my-2">
           <div className="border-t border-slate-800 w-full"></div>
           <span className="bg-slate-900 px-3 text-[10px] text-slate-500 uppercase font-semibold absolute">
@@ -218,7 +248,6 @@ export default function Login() {
           </span>
         </div>
 
-        {/* Guest Login Button */}
         <button
           type="button"
           onClick={handleGuestLogin}

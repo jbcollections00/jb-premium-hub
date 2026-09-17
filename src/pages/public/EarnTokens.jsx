@@ -4,10 +4,8 @@ import { supabase } from "../services/supabaseClient";
 export default function EarnTokens({ userProfile, onTokenEarned }) {
   const [watchingAd, setWatchingAd] = useState(false);
   const [countdown, setCountdown] = useState(15);
-  const AD_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
 
   const startAdSession = () => {
-    window.open(AD_DIRECT_LINK, "_blank");
     setWatchingAd(true);
     setCountdown(15);
 
@@ -46,15 +44,15 @@ export default function EarnTokens({ userProfile, onTokenEarned }) {
 
       {watchingAd ? (
         <div className="bg-slate-950 p-4 rounded-xl border border-yellow-500/30 animate-pulse">
-          <p className="text-sm text-yellow-400 font-bold">Verifying Ad View...</p>
+          <p className="text-sm text-yellow-400 font-bold">Verifying Watch Session...</p>
           <p className="text-2xl font-black text-white mt-1">{countdown}s</p>
         </div>
       ) : (
         <button
           onClick={startAdSession}
-          className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-red-600/30"
+          className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-red-600/30 cursor-pointer"
         >
-          Watch Ad (+1 Watch Token) 🚀
+          Earn 1 Watch Token 🚀
         </button>
       )}
     </div>

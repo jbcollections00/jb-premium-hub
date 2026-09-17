@@ -54,12 +54,11 @@ function App() {
             <Route path="/messages" element={<Messages />} />
             <Route path="/buy-vip" element={<BuyVip />} />
             <Route path="/contest" element={<Contest />} />
-            {/* 🏆 Dedicated Leaderboard Route */}
             <Route path="/leaderboard" element={<LeaderboardPage />} />
           </Route>
         </Route>
 
-        {/* Protected Secret Admin Route (No Page Ads) */}
+        {/* Protected Secret Admin Route */}
         <Route element={<ProtectedRoute adminOnly={true} />}>
           <Route path="/admin-vault-secret" element={<AdminDashboard />} />
         </Route>

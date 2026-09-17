@@ -1,22 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// 🟢 ADSTERRA DIRECT LINK
-const ADSTERRA_DIRECT_LINK = "https://www.effectivecpmnetwork.com/tw8ajp18mf?key=786d474da794ee7cd3596da3aab40fcc";
+const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
 export default function LandingPage() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const navigate = useNavigate();
 
+  // Dynamic Injection ng Adsterra Popunder Script
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
   const handleEnterClick = () => {
+    // Popunder Trigger + Open Age Modal
+    window.open(POPUNDER_AD_URL, "_blank");
     setShowDisclaimer(true);
   };
 
   const handleConfirmAge = () => {
-    // 1. Bubukas ang Adsterra Ad sa bagong tab
-    window.open(ADSTERRA_DIRECT_LINK, '_blank');
-
-    // 2. Pupunta sila sa Login/Signup page
+    // Popunder Trigger + Proceed to Login
+    window.open(POPUNDER_AD_URL, "_blank");
     navigate('/login');
   };
 

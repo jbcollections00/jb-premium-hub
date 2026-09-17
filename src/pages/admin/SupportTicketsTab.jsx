@@ -1,423 +1,343 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../../services/supabaseClient';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Inbox, 
-  CheckCircle2, 
-  Clock, 
-  Trash2, 
-  Mail, 
-  RefreshCw, 
-  Search,
-  MessageSquare,
-  ExternalLink,
-  Image as ImageIcon
+  Search, Filter, AlertCircle, CheckCircle, Clock, 
+  MessageSquare, Send, RefreshCw, User, ShieldAlert 
 } from 'lucide-react';
 
-export default function SupportTicketsTab() {
+export default function SupportTicketsTab({ supabase }) {
   const [tickets, setTickets] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'pending', 'resolved'
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
+  const [messages, setMessages] = useState([]);
+  const [replyText, setReplyText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
 
   useEffect(() => {
     fetchTickets();
   }, []);
 
-  // 1. Fetch support tickets from Supabase
+  useEffect(() => {
+    if (selectedTicket) {
+      fetchMessages(selectedTicket.id);
+    }
+  }, [selectedTicket]);
+
   const fetchTickets = async () => {
-    setLoading(true);
-    setStatusMsg({ type: '', text: '' });
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      setError(null);
+      const { data, error: fetchError } = await supabase
         .from('support_tickets')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('updated_at', { ascending: false });
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
       setTickets(data || []);
-
-      if (selectedTicket) {
-        const updated = data?.find((t) => t.id === selectedTicket.id);
-        if (updated) setSelectedTicket(updated);
+      if (data && data.length > 0 && !selectedTicket) {
+        setSelectedTicket(data[0]);
       }
     } catch (err) {
-      console.error('Error fetching tickets:', err);
-      setStatusMsg({ type: 'error', text: 'Failed to load support tickets: ' + err.message });
+      setError(err.message || 'Failed to fetch support tickets.');
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Update Ticket Status ('pending' <-> 'resolved')
-  const handleStatusChange = async (id, newStatus) => {
+  const fetchMessages = async (ticketId) => {
     try {
-      const { error } = await supabase
-        .from('support_tickets')
-        .update({ status: newStatus })
-        .eq('id', id);
+      setMessagesLoading(true);
+      const { data, error: fetchError } = await supabase
+        .from('ticket_messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
+      setMessages(data || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load conversation history.');
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  const handleSendReply = async (e) => {
+    e.preventDefault();
+    if (!replyText.trim() || !selectedTicket) return;
+
+    try {
+      setSubmitting(true);
+      const newMessage = {
+        ticket_id: selectedTicket.id,
+        sender_type: 'admin',
+        message: replyText.trim(),
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error: sendError } = await supabase
+        .from('ticket_messages')
+        .insert([newMessage])
+        .select()
+        .single();
+
+      if (sendError) throw sendError;
+
+      // Update parent ticket timestamp & status if pending customer reply
+      await supabase
+        .from('support_tickets')
+        .update({ updated_at: new Date().toISOString(), status: 'in_progress' })
+        .eq('id', selectedTicket.id);
+
+      setMessages((prev) => [...prev, data]);
+      setReplyText('');
+      fetchTickets();
+    } catch (err) {
+      setError(err.message || 'Failed to send reply.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (ticketId, newStatus) => {
+    try {
+      const { error: updateError } = await supabase
+        .from('support_tickets')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      if (updateError) throw updateError;
 
       setTickets((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t))
+        prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
       );
-
-      if (selectedTicket?.id === id) {
+      if (selectedTicket?.id === ticketId) {
         setSelectedTicket((prev) => ({ ...prev, status: newStatus }));
       }
-
-      setStatusMsg({
-        type: 'success',
-        text: `Ticket status successfully updated to ${newStatus.toUpperCase()}.`
-      });
     } catch (err) {
-      console.error('Error updating ticket status:', err);
-      setStatusMsg({ type: 'error', text: 'Failed to update ticket status: ' + err.message });
+      setError(err.message || 'Failed to update status.');
     }
   };
 
-  // 3. Delete Ticket
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to permanentely delete this ticket?')) return;
+  const filteredTickets = useMemo(() => {
+    return tickets.filter((ticket) => {
+      const matchesSearch =
+        ticket.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ticket.user_email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ticket.id?.toString().includes(searchQuery);
+      const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
+      const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
 
-    try {
-      const { error } = await supabase
-        .from('support_tickets')
-        .delete()
-        .eq('id', id);
+      return matchesSearch && matchesStatus && matchesPriority;
+    });
+  }, [tickets, searchQuery, statusFilter, priorityFilter]);
 
-      if (error) throw error;
-
-      setTickets((prev) => prev.filter((t) => t.id !== id));
-      if (selectedTicket?.id === id) setSelectedTicket(null);
-      setStatusMsg({ type: 'success', text: 'Support ticket deleted.' });
-    } catch (err) {
-      console.error('Error deleting ticket:', err);
-      setStatusMsg({ type: 'error', text: 'Failed to delete ticket: ' + err.message });
-    }
+  const getStatusBadge = (status) => {
+    const styles = {
+      open: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      in_progress: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+      resolved: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+      closed: 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+    };
+    return (
+      <span className={`px-2 py-0.5 text-xs font-medium rounded border ${styles[status] || styles.closed}`}>
+        {status?.replace('_', ' ').toUpperCase()}
+      </span>
+    );
   };
-
-  // Helper to extract image link from message (for receipt payment proofs)
-  const extractReceiptUrl = (text) => {
-    if (!text) return null;
-    const urlMatch = text.match(/https?:\/\/[^\s]+/g);
-    return urlMatch ? urlMatch[0] : null;
-  };
-
-  // Filtered list based on Search and Status
-  const filteredTickets = tickets.filter((ticket) => {
-    const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus;
-    const query = searchQuery.toLowerCase();
-
-    const nameMatch = (ticket.name || '').toLowerCase().includes(query);
-    const emailMatch = (ticket.email || '').toLowerCase().includes(query);
-    const subjectMatch = (ticket.subject || '').toLowerCase().includes(query);
-    const messageMatch = (ticket.message || '').toLowerCase().includes(query);
-
-    return matchesStatus && (nameMatch || emailMatch || subjectMatch || messageMatch);
-  });
-
-  const pendingCount = tickets.filter((t) => t.status === 'pending').length;
-  const resolvedCount = tickets.filter((t) => t.status === 'resolved').length;
 
   return (
-    <div className="space-y-6 text-slate-200 font-sans">
-      
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Support Tickets & Inquiries</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Review incoming customer inquiries, account support requests, and payment proof verifications.
-          </p>
+    <div className="flex flex-col h-full bg-slate-950 text-slate-100 rounded-xl border border-slate-800 overflow-hidden">
+      {/* Top Controls Header */}
+      <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-[280px]">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by ticket ID, subject, or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-700"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none"
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none"
+          >
+            <option value="all">All Priorities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
         </div>
+
+        <button
+          onClick={fetchTickets}
+          className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
+          title="Refresh Tickets"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
-      {/* Status Notification Banner */}
-      {statusMsg.text && (
-        <div
-          className={`p-3.5 rounded-xl text-xs font-semibold border transition-all flex items-center justify-between ${
-            statusMsg.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-          }`}
-        >
-          <span>{statusMsg.text}</span>
-          <button 
-            onClick={() => setStatusMsg({ type: '', text: '' })} 
-            className="text-xs font-bold opacity-70 hover:opacity-100 cursor-pointer"
-          >
-            ✕
+      {/* Error Alert */}
+      {error && (
+        <div className="mx-4 mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-400 font-bold hover:text-red-300">
+            ×
           </button>
         </div>
       )}
 
-      {/* Stats Counter Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-lg">
-          <div>
-            <p className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Total Tickets</p>
-            <p className="text-2xl font-extrabold text-white mt-1">{tickets.length}</p>
-          </div>
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-            <Inbox className="w-6 h-6 text-blue-400" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4 flex items-center justify-between shadow-lg">
-          <div>
-            <p className="text-[11px] text-amber-400 font-semibold uppercase tracking-wider">Pending Concerns</p>
-            <p className="text-2xl font-extrabold text-amber-400 mt-1">{pendingCount}</p>
-          </div>
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-            <Clock className="w-6 h-6 text-amber-400" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between shadow-lg">
-          <div>
-            <p className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wider">Resolved Tickets</p>
-            <p className="text-2xl font-extrabold text-emerald-400 mt-1">{resolvedCount}</p>
-          </div>
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-          </div>
-        </div>
-      </div>
-
-      {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/60 p-4 border border-slate-800 rounded-2xl">
-        
-        {/* Search Input */}
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Search name, email, subject..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
-          />
-        </div>
-
-        {/* Status Filters */}
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          <button
-            onClick={() => setFilterStatus('all')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-              filterStatus === 'all'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
-                : 'bg-slate-950 text-slate-400 hover:bg-slate-800 border border-slate-800'
-            }`}
-          >
-            All ({tickets.length})
-          </button>
-          <button
-            onClick={() => setFilterStatus('pending')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-              filterStatus === 'pending'
-                ? 'bg-amber-600 text-white shadow-md shadow-amber-900/30'
-                : 'bg-slate-950 text-slate-400 hover:bg-slate-800 border border-slate-800'
-            }`}
-          >
-            Pending ({pendingCount})
-          </button>
-          <button
-            onClick={() => setFilterStatus('resolved')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-              filterStatus === 'resolved'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
-                : 'bg-slate-950 text-slate-400 hover:bg-slate-800 border border-slate-800'
-            }`}
-          >
-            Resolved ({resolvedCount})
-          </button>
-
-          <button
-            onClick={fetchTickets}
-            title="Refresh Ticket Queue"
-            className="p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 rounded-xl cursor-pointer ml-auto sm:ml-2 transition-all"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Grid Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Ticket List View (Left Column) */}
-        <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col min-h-[420px]">
+      {/* Main Content Area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Ticket List Sidebar */}
+        <div className="w-1/3 border-r border-slate-800 overflow-y-auto divide-y divide-slate-800/50">
           {loading ? (
-            <div className="p-12 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2 my-auto">
-              <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
-              <span>Fetching support queue...</span>
-            </div>
+            <div className="p-8 text-center text-slate-500 text-sm">Loading tickets...</div>
           ) : filteredTickets.length === 0 ? (
-            <div className="p-12 text-center text-xs text-slate-500 my-auto space-y-2">
-              <Inbox className="w-8 h-8 mx-auto text-slate-600" />
-              <p className="font-semibold text-slate-400">No support tickets found</p>
-              <p className="text-[11px] text-slate-600">Try adjusting your filter or search query.</p>
-            </div>
+            <div className="p-8 text-center text-slate-500 text-sm">No tickets found matching criteria.</div>
           ) : (
-            <div className="divide-y divide-slate-800/80 max-h-[600px] overflow-y-auto">
-              {filteredTickets.map((ticket) => {
-                const isSelected = selectedTicket?.id === ticket.id;
-                const isPending = ticket.status === 'pending';
-
-                return (
-                  <div
-                    key={ticket.id}
-                    onClick={() => setSelectedTicket(ticket)}
-                    className={`p-4 cursor-pointer transition-all flex items-start justify-between gap-4 ${
-                      isSelected
-                        ? 'bg-slate-800/90 border-l-4 border-l-blue-500'
-                        : 'hover:bg-slate-800/40'
-                    }`}
-                  >
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-white truncate">
-                          {ticket.subject || 'No Subject'}
-                        </span>
-                        <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold border uppercase tracking-wider ${
-                            isPending
-                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                          }`}
-                        >
-                          {isPending ? 'Pending' : 'Resolved'}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-slate-400 truncate">
-                        {ticket.name || 'Anonymous User'} • <span className="text-slate-500 font-mono">{ticket.email || 'N/A'}</span>
-                      </p>
-
-                      <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
-                        {ticket.message}
-                      </p>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <span className="text-[10px] font-mono text-slate-500 block">
-                        {new Date(ticket.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            filteredTickets.map((ticket) => (
+              <div
+                key={ticket.id}
+                onClick={() => setSelectedTicket(ticket)}
+                className={`p-4 cursor-pointer transition-colors hover:bg-slate-900/60 ${
+                  selectedTicket?.id === ticket.id ? 'bg-slate-900 border-l-2 border-indigo-500' : ''
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-mono text-slate-400">#{ticket.id}</span>
+                  {getStatusBadge(ticket.status)}
+                </div>
+                <h4 className="text-sm font-semibold text-slate-200 truncate">{ticket.subject}</h4>
+                <p className="text-xs text-slate-400 truncate mt-1">{ticket.user_email}</p>
+                <div className="flex items-center justify-between mt-3 text-[11px] text-slate-500">
+                  <span className="capitalize text-slate-400">Priority: {ticket.priority || 'Normal'}</span>
+                  <span>{new Date(ticket.updated_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            ))
           )}
         </div>
 
-        {/* Selected Ticket Detail Panel (Right Column) */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl h-fit sticky top-6">
+        {/* Conversation / Detail Panel */}
+        <div className="flex-1 flex flex-col bg-slate-950">
           {selectedTicket ? (
-            <div className="space-y-5">
-              
-              {/* Header Details */}
-              <div className="border-b border-slate-800 pb-4 flex items-start justify-between gap-3">
+            <>
+              {/* Ticket Header Details */}
+              <div className="p-4 border-b border-slate-800 bg-slate-900/30 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-500 block mb-1">
-                    Ticket Overview
-                  </span>
-                  <h3 className="font-bold text-white text-base leading-snug">{selectedTicket.subject}</h3>
-                  <p className="text-xs text-slate-300 font-semibold mt-1">{selectedTicket.name || 'Unnamed Sender'}</p>
-                  <p className="text-xs text-blue-400 font-mono mt-0.5">{selectedTicket.email || 'No email registered'}</p>
-                </div>
-
-                <button
-                  onClick={() => handleDelete(selectedTicket.id)}
-                  title="Delete Ticket"
-                  className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Message Body */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  Message Content / Receipt Details
-                </label>
-                <div className="bg-slate-950 border border-slate-800/90 rounded-xl p-4 text-xs leading-relaxed text-slate-200 whitespace-pre-wrap font-sans">
-                  {selectedTicket.message}
-                </div>
-              </div>
-
-              {/* Automatic Receipt Image Previewer */}
-              {extractReceiptUrl(selectedTicket.message) && (
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5" /> Attached Receipt Proof
-                    </span>
-                    <a
-                      href={extractReceiptUrl(selectedTicket.message)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1"
-                    >
-                      Open Full <ExternalLink className="w-3 h-3" />
-                    </a>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-semibold text-slate-100">{selectedTicket.subject}</h3>
+                    {getStatusBadge(selectedTicket.status)}
                   </div>
-                  <div className="bg-slate-900 rounded-lg p-2 border border-slate-800 flex justify-center">
-                    <img
-                      src={extractReceiptUrl(selectedTicket.message)}
-                      alt="Receipt Attachment Preview"
-                      className="max-h-48 object-contain rounded-md"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    User: <span className="text-slate-200">{selectedTicket.user_email}</span> | Created:{' '}
+                    {new Date(selectedTicket.created_at).toLocaleString()}
+                  </p>
                 </div>
-              )}
 
-              {/* Action Buttons */}
-              <div className="space-y-2.5 pt-3 border-t border-slate-800">
-                <a
-                  href={`mailto:${selectedTicket.email}?subject=Re: ${encodeURIComponent(selectedTicket.subject || 'Support Inquiry')}`}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-blue-950/40"
-                >
-                  <Mail className="w-4 h-4" /> Reply via Direct Email
-                </a>
-
-                {selectedTicket.status === 'pending' ? (
-                  <button
-                    onClick={() => handleStatusChange(selectedTicket.id, 'resolved')}
-                    className="w-full bg-emerald-500/10 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedTicket.status}
+                    onChange={(e) => handleUpdateStatus(selectedTicket.id, e.target.value)}
+                    className="bg-slate-900 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-slate-200"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Mark Ticket as Resolved
-                  </button>
+                    <option value="open">Mark Open</option>
+                    <option value="in_progress">Mark In Progress</option>
+                    <option value="resolved">Mark Resolved</option>
+                    <option value="closed">Mark Closed</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Message Thread */}
+              <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                {messagesLoading ? (
+                  <div className="p-8 text-center text-slate-500 text-sm">Loading thread...</div>
+                ) : messages.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-sm">No messages in this ticket yet.</div>
                 ) : (
-                  <button
-                    onClick={() => handleStatusChange(selectedTicket.id, 'pending')}
-                    className="w-full bg-amber-500/10 text-amber-400 hover:bg-amber-600 hover:text-white border border-amber-500/30 text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  >
-                    <Clock className="w-4 h-4" /> Re-open Ticket (Mark Pending)
-                  </button>
+                  messages.map((msg) => {
+                    const isAdmin = msg.sender_type === 'admin';
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex flex-col max-w-[80%] ${isAdmin ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-400">
+                          {isAdmin ? <ShieldAlert className="w-3 h-3 text-indigo-400" /> : <User className="w-3 h-3 text-slate-400" />}
+                          <span className="font-medium text-slate-300">{isAdmin ? 'Support Admin' : selectedTicket.user_email}</span>
+                          <span>•</span>
+                          <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div
+                          className={`p-3 rounded-xl text-sm leading-relaxed ${
+                            isAdmin
+                              ? 'bg-indigo-600 text-white rounded-tr-none'
+                              : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
+                          }`}
+                        >
+                          {msg.message}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
-            </div>
+              {/* Reply Box */}
+              <form onSubmit={handleSendReply} className="p-4 border-t border-slate-800 bg-slate-900/30">
+                <div className="flex gap-2">
+                  <textarea
+                    rows={2}
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    placeholder="Type an official support response..."
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting || !replyText.trim()}
+                    className="px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-medium text-sm rounded-lg flex items-center justify-center gap-2 transition-colors shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Reply</span>
+                  </button>
+                </div>
+              </form>
+            </>
           ) : (
-            <div className="py-16 text-center text-slate-500 space-y-3">
-              <MessageSquare className="w-10 h-10 mx-auto text-slate-700" />
-              <p className="text-xs font-medium">Select a ticket from the queue to view full details and take action.</p>
+            <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+              Select a ticket to view conversation details.
             </div>
           )}
         </div>
-
       </div>
-
     </div>
   );
 }
