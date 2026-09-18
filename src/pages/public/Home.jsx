@@ -7,7 +7,7 @@ import TopInviters from "../../components/TopInviters";
 const ITEMS_PER_PAGE = 50;
 
 // Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
-const USE_CUSTOM_CDN = false;
+const USE_CUSTOM_CDN = true;
 
 // --- ADSTERRA CONFIGURATION ---
 const ADSTERRA_SOCIALBAR_URL = "https://deeprootedpressure.com/77/84/87/7784879ac907b760977addd43bca7b1a.js";

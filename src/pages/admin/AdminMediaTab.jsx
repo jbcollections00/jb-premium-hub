@@ -34,6 +34,12 @@ export default function AdminMediaTab() {
     }
   });
 
+  // Helper function para i-convert ang .r2.dev URLs papuntang Custom CDN
+  const getCdnUrl = (url) => {
+    if (!url) return '';
+    return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, 'cdn.jb-premium-hub.vip');
+  };
+
   useEffect(() => {
     fetchMedia();
   }, []);
@@ -609,7 +615,7 @@ export default function AdminMediaTab() {
                         >
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-white truncate">{item.title}</p>
-                            <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{item.media_url}</p>
+                            <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{getCdnUrl(item.media_url)}</p>
                             <p className="text-[9px] text-slate-500 mt-1">
                               Uploaded: {item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}
                             </p>
@@ -617,7 +623,7 @@ export default function AdminMediaTab() {
 
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button
-                              onClick={() => handleCopyLink(item.media_url, item.id)}
+                              onClick={() => handleCopyLink(getCdnUrl(item.media_url), item.id)}
                               className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer border border-slate-700/50 text-xs"
                               title="Copy Link"
                             >
@@ -665,7 +671,7 @@ export default function AdminMediaTab() {
                       {/* Video Player Box (FIT TO CARD - NO STRETCH) */}
                       <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-800/80">
                         <video
-                          src={item.media_url}
+                          src={getCdnUrl(item.media_url)}
                           className="w-full h-full object-contain"
                           controls={false}
                           preload="metadata"
@@ -720,15 +726,15 @@ export default function AdminMediaTab() {
                                 </svg>
                               </button>
                             </div>
-                            <p className="text-[10px] font-mono text-slate-500 truncate mt-1" title={item.media_url}>
-                              {item.media_url}
+                            <p className="text-[10px] font-mono text-slate-500 truncate mt-1" title={getCdnUrl(item.media_url)}>
+                              {getCdnUrl(item.media_url)}
                             </p>
                           </div>
                         )}
 
                         <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800/60">
                           <button
-                            onClick={() => handleCopyLink(item.media_url, item.id)}
+                            onClick={() => handleCopyLink(getCdnUrl(item.media_url), item.id)}
                             className="flex-1 py-1.5 px-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer border border-slate-700/50 text-[10px] font-semibold flex items-center justify-center gap-1"
                             title="Copy Direct URL"
                           >

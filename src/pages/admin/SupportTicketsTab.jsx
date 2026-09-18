@@ -21,7 +21,7 @@ export default function SupportTicketsTab({ supabase }) {
 
   useEffect(() => {
     fetchTickets();
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     if (selectedTicket) {
@@ -30,6 +30,12 @@ export default function SupportTicketsTab({ supabase }) {
   }, [selectedTicket]);
 
   const fetchTickets = async () => {
+    if (!supabase) {
+      setError('Supabase client is missing. Please ensure supabase prop is passed to <SupportTicketsTab supabase={supabase} />.');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -51,6 +57,8 @@ export default function SupportTicketsTab({ supabase }) {
   };
 
   const fetchMessages = async (ticketId) => {
+    if (!supabase) return;
+
     try {
       setMessagesLoading(true);
       const { data, error: fetchError } = await supabase
@@ -71,6 +79,10 @@ export default function SupportTicketsTab({ supabase }) {
   const handleSendReply = async (e) => {
     e.preventDefault();
     if (!replyText.trim() || !selectedTicket) return;
+    if (!supabase) {
+      setError('Supabase client is missing.');
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -89,7 +101,7 @@ export default function SupportTicketsTab({ supabase }) {
 
       if (sendError) throw sendError;
 
-      // Update parent ticket timestamp & status if pending customer reply
+      // Update parent ticket timestamp & status
       await supabase
         .from('support_tickets')
         .update({ updated_at: new Date().toISOString(), status: 'in_progress' })
@@ -106,6 +118,8 @@ export default function SupportTicketsTab({ supabase }) {
   };
 
   const handleUpdateStatus = async (ticketId, newStatus) => {
+    if (!supabase) return;
+
     try {
       const { error: updateError } = await supabase
         .from('support_tickets')
