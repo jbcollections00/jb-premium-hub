@@ -18,60 +18,64 @@ const getCdnUrl = (url) => {
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
 
-// Single Native Banner Component for Top Placement
+// Single Native Banner Component for Top Placement (Isolating in Iframe)
 function TopNativeBanner() {
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = '';
-
-    const adDiv = document.createElement('div');
-    adDiv.id = 'container-07daf68a9e786bf55c0980163fb30853';
-
-    const invokeScript = document.createElement('script');
-    invokeScript.type = 'text/javascript';
-    invokeScript.async = true;
-    invokeScript.setAttribute('data-cfasync', 'false');
-    invokeScript.src = 'https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js';
-
-    containerRef.current.appendChild(adDiv);
-    containerRef.current.appendChild(invokeScript);
-  }, []);
+  const adHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }
+      </style>
+    </head>
+    <body>
+      <script async="async" data-cfasync="false" src="https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js"></script>
+      <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
+    </body>
+    </html>
+  `;
 
   return (
     <div className="w-full flex flex-col items-center justify-center mb-6 p-3 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
       <span className="text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest">Advertisement</span>
-      <div ref={containerRef} className="w-full flex justify-center min-h-[90px]" />
+      <iframe
+        srcDoc={adHtml}
+        className="w-full h-[100px] border-0 overflow-hidden"
+        scrolling="no"
+        title="Top Adsterra Banner"
+      />
     </div>
   );
 }
 
-// Native Banner Component inside Video Modal
+// Native Banner Component inside Video Modal (Isolating in Iframe)
 function ModalNativeBanner() {
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = '';
-
-    const adDiv = document.createElement('div');
-    adDiv.id = 'container-07daf68a9e786bf55c0980163fb30853';
-
-    const invokeScript = document.createElement('script');
-    invokeScript.type = 'text/javascript';
-    invokeScript.async = true;
-    invokeScript.setAttribute('data-cfasync', 'false');
-    invokeScript.src = 'https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js';
-
-    containerRef.current.appendChild(adDiv);
-    containerRef.current.appendChild(invokeScript);
-  }, []);
+  const adHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }
+      </style>
+    </head>
+    <body>
+      <script async="async" data-cfasync="false" src="https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js"></script>
+      <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
+    </body>
+    </html>
+  `;
 
   return (
     <div className="w-full flex flex-col items-center justify-center my-4 p-3 bg-slate-950/80 border border-amber-500/20 rounded-xl overflow-hidden shadow-md">
       <span className="text-[9px] text-amber-500/70 font-semibold mb-1 uppercase tracking-widest">Sponsored Content</span>
-      <div ref={containerRef} className="w-full flex justify-center min-h-[90px]" />
+      <iframe
+        srcDoc={adHtml}
+        className="w-full h-[100px] border-0 overflow-hidden"
+        scrolling="no"
+        title="Modal Adsterra Banner"
+      />
     </div>
   );
 }
@@ -809,7 +813,8 @@ export default function Home() {
               <button onClick={handleCloseMedia} className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50">✕</button>
             </div>
 
-            <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-800">
+            {/* MODAL BODY WITH VISIBLE RED ACCENT SCROLLBAR */}
+            <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
               
               <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px]">
                 <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:w-full [&_video]:h-auto [&_video]:aspect-video [&_video]:bg-black">
