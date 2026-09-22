@@ -7,7 +7,8 @@ export default function VIPVideoPlayer({
   mainVideoUrl,
   userProfile,
   accountType,
-  isAdFree: isAdFreeProp
+  isAdFree: isAdFreeProp,
+  onPlay
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -130,6 +131,12 @@ export default function VIPVideoPlayer({
 
   const handleVideoPlay = async () => {
     setIsPlaying(true);
+
+    // Tawagin ang onPlay handler para mag-increment ang view count sa Home.jsx
+    if (typeof onPlay === "function") {
+      onPlay();
+    }
+
     if (hasLoggedWatchRef.current) return;
     hasLoggedWatchRef.current = true;
 
@@ -160,20 +167,20 @@ export default function VIPVideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
       
-      {/* 💾 DOWNLOAD BUTTON (VIP/ADMIN ONLY) */}
+      {/* 📥 DOWNLOAD BUTTON (VIP/ADMIN ONLY) */}
       {effectiveIsAdFree && (
         <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <button
             onClick={handleVipDownload}
             className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
           >
-            <span className="text-base">💾</span>
+            <span className="text-base">📥</span>
             <span>Download Video</span>
           </button>
         </div>
       )}
 
-      {/* 🎥 DIRECT VIDEO PLAYER */}
+      {/* 🎬 DIRECT VIDEO PLAYER */}
       <video
         ref={mainVideoRef}
         src={videoSrc}
@@ -184,7 +191,7 @@ export default function VIPVideoPlayer({
         onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
       />
 
-      {/* 🔘 CUSTOM PLAY OVERLAY FOR ADS & INITIAL PLAY */}
+      {/* 🔴 CUSTOM PLAY OVERLAY FOR ADS & INITIAL PLAY */}
       {!isPlaying && (
         <div
           onClick={handlePlayOverlayClick}

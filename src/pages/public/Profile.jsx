@@ -10,10 +10,6 @@ export default function Profile() {
   const [codeHistory, setCodeHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Referral & Contest State
-  const [contestData, setContestData] = useState(null);
-  const [copied, setCopied] = useState(false);
-
   // Profile Edit State
   const [displayName, setDisplayName] = useState("");
   const [updatingProfile, setUpdatingProfile] = useState(false);
@@ -56,69 +52,48 @@ export default function Profile() {
 
   const fetchUserData = async () => {
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error) throw error;
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw userError;
       setUser(user);
 
-      if (user) {
-        // 1. Fetch Profile Data (Auto-create referral code if missing)
-        let { data: profile } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
+      // 1. Fetch Profile Data
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
 
-        let userRefCode = profile?.referral_code;
-
-        if (!userRefCode) {
-          userRefCode = user.id.slice(0, 8);
-          await supabase
-            .from("profiles")
-            .upsert({ id: user.id, referral_code: userRefCode, updated_at: new Date().toISOString() });
-
-          profile = { ...profile, referral_code: userRefCode };
-        }
-
-        if (profile) {
-          setProfileData(profile);
-          setDisplayName(profile.full_name || user.email?.split("@")[0] || "");
-        }
-
-        // 2. Fetch Active Bi-Weekly Contest Data via RPC
-        const { data: contest } = await supabase.rpc("get_or_create_active_contest", {
-          p_user_id: user.id,
-        });
-
-        if (contest && contest.length > 0) {
-          setContestData(contest[0]);
-        }
-
-        // 3. Fetch Access Code Expiration
-        const { data: activeCodes } = await supabase
-          .from("access_codes")
-          .select("expires_at")
-          .eq("used_by", user.id)
-          .gt("expires_at", new Date().toISOString())
-          .order("expires_at", { ascending: false })
-          .limit(1);
-
-        if (activeCodes && activeCodes.length > 0 && activeCodes[0].expires_at) {
-          setExpirationDate(activeCodes[0].expires_at);
-          setTimeLeft(calculateTimeLeft(activeCodes[0].expires_at));
-        } else {
-          setExpirationDate(null);
-          setTimeLeft(null);
-        }
-
-        // 4. Code History
-        const { data: history } = await supabase
-          .from("access_codes")
-          .select("*")
-          .eq("used_by", user.id)
-          .order("used_at", { ascending: false });
-
-        if (history) setCodeHistory(history);
+      if (profile) {
+        setProfileData(profile);
+        setDisplayName(profile.full_name || user.email?.split("@")[0] || "");
       }
+
+      // 2. Fetch Access Code Expiration
+      const { data: activeCodes } = await supabase
+        .from("access_codes")
+        .select("expires_at")
+        .eq("used_by", user.id)
+        .gt("expires_at", new Date().toISOString())
+        .order("expires_at", { ascending: false })
+        .limit(1);
+
+      if (activeCodes && activeCodes.length > 0 && activeCodes[0].expires_at) {
+        setExpirationDate(activeCodes[0].expires_at);
+        setTimeLeft(calculateTimeLeft(activeCodes[0].expires_at));
+      } else {
+        setExpirationDate(null);
+        setTimeLeft(null);
+      }
+
+      // 3. Code History
+      const { data: history } = await supabase
+        .from("access_codes")
+        .select("*")
+        .eq("used_by", user.id)
+        .order("used_at", { ascending: false });
+
+      if (history) setCodeHistory(history);
+
     } catch (error) {
       console.error("Error fetching profile data:", error.message);
     } finally {
@@ -139,14 +114,6 @@ export default function Profile() {
       seconds: Math.floor((difference / 1000) % 60),
       expired: false,
     };
-  };
-
-  const handleCopyReferral = () => {
-    const code = profileData?.referral_code || user?.id?.slice(0, 8);
-    const referralLink = `${window.location.origin}/signup?ref=${code}`;
-    navigator.clipboard.writeText(referralLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
   };
 
   const handleUpdateProfile = async (e) => {
@@ -336,25 +303,20 @@ export default function Profile() {
   const rawAccountType = (profileData?.account_type || "STANDARD").toLowerCase();
   const isAdmin = rawAccountType === "admin";
   const hasActiveVipDate = expirationDate ? new Date(expirationDate) > new Date() : false;
-  const isVip = isAdmin || hasActiveVipDate;
-
-  const userReferralCode = profileData?.referral_code || user?.id?.slice(0, 8);
-  const referralUrl = `${window.location.origin}/signup?ref=${userReferralCode}`;
-  const qualifiedInvites = contestData?.qualified_referrals_count || 0;
-  const contestRound = contestData?.round_number || 1;
+  const isVip = isAdmin || rawAccountType === "vip" || hasActiveVipDate;
 
   const faqs = [
     {
-      q: "How does the Bi-Weekly Referral Contest work?",
-      a: "Invite friends using your unique link. When 10 invited friends watch 10+ videos in a single day (and you watch 10 videos too), you win a FREE 2-Week VIP Access Pass automatically stacked to your account!",
+      q: "How do I activate or extend my VIP membership?",
+      a: "Enter your purchased Access Code in the 'Redeem Access Code' section above. Extra days automatically stack onto your current subscription expiration.",
     },
     {
-      q: "How do I extend my VIP status?",
-      a: "Obtain an Access Code from Admin or win the Bi-Weekly Referral Contest. Extra days stack onto your current expiration date.",
-    },
-    {
-      q: "What happens when my VIP membership expires?",
+      q: "What happens when my VIP status expires?",
       a: "Your account reverts to Standard status, restricting access to exclusive VIP video content until renewed.",
+    },
+    {
+      q: "How can I buy an Access Code?",
+      a: "Click on 'Buy 30 Days VIP' button or contact Admin Support directly via Telegram.",
     },
   ];
 
@@ -366,69 +328,8 @@ export default function Profile() {
         <div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Account Dashboard</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Manage your profile, active subscription status, referrals, and security settings.
+            Manage your profile, active subscription status, and security settings.
           </p>
-        </div>
-
-        {/* 🎁 REFERRAL & BI-WEEKLY CONTEST CARD */}
-        <div className="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full text-amber-400 text-xs font-bold uppercase">
-                🏆 Bi-Weekly Contest — Round #{contestRound}
-              </div>
-              <h2 className="text-xl font-bold text-white">Invite 10 Friends & Get 2 Weeks VIP FREE</h2>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Share your invite link below. When your referred users complete their daily watch goal, you earn progress toward your 14-Day VIP reward.
-              </p>
-            </div>
-
-            {/* Referral Code & Copy Box */}
-            <div className="w-full md:w-auto bg-slate-950/80 border border-slate-800 p-4 rounded-xl space-y-3 shrink-0">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Your Referral Code:</span>
-                <span className="font-mono text-amber-400 font-bold text-sm bg-slate-900 px-2.5 py-1 rounded border border-slate-800">
-                  {userReferralCode}
-                </span>
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={referralUrl}
-                  className="bg-slate-900 border border-slate-800 text-xs text-slate-300 rounded-lg px-3 py-2 w-48 font-mono focus:outline-none truncate"
-                />
-                <button
-                  onClick={handleCopyReferral}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-lg transition-all shrink-0 cursor-pointer"
-                >
-                  {copied ? "✓ Copied!" : "📋 Copy Link"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-            <div className="md:col-span-2 space-y-2">
-              <div className="flex justify-between text-xs font-bold">
-                <span className="text-slate-300">Qualified Referrals Progress</span>
-                <span className="text-amber-400">{qualifiedInvites} / 10 Invites</span>
-              </div>
-              <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
-                <div 
-                  className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all duration-500 rounded-full"
-                  style={{ width: `${Math.min((qualifiedInvites / 10) * 100, 100)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="text-right text-xs">
-              <span className="text-slate-400 block">Reward:</span>
-              <span className="text-emerald-400 font-bold">🎉 +14 Days VIP Access</span>
-            </div>
-          </div>
         </div>
 
         {/* Top Section */}
@@ -525,7 +426,7 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Right Column: Access Code Redemption */}
+          {/* Right Column: Access Code Redemption & Profile Settings */}
           <div className="lg:col-span-2 space-y-6">
             
             {/* Redeem Access Code */}
@@ -583,7 +484,7 @@ export default function Profile() {
                     <button
                       type="submit"
                       disabled={updatingProfile}
-                      className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shrink-0"
+                      className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shrink-0 cursor-pointer"
                     >
                       {updatingProfile ? "Saving..." : "Save"}
                     </button>
@@ -629,7 +530,7 @@ export default function Profile() {
                     <button
                       onClick={handleResetPassword}
                       disabled={resetLoading}
-                      className="bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-all"
+                      className="bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer"
                     >
                       {resetLoading ? "Sending Link..." : "🔑 Request Password Reset Link"}
                     </button>
@@ -719,7 +620,7 @@ export default function Profile() {
                 <div key={idx} className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/50">
                   <button
                     onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-                    className="w-full text-left p-3 text-xs font-semibold text-slate-200 flex justify-between items-center hover:bg-slate-900 transition-colors"
+                    className="w-full text-left p-3 text-xs font-semibold text-slate-200 flex justify-between items-center hover:bg-slate-900 transition-colors cursor-pointer"
                   >
                     <span>{faq.q}</span>
                     <span className="text-slate-500 font-bold">{openFaq === idx ? "−" : "+"}</span>
@@ -792,14 +693,14 @@ export default function Profile() {
                   setDeleteError("");
                 }}
                 disabled={deletingAccount}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-all"
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteAccount}
                 disabled={deleteConfirmText !== "DELETE" || deletingAccount}
-                className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs py-2.5 rounded-xl transition-all"
+                className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer"
               >
                 {deletingAccount ? "Deleting..." : "Permanently Delete"}
               </button>

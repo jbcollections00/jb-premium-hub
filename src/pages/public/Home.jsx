@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
@@ -149,8 +149,21 @@ export default function Home() {
     };
   }, [isAdFree]);
 
+  // Handle Auth Session Restoration & Listening
   useEffect(() => {
     fetchUserProfile();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        await loadProfileForUser(session.user);
+      } else {
+        setUserProfile(null);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -160,6 +173,13 @@ export default function Home() {
   useEffect(() => {
     if (mediaList.length > 0) {
       const ids = mediaList.map((m) => m.id);
+      
+      const initialViews = {};
+      mediaList.forEach((m) => {
+        initialViews[m.id] = m.views_count ?? m.views ?? 0;
+      });
+      setViewCounts((prev) => ({ ...initialViews, ...prev }));
+
       fetchReactionsData(ids, userProfile?.id);
       fetchViewCountsData(ids);
     }
@@ -190,7 +210,7 @@ export default function Home() {
         }
       }
     }
-  }, [mediaList]);
+  }, [mediaList, selectedMedia]);
 
   const generateCaptcha = () => {
     setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
@@ -198,11 +218,9 @@ export default function Home() {
     setCaptchaInput("");
   };
 
-  const fetchUserProfile = async () => {
+  const loadProfileForUser = async (user) => {
+    if (!user?.id) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) return;
-
       let { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
@@ -218,9 +236,34 @@ export default function Home() {
         profile = newProfile;
       }
 
-      if (profile) setUserProfile(profile);
+      const mergedProfile = {
+        ...(profile || {}),
+        id: user.id,
+        email: user.email || profile?.email,
+        role: profile?.role || user.app_metadata?.role || user.user_metadata?.role || "user",
+        account_type: profile?.account_type || user.user_metadata?.account_type || "standard",
+      };
+
+      setUserProfile(mergedProfile);
     } catch (err) {
       console.error("Profile load error:", err);
+    }
+  };
+
+  const fetchUserProfile = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadProfileForUser(session.user);
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await loadProfileForUser(user);
+      }
+    } catch (err) {
+      console.error("Profile fetch error:", err);
     }
   };
 
@@ -252,16 +295,27 @@ export default function Home() {
         .select("media_id")
         .in("media_id", mediaIds);
 
+      const counts = {};
+      mediaIds.forEach((id) => (counts[id] = 0));
+
       if (!error && data) {
-        const counts = {};
-        mediaIds.forEach((id) => (counts[id] = 0));
         data.forEach((item) => {
           if (counts[item.media_id] !== undefined) {
             counts[item.media_id] += 1;
           }
         });
-        setViewCounts((prev) => ({ ...prev, ...counts }));
       }
+
+      setViewCounts((prev) => {
+        const merged = { ...prev };
+        mediaIds.forEach((id) => {
+          const tableCount = counts[id] || 0;
+          const mediaObj = mediaList.find((m) => m.id === id);
+          const mediaDbCount = mediaObj?.views_count ?? mediaObj?.views ?? 0;
+          merged[id] = Math.max(merged[id] || 0, tableCount, mediaDbCount);
+        });
+        return merged;
+      });
     } catch (err) {
       console.error("View count fetch error:", err);
     }
@@ -271,16 +325,30 @@ export default function Home() {
     if (!selectedMedia?.id || hasRecordedCurrentView) return;
 
     setHasRecordedCurrentView(true);
+    const mediaId = selectedMedia.id;
+    const currentVal = viewCounts[mediaId] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0;
+    const newCount = currentVal + 1;
 
+    // Fast UI State Update
     setViewCounts((prev) => ({
       ...prev,
-      [selectedMedia.id]: (prev[selectedMedia.id] || 0) + 1,
+      [mediaId]: newCount,
     }));
 
     try {
+      // 1. Record individual view event
       await supabase.from("media_views").insert([
-        { media_id: selectedMedia.id, user_id: userProfile?.id || null }
+        { media_id: mediaId, user_id: userProfile?.id || null }
       ]);
+
+      // 2. Direct sync with main media table
+      await supabase
+        .from("media")
+        .update({ views_count: newCount, views: newCount })
+        .eq("id", mediaId);
+
+      // 3. Fallback stored procedure call
+      await supabase.rpc("increment_video_views", { p_media_id: mediaId }).catch(() => {});
     } catch (err) {
       console.error("Record view error:", err);
     }
@@ -707,7 +775,7 @@ export default function Home() {
                         Video
                       </span>
                       <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
-                        👁️ {viewCounts[item.id] || 0} views
+                        👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
                     <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
@@ -813,18 +881,16 @@ export default function Home() {
               <button onClick={handleCloseMedia} className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50">✕</button>
             </div>
 
-            {/* MODAL BODY WITH VISIBLE RED ACCENT SCROLLBAR */}
             <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
               
               <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px]">
                 <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:w-full [&_video]:h-auto [&_video]:aspect-video [&_video]:bg-black">
-                  <VIPVideoPlayer
+                  <VIPVideoPlayer 
                     key={selectedMedia.id}
-                    mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
-                    adDirectLink={null}
-                    userProfile={userProfile}
-                    accountType={userProfile?.account_type}
-                    isAdFree={isAdFree}
+                    mainVideoUrl={getCdnUrl(selectedMedia.media_url)} 
+                    isAdFree={isAdFree} 
+                    accountType={userProfile?.account_type} 
+                    userProfile={userProfile} 
                     onPlay={handleVideoPlay}
                   />
                 </div>
@@ -833,7 +899,7 @@ export default function Home() {
               <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
-                    👁️ {viewCounts[selectedMedia.id] || 0} Total Views
+                    👁️ {viewCounts[selectedMedia.id] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0} Total Views
                   </span>
                   {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
                     <p className="text-slate-400 text-xs md:text-sm line-clamp-2">{selectedMedia.description}</p>
@@ -871,14 +937,12 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* MODAL BANNER ADS (Free users only) */}
               {!isAdFree && (
                 <div className="px-4 md:px-6">
                   <ModalNativeBanner />
                 </div>
               )}
 
-              {/* COMMENT SECTION */}
               <div className="px-4 py-5 md:px-6 bg-slate-900/90">
                 <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
                   <span>💬 Comments</span>
