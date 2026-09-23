@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
@@ -85,6 +85,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
+  // Ref para i-save ang eksaktong scroll position bago magbukas ng video
+  const scrollPosRef = useRef(0);
+
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("cat") || "all";
@@ -128,6 +131,18 @@ export default function Home() {
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
   const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
   const isAdFree = isAdmin || isVIP;
+
+  // Body scroll management para hindi masira ang scroll state
+  useEffect(() => {
+    if (selectedMedia) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [selectedMedia]);
 
   // Load Socialbar Script dynamically at top-level body for non-VIP users
   useEffect(() => {
@@ -205,6 +220,7 @@ export default function Home() {
             const el = document.getElementById(`video-${videoId}`);
             if (el) {
               el.scrollIntoView({ block: "center" });
+              scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
             }
           }, 100);
         }
@@ -569,8 +585,13 @@ export default function Home() {
   };
 
   const handleSelectMedia = (e, item) => {
-    e.preventDefault();
-    e.stopPropagation();
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // 1. Kuhanin ang kasalukuyang scroll coordinate ng screen bago magbukas ang modal
+    scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
 
     setSelectedMedia(item);
 
@@ -588,7 +609,9 @@ export default function Home() {
       e.stopPropagation();
     }
     
-    const closedVideoId = selectedMedia?.id;
+    // I-store ang huling naka-save na scroll coordinate
+    const targetY = scrollPosRef.current;
+
     setSelectedMedia(null);
 
     const url = new URL(window.location.href);
@@ -596,14 +619,10 @@ export default function Home() {
     url.searchParams.delete("step");
     window.history.replaceState({}, "", url);
 
-    if (closedVideoId) {
-      setTimeout(() => {
-        const el = document.getElementById(`video-${closedVideoId}`);
-        if (el) {
-          el.scrollIntoView({ block: "center", behavior: "smooth" });
-        }
-      }, 50);
-    }
+    // 2. Awtomatikong ibalik ang window sa nakaimbak na Y-position
+    setTimeout(() => {
+      window.scrollTo(0, targetY);
+    }, 20);
   };
 
   const handleRedeemCode = async (e) => {
