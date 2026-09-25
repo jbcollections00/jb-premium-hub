@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 
+const USERS_PER_PAGE = 50;
+
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -9,11 +11,15 @@ export default function AdminUsers() {
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
   const [actionInProgress, setActionInProgress] = useState(null);
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
   useEffect(() => {
     let isMounted = true;
     let channel;
 
-    fetchUsers();
+    fetchUsers(currentPage);
 
     const setupPresence = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -54,24 +60,32 @@ export default function AdminUsers() {
         supabase.removeChannel(channel);
       }
     };
-  }, []);
+  }, [currentPage]);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (page = 1) => {
     try {
       setLoading(true);
-      const { data: profiles, error } = await supabase
+      const from = (page - 1) * USERS_PER_PAGE;
+      const to = from + USERS_PER_PAGE - 1;
+
+      // Kumuha ng exact count at gamitan ng range para lumampas sa 1000 limit
+      const { data: profiles, count, error } = await supabase
         .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
       setUsers(profiles || []);
+      if (count !== null) setTotalCount(count);
     } catch (err) {
       console.error("Error fetching users:", err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const totalPages = Math.ceil(totalCount / USERS_PER_PAGE) || 1;
 
   const handleAccessAccount = async (userAccount) => {
     if (!userAccount?.id && !userAccount?.email) {
@@ -172,6 +186,7 @@ export default function AdminUsers() {
       alert("Failed to delete user: " + error.message);
     } else {
       setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setTotalCount((prev) => prev - 1);
     }
     setActionInProgress(null);
   };
@@ -200,7 +215,7 @@ export default function AdminUsers() {
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight">User Management</h1>
         <p className="text-xs text-gray-400 mt-1">
-          Monitor online active users, toggle membership tiers, impersonate accounts, and manage user status.
+          Kabuuang Rehistradong Users: <span className="text-red-500 font-bold">{totalCount}</span>
         </p>
       </div>
 
@@ -222,7 +237,7 @@ export default function AdminUsers() {
             onChange={(e) => setFilterType(e.target.value)}
             className="bg-gray-900 border border-gray-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer w-full md:w-auto"
           >
-            <option value="ALL">All Accounts ({users.length})</option>
+            <option value="ALL">All Accounts ({totalCount})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
             <option value="ADMIN">Admins Only</option>
             <option value="VIP">VIP Members</option>
@@ -234,92 +249,120 @@ export default function AdminUsers() {
       {loading ? (
         <div className="text-center py-12 text-gray-500 text-xs">Loading user profiles...</div>
       ) : (
-        <div className="overflow-x-auto bg-gray-900 border border-gray-800 rounded-2xl shadow-xl">
-          <table className="w-full text-left text-xs text-gray-300">
-            <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
-              <tr>
-                <th className="p-4">User Details</th>
-                <th className="p-4">Account Tier</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Joined Date</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800/60">
-              {filteredUsers.length === 0 ? (
+        <>
+          <div className="overflow-x-auto bg-gray-900 border border-gray-800 rounded-2xl shadow-xl">
+            <table className="w-full text-left text-xs text-gray-300">
+              <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
                 <tr>
-                  <td colSpan="5" className="p-8 text-center text-gray-500">
-                    No user accounts match your search or filter criteria.
-                  </td>
+                  <th className="p-4">User Details</th>
+                  <th className="p-4">Account Tier</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Joined Date</th>
+                  <th className="p-4 text-right">Actions</th>
                 </tr>
-              ) : (
-                filteredUsers.map((u) => {
-                  const isOnline = onlineUserIds.has(u.id);
-                  const isVip = (u.account_type || "").toUpperCase() === "VIP";
+              </thead>
+              <tbody className="divide-y divide-gray-800/60">
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="p-8 text-center text-gray-500">
+                      No user accounts match your search or filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredUsers.map((u) => {
+                    const isOnline = onlineUserIds.has(u.id);
+                    const isVip = (u.account_type || "").toUpperCase() === "VIP";
 
-                  return (
-                    <tr key={u.id} className="hover:bg-gray-800/40 transition-colors">
-                      <td className="p-4">
-                        <div className="font-bold text-white">{u.full_name || u.email || 'Unnamed User'}</div>
-                        <div className="text-[10px] text-gray-500 font-mono truncate max-w-xs">{u.id}</div>
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                          isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                        }`}>
-                          {u.account_type || 'STANDARD'}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        {u.is_banned ? (
-                          <span className="text-rose-400 font-bold">🚫 Banned</span>
-                        ) : isOnline ? (
-                          <span className="text-emerald-400 font-bold">🟢 Online</span>
-                        ) : (
-                          <span className="text-gray-500">Offline</span>
-                        )}
-                      </td>
-                      <td className="p-4 text-gray-400">
-                        {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td className="p-4 text-right space-x-2">
-                        <button
-                          disabled={actionInProgress === u.id}
-                          onClick={() => handleToggleVip(u.id, u.account_type)}
-                          className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
-                        >
-                          {isVip ? 'Demote VIP' : 'Make VIP'}
-                        </button>
-                        <button
-                          disabled={actionInProgress === u.id}
-                          onClick={() => handleAccessAccount(u)}
-                          className="px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
-                        >
-                          Impersonate
-                        </button>
-                        <button
-                          disabled={actionInProgress === u.id}
-                          onClick={() => handleBanUser(u.id, u.is_banned)}
-                          className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
-                        >
-                          {u.is_banned ? 'Unban' : 'Ban'}
-                        </button>
-                        <button
-                          disabled={actionInProgress === u.id}
-                          onClick={() => handleDeleteUser(u.id)}
-                          className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer"
-                          title="Delete User"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                    return (
+                      <tr key={u.id} className="hover:bg-gray-800/40 transition-colors">
+                        <td className="p-4">
+                          <div className="font-bold text-white">{u.full_name || u.email || 'Unnamed User'}</div>
+                          <div className="text-[10px] text-gray-500 font-mono truncate max-w-xs">{u.id}</div>
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                            isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                          }`}>
+                            {u.account_type || 'STANDARD'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          {u.is_banned ? (
+                            <span className="text-rose-400 font-bold">🚫 Banned</span>
+                          ) : isOnline ? (
+                            <span className="text-emerald-400 font-bold">🟢 Online</span>
+                          ) : (
+                            <span className="text-gray-500">Offline</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-gray-400">
+                          {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="p-4 text-right space-x-2">
+                          <button
+                            disabled={actionInProgress === u.id}
+                            onClick={() => handleToggleVip(u.id, u.account_type)}
+                            className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            {isVip ? 'Demote VIP' : 'Make VIP'}
+                          </button>
+                          <button
+                            disabled={actionInProgress === u.id}
+                            onClick={() => handleAccessAccount(u)}
+                            className="px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            Impersonate
+                          </button>
+                          <button
+                            disabled={actionInProgress === u.id}
+                            onClick={() => handleBanUser(u.id, u.is_banned)}
+                            className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            {u.is_banned ? 'Unban' : 'Ban'}
+                          </button>
+                          <button
+                            disabled={actionInProgress === u.id}
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer disabled:opacity-50"
+                            title="Delete User"
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Navigation */}
+          {totalPages > 1 && (
+            <div className="flex justify-between items-center gap-3 mt-6 bg-gray-900 border border-gray-800 p-4 rounded-xl">
+              <span className="text-xs text-gray-400">
+                Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{totalPages}</strong>
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="px-3 py-1.5 bg-gray-800 border border-gray-700 text-xs font-bold rounded-lg text-white hover:bg-gray-700 disabled:opacity-40 cursor-pointer transition-colors"
+                >
+                  ← Prev
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages || loading}
+                  className="px-3 py-1.5 bg-gray-800 border border-gray-700 text-xs font-bold rounded-lg text-white hover:bg-gray-700 disabled:opacity-40 cursor-pointer transition-colors"
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
