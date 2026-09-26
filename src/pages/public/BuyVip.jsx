@@ -10,11 +10,14 @@ import {
   FileText, 
   AlertCircle,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Lock,
+  LogIn
 } from "lucide-react";
 
 export default function BuyVip() {
   const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [refNumber, setRefNumber] = useState("");
   const [receiptFile, setReceiptFile] = useState(null);
   const [receiptPreview, setReceiptPreview] = useState(null);
@@ -36,11 +39,19 @@ export default function BuyVip() {
   }, []);
 
   const fetchUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      setUser(user);
-    } else {
-      navigate("/login");
+    try {
+      setAuthLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && !user.is_anonymous) {
+        setUser(user);
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      console.error("Auth check error:", err);
+      setUser(null);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -56,7 +67,7 @@ export default function BuyVip() {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      setStatusMsg({ type: "error", text: "Please upload an image file (PNG, JPG, JPEG, WEBP)." });
+      setStatusMsg({ type: "error", text: "Please upload a valid image file (PNG, JPG, JPEG, WEBP)." });
       return;
     }
 
@@ -80,8 +91,25 @@ export default function BuyVip() {
 
   const handleSubmitPayment = async (e) => {
     e.preventDefault();
-    if (!receiptFile || !refNumber.trim()) {
-      setStatusMsg({ type: "error", text: "Please fill in the Reference Number and attach a payment receipt." });
+
+    // 1. STRICT VALIDATION: Dapat parehong may laman
+    if (!refNumber.trim() && !receiptFile) {
+      setStatusMsg({ type: "error", text: "⚠️ Both Reference Number AND Payment Receipt Image are required!" });
+      return;
+    }
+
+    if (!refNumber.trim()) {
+      setStatusMsg({ type: "error", text: "⚠️ Please input the Reference / Transaction Number." });
+      return;
+    }
+
+    if (!receiptFile) {
+      setStatusMsg({ type: "error", text: "⚠️ Please attach your payment receipt image." });
+      return;
+    }
+
+    if (!user) {
+      setStatusMsg({ type: "error", text: "You must be logged in to submit a payment verification ticket." });
       return;
     }
 
@@ -89,7 +117,7 @@ export default function BuyVip() {
     setStatusMsg({ type: "", text: "" });
 
     try {
-      // 1. Upload Receipt Image to Supabase Storage Bucket ('receipts')
+      // Upload Receipt Image to Supabase Storage
       const rawExt = receiptFile.name.split(".").pop();
       const fileExt = rawExt ? rawExt.toLowerCase() : "jpg";
       const fileName = `${user.id}_${Date.now()}.${fileExt}`;
@@ -104,26 +132,32 @@ export default function BuyVip() {
 
       if (uploadError) throw uploadError;
 
-      // 2. Retrieve Public URL of uploaded receipt image
+      // Get Public URL
       const { data: urlData } = supabase.storage
         .from("receipts")
         .getPublicUrl(filePath);
 
       const receiptUrl = urlData?.publicUrl;
 
-      // Extract user metadata fallbacks
-      const userName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "VIP Member";
+      // Extract metadata
+      const userName = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.username || user.email?.split("@")[0] || "VIP Member";
       const userEmail = user.email || "";
 
-      // 3. Create Ticket record in support_tickets table
+      // Save ticket to Database
       const { error: dbError } = await supabase.from("support_tickets").insert([
         {
           user_id: user.id,
-          name: userName,
+          user_email: userEmail,
           email: userEmail,
+          user_name: userName,
+          name: userName,
           subject: "💳 VIP Payment Proof Verification",
+          reference_number: refNumber.trim(),
+          receipt_url: receiptUrl,
+          attachment_url: receiptUrl,
+          proof_url: receiptUrl,
           message: `VIP Access Purchase Proof:\n\n• Reference No: ${refNumber.trim()}\n• Receipt URL: ${receiptUrl}`,
-          status: "pending",
+          status: "open",
         },
       ]);
 
@@ -134,7 +168,7 @@ export default function BuyVip() {
         text: "🎉 Payment proof submitted! A support ticket has been opened for admin verification.",
       });
 
-      // Clear Form State
+      // Reset Form State
       setRefNumber("");
       handleRemoveReceipt();
     } catch (err) {
@@ -144,6 +178,9 @@ export default function BuyVip() {
       setLoading(false);
     }
   };
+
+  // Condition to check if form is complete
+  const isFormComplete = refNumber.trim() !== "" && receiptFile !== null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10 font-sans">
@@ -247,94 +284,140 @@ export default function BuyVip() {
           </div>
 
           {/* Submission Form Card */}
-          <div className="md:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Upload className="w-4 h-4 text-amber-400" /> Submit Payment Ticket
-            </h3>
+          <div className="md:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Upload className="w-4 h-4 text-amber-400" /> Submit Payment Ticket
+              </h3>
 
-            {statusMsg.text && (
-              <div className={`p-4 rounded-xl mb-4 text-xs font-bold border flex items-center justify-between ${
-                statusMsg.type === "success" 
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
-                  : "bg-rose-500/10 border-rose-500/30 text-rose-400"
-              }`}>
-                <span>{statusMsg.text}</span>
-                <button 
-                  onClick={() => setStatusMsg({ type: "", text: "" })}
-                  className="font-bold opacity-70 hover:opacity-100 cursor-pointer ml-2"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
+              {statusMsg.text && (
+                <div className={`p-4 rounded-xl mb-4 text-xs font-bold border flex items-center justify-between ${
+                  statusMsg.type === "success" 
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
+                    : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                }`}>
+                  <span>{statusMsg.text}</span>
+                  <button 
+                    onClick={() => setStatusMsg({ type: "", text: "" })}
+                    className="font-bold opacity-70 hover:opacity-100 cursor-pointer ml-2"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
-            <form onSubmit={handleSubmitPayment} className="space-y-4">
-              <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">
-                  Reference / Transaction Number
-                </label>
-                <input
-                  type="text"
-                  value={refNumber}
-                  onChange={(e) => setRefNumber(e.target.value)}
-                  placeholder="e.g. 100293848201"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 font-mono transition-colors"
-                  required
-                />
-              </div>
+              {/* AUTH CHECK RENDERING */}
+              {authLoading ? (
+                <div className="p-12 text-center text-xs text-slate-500">
+                  Checking account status...
+                </div>
+              ) : !user ? (
+                /* LOCKED CARD FOR UNREGISTERED / GUEST USERS */
+                <div className="bg-slate-950 border border-amber-500/30 rounded-2xl p-6 text-center space-y-4 my-auto">
+                  <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+                    <Lock className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Registration Required</h4>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                      You must be logged in with a registered account to submit a payment proof and activate VIP access.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 pt-2">
+                    <button
+                      onClick={() => navigate("/login")}
+                      className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-amber-500/10"
+                    >
+                      <LogIn className="w-4 h-4" /> Log In / Register Account
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* FORM FOR REGISTERED USERS ONLY */
+                <form onSubmit={handleSubmitPayment} className="space-y-4">
+                  
+                  {/* Logged in email badge */}
+                  <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2.5 text-xs text-indigo-300 flex items-center justify-between">
+                    <span>Submitting ticket as:</span>
+                    <span className="font-bold text-white">{user.email}</span>
+                  </div>
 
-              {/* Receipt File Upload Field */}
-              <div>
-                <label className="text-xs font-medium text-slate-400 mb-1.5 block">
-                  Attach Payment Receipt Image
-                </label>
-                
-                {!receiptPreview ? (
-                  <label className="border-2 border-dashed border-slate-800 hover:border-amber-500/50 bg-slate-950/60 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors group">
-                    <ImageIcon className="w-8 h-8 text-slate-600 group-hover:text-amber-400 mb-2 transition-colors" />
-                    <span className="text-xs font-bold text-slate-300">Click to upload payment receipt</span>
-                    <span className="text-[10px] text-slate-500 mt-1">Supports PNG, JPG, JPEG, WEBP (Max 5MB)</span>
+                  <div>
+                    <label className="text-xs font-medium text-slate-400 mb-1.5 block flex justify-between">
+                      <span>Reference / Transaction Number</span>
+                      <span className="text-amber-400 font-bold">*Required</span>
+                    </label>
                     <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      className="hidden"
+                      type="text"
+                      value={refNumber}
+                      onChange={(e) => setRefNumber(e.target.value)}
+                      placeholder="e.g. 100293848201"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 font-mono transition-colors"
                       required
                     />
-                  </label>
-                ) : (
-                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 truncate max-w-[200px]">
-                        <FileText className="w-3.5 h-3.5 text-amber-400" /> {receiptFile?.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleRemoveReceipt}
-                        className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-                      >
-                        <X className="w-3.5 h-3.5" /> Remove
-                      </button>
-                    </div>
-                    <div className="bg-slate-900 rounded-lg p-2 border border-slate-800/80 flex justify-center">
-                      <img
-                        src={receiptPreview}
-                        alt="Receipt preview"
-                        className="max-h-48 object-contain rounded-md"
-                      />
-                    </div>
                   </div>
-                )}
-              </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-black py-3 text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-950/30 mt-2 cursor-pointer flex items-center justify-center gap-2"
-              >
-                {loading ? "Submitting Ticket..." : "Submit Proof for Verification"}
-              </button>
-            </form>
+                  {/* Receipt File Upload Field */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-400 mb-1.5 block flex justify-between">
+                      <span>Attach Payment Receipt Image</span>
+                      <span className="text-amber-400 font-bold">*Required</span>
+                    </label>
+                    
+                    {!receiptPreview ? (
+                      <label className="border-2 border-dashed border-slate-800 hover:border-amber-500/50 bg-slate-950/60 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors group">
+                        <ImageIcon className="w-8 h-8 text-slate-600 group-hover:text-amber-400 mb-2 transition-colors" />
+                        <span className="text-xs font-bold text-slate-300">Click to upload payment receipt</span>
+                        <span className="text-[10px] text-slate-500 mt-1">Supports PNG, JPG, JPEG, WEBP (Max 5MB)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                          required
+                        />
+                      </label>
+                    ) : (
+                      <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 relative">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 truncate max-w-[200px]">
+                            <FileText className="w-3.5 h-3.5 text-amber-400" /> {receiptFile?.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleRemoveReceipt}
+                            className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <X className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        </div>
+                        <div className="bg-slate-900 rounded-lg p-2 border border-slate-800/80 flex justify-center">
+                          <img
+                            src={receiptPreview}
+                            alt="Receipt preview"
+                            className="max-h-48 object-contain rounded-md"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SUBMIT BUTTON WITH DISABLED STATE IF INCOMPLETE */}
+                  <button
+                    type="submit"
+                    disabled={loading || !isFormComplete}
+                    className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-slate-950 font-black py-3 text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-950/30 mt-2 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {loading 
+                      ? "Submitting Ticket..." 
+                      : !isFormComplete 
+                        ? "Please fill reference & upload receipt" 
+                        : "Submit Proof for Verification"}
+                  </button>
+                </form>
+              )}
+            </div>
+
           </div>
 
         </div>

@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [tickets, setTickets] = useState([]);
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
 
   const navigate = useNavigate();
 
@@ -37,20 +38,76 @@ export default function AdminDashboard() {
     
     fetchData();
     checkAndSendVIPExpirationAlerts();
+    setupPresence();
   }, [navigate]);
 
-  const fetchData = async () => {
-    const { data: usersData, error: usersError } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
+  // Realtime Presence for Live Online Users
+  const setupPresence = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-    if (usersError) {
-      console.error("Error fetching users:", usersError.message);
-    } else if (usersData) {
-      setUsers(usersData);
+    const existingChannel = supabase
+      .getChannels()
+      .find((c) => c.topic === "realtime:online-users");
+    if (existingChannel) {
+      await supabase.removeChannel(existingChannel);
     }
 
+    const channel = supabase.channel("online-users", {
+      config: { presence: { key: user.id } },
+    });
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState();
+        const activeIds = new Set(Object.keys(state));
+        setOnlineUserIds(activeIds);
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ online_at: new Date().toISOString() });
+        }
+      });
+  };
+
+  const fetchData = async () => {
+    // Fetch ALL users by chunking (bypasses default 1000 row limit)
+    try {
+      let allUsers = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: chunk, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) {
+          console.error("Error fetching users chunk:", error.message);
+          break;
+        }
+
+        if (chunk && chunk.length > 0) {
+          allUsers = [...allUsers, ...chunk];
+          if (chunk.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setUsers(allUsers);
+    } catch (err) {
+      console.error("Error in chunked users fetch:", err);
+    }
+
+    // Exact count for Vault Videos
     const { count: mediaCount, error: mediaError } = await supabase
       .from('media')
       .select('id', { count: 'exact', head: true });
@@ -61,6 +118,7 @@ export default function AdminDashboard() {
       setTotalMediaCount(mediaCount);
     }
 
+    // Fetch Support Tickets
     const { data: ticketsData, error: ticketsError } = await supabase
       .from('support_tickets')
       .select('*')
@@ -249,40 +307,49 @@ export default function AdminDashboard() {
 
       <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
         {activeTab === 'dashboard' && (
-          <div className="space-y-6 max-w-6xl">
+          <div className="space-y-6 max-w-7xl">
             <div>
               <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">System Dashboard & Analytics</h1>
               <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, growth metrics, and vault stats.</p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Total Users</p>
+            {/* 7 Metric Cards Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Total Users</p>
                 <p className="text-2xl font-black text-purple-400 mt-1">{users.length}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">VIP Members</p>
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Online Now</p>
+                <p className="text-2xl font-black text-emerald-400 mt-1 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  {onlineUserIds.size}
+                </p>
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">VIP Members</p>
                 <p className="text-2xl font-black text-emerald-400 mt-1">{vipUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Standard Users</p>
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Standard Users</p>
                 <p className="text-2xl font-black text-blue-400 mt-1">{standardUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Guest Users</p>
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Guest Users</p>
                 <p className="text-2xl font-black text-amber-400 mt-1">{guestUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Vault Videos</p>
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Vault Videos</p>
                 <p className="text-2xl font-black text-sky-400 mt-1">{totalMediaCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-wider">Pending Tickets</p>
+              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl col-span-2 sm:col-span-1">
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Pending Tickets</p>
                 <p className="text-2xl font-black text-rose-400 mt-1">{pendingTicketsCount}</p>
               </div>
             </div>
@@ -357,7 +424,7 @@ export default function AdminDashboard() {
 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-800 text-xs text-gray-400">
                   <span>VIP Upgrade Conversion Rate: <strong className="text-emerald-400 font-bold">{vipConversionRate}%</strong></span>
-                  <span>Registered Accounts: <strong className="text-sky-400 font-bold">{users.length} Users</strong></span>
+                  <span>Total Registered Accounts: <strong className="text-sky-400 font-bold">{users.length} Users</strong></span>
                 </div>
               </div>
             </div>

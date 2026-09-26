@@ -11,15 +11,14 @@ export default function AdminUsers() {
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
   const [actionInProgress, setActionInProgress] = useState(null);
 
-  // Pagination states
+  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
     let channel;
 
-    fetchUsers(currentPage);
+    fetchUsers();
 
     const setupPresence = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -60,32 +59,49 @@ export default function AdminUsers() {
         supabase.removeChannel(channel);
       }
     };
-  }, [currentPage]);
+  }, []);
 
-  const fetchUsers = async (page = 1) => {
+  // I-reset sa Page 1 kapag nagbago ang search term o filter type
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType]);
+
+  // BATCH FETCH: Kukunin ang lahat ng users kahit lumagpas sa 1000 limit ng Supabase
+  const fetchUsers = async () => {
     try {
       setLoading(true);
-      const from = (page - 1) * USERS_PER_PAGE;
-      const to = from + USERS_PER_PAGE - 1;
+      let allProfiles = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
 
-      // Kumuha ng exact count at gamitan ng range para lumampas sa 1000 limit
-      const { data: profiles, count, error } = await supabase
-        .from("profiles")
-        .select("*", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(from, to);
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .range(from, from + batchSize - 1);
 
-      if (error) throw error;
-      setUsers(profiles || []);
-      if (count !== null) setTotalCount(count);
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allProfiles = [...allProfiles, ...data];
+          from += batchSize;
+          if (data.length < batchSize) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setUsers(allProfiles);
     } catch (err) {
       console.error("Error fetching users:", err.message);
     } finally {
       setLoading(false);
     }
   };
-
-  const totalPages = Math.ceil(totalCount / USERS_PER_PAGE) || 1;
 
   const handleAccessAccount = async (userAccount) => {
     if (!userAccount?.id && !userAccount?.email) {
@@ -186,11 +202,11 @@ export default function AdminUsers() {
       alert("Failed to delete user: " + error.message);
     } else {
       setUsers((prev) => prev.filter((u) => u.id !== userId));
-      setTotalCount((prev) => prev - 1);
     }
     setActionInProgress(null);
   };
 
+  // 1. FILTER LOGIC
   const filteredUsers = users.filter((u) => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
@@ -210,12 +226,17 @@ export default function AdminUsers() {
     return matchesSearch;
   });
 
+  // 2. PAGINATION CALCULATIONS
+  const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
+  const startIndex = (currentPage - 1) * USERS_PER_PAGE;
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + USERS_PER_PAGE);
+
   return (
     <div className="space-y-6 max-w-6xl">
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight">User Management</h1>
         <p className="text-xs text-gray-400 mt-1">
-          Kabuuang Rehistradong Users: <span className="text-red-500 font-bold">{totalCount}</span>
+          Kabuuang Rehistradong Users: <span className="text-red-500 font-bold">{users.length}</span>
         </p>
       </div>
 
@@ -237,7 +258,7 @@ export default function AdminUsers() {
             onChange={(e) => setFilterType(e.target.value)}
             className="bg-gray-900 border border-gray-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer w-full md:w-auto"
           >
-            <option value="ALL">All Accounts ({totalCount})</option>
+            <option value="ALL">All Accounts ({users.length})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
             <option value="ADMIN">Admins Only</option>
             <option value="VIP">VIP Members</option>
@@ -262,14 +283,14 @@ export default function AdminUsers() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/60">
-                {filteredUsers.length === 0 ? (
+                {paginatedUsers.length === 0 ? (
                   <tr>
                     <td colSpan="5" className="p-8 text-center text-gray-500">
                       No user accounts match your search or filter criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((u) => {
+                  paginatedUsers.map((u) => {
                     const isOnline = onlineUserIds.has(u.id);
                     const isVip = (u.account_type || "").toUpperCase() === "VIP";
 
@@ -337,7 +358,7 @@ export default function AdminUsers() {
             </table>
           </div>
 
-          {/* Pagination Navigation */}
+          {/* Lalabas lang ang Pagination UI kung higit sa 50 ang filtered users */}
           {totalPages > 1 && (
             <div className="flex justify-between items-center gap-3 mt-6 bg-gray-900 border border-gray-800 p-4 rounded-xl">
               <span className="text-xs text-gray-400">

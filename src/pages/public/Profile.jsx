@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
+import UserSupportTicket from "./UserSupportTicket";
 
 export default function Profile() {
   const [user, setUser] = useState(null);
@@ -611,7 +612,14 @@ export default function Profile() {
 
         {/* Support & FAQs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+          
+          {/* TICKET COMPONENT NA NASA KALIWA NA NGAYON (2 Columns space para lumapad) */}
+          <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl flex flex-col overflow-hidden h-[450px]">
+            <UserSupportTicket supabase={supabase} user={user} />
+          </div>
+
+          {/* FAQ NA NASA KANAN NA NGAYON (1 Column space) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl h-fit">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               ❓ Frequently Asked Questions
             </h3>
@@ -635,24 +643,6 @@ export default function Profile() {
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                💬 Need Assistance?
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                Have questions about your access code, payments, or encountering issues playing videos? Contact our Admin support directly.
-              </p>
-            </div>
-            <a
-              href="https://t.me/JB_Collections_2019"
-              target="_blank"
-              rel="noreferrer"
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white text-center text-xs font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-950/50 block"
-            >
-              Contact Admin Support
-            </a>
-          </div>
         </div>
 
       </div>
