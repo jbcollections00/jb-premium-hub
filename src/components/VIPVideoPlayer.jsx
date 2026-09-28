@@ -8,7 +8,9 @@ export default function VIPVideoPlayer({
   userProfile,
   accountType,
   isAdFree: isAdFreeProp,
-  onPlay
+  onPlay,
+  mediaId,
+  currentDuration
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -129,6 +131,29 @@ export default function VIPVideoPlayer({
     }
   };
 
+  // Option 1: Auto-Detect at Save ng Duration sa Supabase
+  const handleLoadedMetadata = async (e) => {
+    const durationInSeconds = Math.round(e.target.duration);
+
+    if (durationInSeconds > 0 && (!currentDuration || currentDuration === 0)) {
+      try {
+        if (mediaId) {
+          await supabase
+            .from('media')
+            .update({ duration: durationInSeconds })
+            .eq('id', mediaId);
+        } else if (mainVideoUrl) {
+          await supabase
+            .from('media')
+            .update({ duration: durationInSeconds })
+            .eq('media_url', mainVideoUrl);
+        }
+      } catch (err) {
+        console.error("Auto-update video duration error:", err);
+      }
+    }
+  };
+
   const handleVideoPlay = async () => {
     setIsPlaying(true);
 
@@ -186,12 +211,13 @@ export default function VIPVideoPlayer({
         src={videoSrc}
         controls={isPlaying}
         playsInline
+        onLoadedMetadata={handleLoadedMetadata}
         onPlay={handleVideoPlay}
         className="w-full h-full max-h-[65vh] object-contain"
         onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
       />
 
-      {/* 🔴 CUSTOM PLAY OVERLAY FOR ADS & INITIAL PLAY */}
+      {/* 🔐 CUSTOM PLAY OVERLAY FOR ADS & INITIAL PLAY */}
       {!isPlaying && (
         <div
           onClick={handlePlayOverlayClick}

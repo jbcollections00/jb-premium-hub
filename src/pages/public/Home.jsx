@@ -17,14 +17,20 @@ const getCdnUrl = (url) => {
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
 };
 
-// Helper function para i-format ang duration ng video
+// Enhanced Helper function para i-format ang duration ng video (sumusuporta hanggang Hours)
 const formatDuration = (duration) => {
   if (!duration) return "00:00";
   if (typeof duration === "string" && duration.includes(":")) return duration;
   const sec = parseInt(duration, 10);
-  if (isNaN(sec)) return "00:00";
-  const mins = Math.floor(sec / 60);
+  if (isNaN(sec) || sec <= 0) return "00:00";
+
+  const hours = Math.floor(sec / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
   const remSec = sec % 60;
+
+  if (hours > 0) {
+    return `${hours}:${mins < 10 ? "0" : ""}${mins}:${remSec < 10 ? "0" : ""}${remSec}`;
+  }
   return `${mins}:${remSec < 10 ? "0" : ""}${remSec}`;
 };
 
@@ -257,6 +263,19 @@ export default function Home() {
     setCaptchaInput("");
   };
 
+  // Handler kapag na-auto-detect/update ang duration mula sa VIPVideoPlayer
+  const handleDurationUpdate = (mediaId, newDuration) => {
+    setMediaList((prev) =>
+      prev.map((item) => (item.id === mediaId ? { ...item, duration: newDuration } : item))
+    );
+    setMostWatched((prev) =>
+      prev.map((item) => (item.id === mediaId ? { ...item, duration: newDuration } : item))
+    );
+    setSelectedMedia((prev) =>
+      prev && prev.id === mediaId ? { ...prev, duration: newDuration } : prev
+    );
+  };
+
   const loadProfileForUser = async (user) => {
     if (!user?.id) return;
     try {
@@ -458,7 +477,7 @@ export default function Home() {
         .update({ views_count: newCount, views: newCount })
         .eq("id", mediaId);
 
-      await supabase.rpc("increment_video_views", { p_media_id: mediaId }).catch(() => {});
+      await supabase.rpc("increment_video_views", { p_media_id: mediaId });
     } catch (err) {
       console.error("Record view error:", err);
     }
@@ -1100,11 +1119,14 @@ export default function Home() {
                 <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
                   <VIPVideoPlayer 
                     key={selectedMedia.id}
+                    mediaId={selectedMedia.id}
+                    currentDuration={selectedMedia.duration}
                     mainVideoUrl={getCdnUrl(selectedMedia.media_url)} 
                     isAdFree={isAdFree} 
                     accountType={userProfile?.account_type} 
                     userProfile={userProfile} 
                     onPlay={handleVideoPlay}
+                    onDurationUpdate={handleDurationUpdate}
                   />
                 </div>
               </div>
