@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import EventPopup from "../../components/EventPopup";
-import TopInviters from "../../components/TopInviters";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -16,6 +15,17 @@ const getCdnUrl = (url) => {
   if (!url) return "";
   if (!USE_CUSTOM_CDN) return url;
   return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
+};
+
+// Helper function para i-format ang duration ng video
+const formatDuration = (duration) => {
+  if (!duration) return "00:00";
+  if (typeof duration === "string" && duration.includes(":")) return duration;
+  const sec = parseInt(duration, 10);
+  if (isNaN(sec)) return "00:00";
+  const mins = Math.floor(sec / 60);
+  const remSec = sec % 60;
+  return `${mins}:${remSec < 10 ? "0" : ""}${remSec}`;
 };
 
 // Single Native Banner Component for Top Placement (Isolating in Iframe)
@@ -85,6 +95,10 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
+  // States para sa Most Watched Videos
+  const [mostWatched, setMostWatched] = useState([]);
+  const [mostWatchedLoading, setMostWatchedLoading] = useState(true);
+
   // Ref para i-save ang eksaktong scroll position bago magbukas ng video
   const scrollPosRef = useRef(0);
 
@@ -102,7 +116,7 @@ export default function Home() {
     }
     return 1;
   });
-  
+
   const [totalCount, setTotalCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
 
@@ -111,6 +125,12 @@ export default function Home() {
   const [reactionCounts, setReactionCounts] = useState({});
   const [viewCounts, setViewCounts] = useState({});
   const [hasRecordedCurrentView, setHasRecordedCurrentView] = useState(false);
+
+  // Admin Viewers Modal State
+  const [showViewersModal, setShowViewersModal] = useState(false);
+  const [viewersList, setViewersList] = useState([]);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [viewersModalMedia, setViewersModalMedia] = useState(null);
 
   // States para sa Comments at Captcha
   const [comments, setComments] = useState([]);
@@ -121,10 +141,8 @@ export default function Home() {
   const [captchaInput, setCaptchaInput] = useState("");
 
   const [showRedeemModal, setShowRedeemModal] = useState(false);
-  const [showReferralModal, setShowReferralModal] = useState(false);
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
@@ -132,7 +150,7 @@ export default function Home() {
   const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
   const isAdFree = isAdmin || isVIP;
 
-  // Body scroll management para hindi masira ang scroll state
+  // Body scroll management
   useEffect(() => {
     if (selectedMedia) {
       document.body.style.overflow = "hidden";
@@ -144,7 +162,7 @@ export default function Home() {
     };
   }, [selectedMedia]);
 
-  // Load Socialbar Script dynamically at top-level body for non-VIP users
+  // Load Socialbar Script dynamically
   useEffect(() => {
     if (isAdFree) return;
 
@@ -164,7 +182,7 @@ export default function Home() {
     };
   }, [isAdFree]);
 
-  // Handle Auth Session Restoration & Listening
+  // Handle Auth Session Restoration
   useEffect(() => {
     fetchUserProfile();
 
@@ -183,22 +201,27 @@ export default function Home() {
 
   useEffect(() => {
     fetchMedia(currentPage, activeCategory);
+    fetchMostWatched();
   }, [currentPage, activeCategory]);
 
   useEffect(() => {
-    if (mediaList.length > 0) {
-      const ids = mediaList.map((m) => m.id);
-      
+    const allIds = [
+      ...mediaList.map((m) => m.id),
+      ...mostWatched.map((m) => m.id),
+    ];
+    const uniqueIds = [...new Set(allIds)];
+
+    if (uniqueIds.length > 0) {
       const initialViews = {};
-      mediaList.forEach((m) => {
+      [...mediaList, ...mostWatched].forEach((m) => {
         initialViews[m.id] = m.views_count ?? m.views ?? 0;
       });
       setViewCounts((prev) => ({ ...initialViews, ...prev }));
 
-      fetchReactionsData(ids, userProfile?.id);
-      fetchViewCountsData(ids);
+      fetchReactionsData(uniqueIds, userProfile?.id);
+      fetchViewCountsData(uniqueIds);
     }
-  }, [mediaList, userProfile]);
+  }, [mediaList, mostWatched, userProfile]);
 
   useEffect(() => {
     if (selectedMedia) {
@@ -213,7 +236,7 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       const videoId = params.get("v");
       if (videoId) {
-        const found = mediaList.find((m) => String(m.id) === String(videoId));
+        const found = mediaList.find((m) => String(m.id) === String(videoId)) || mostWatched.find((m) => String(m.id) === String(videoId));
         if (found) {
           setSelectedMedia(found);
           setTimeout(() => {
@@ -226,7 +249,7 @@ export default function Home() {
         }
       }
     }
-  }, [mediaList, selectedMedia]);
+  }, [mediaList, mostWatched, selectedMedia]);
 
   const generateCaptcha = () => {
     setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
@@ -283,6 +306,27 @@ export default function Home() {
     }
   };
 
+  // Kumuha ng Top Most Watched Videos
+  const fetchMostWatched = async () => {
+    setMostWatchedLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("media")
+        .select("*")
+        .eq("type", "video")
+        .order("views_count", { ascending: false })
+        .limit(6);
+
+      if (!error && data) {
+        setMostWatched(data);
+      }
+    } catch (err) {
+      console.error("Fetch most watched error:", err);
+    } finally {
+      setMostWatchedLoading(false);
+    }
+  };
+
   const fetchMedia = async (page = 1, category = "all") => {
     setLoading(true);
     const from = (page - 1) * ITEMS_PER_PAGE;
@@ -326,7 +370,7 @@ export default function Home() {
         const merged = { ...prev };
         mediaIds.forEach((id) => {
           const tableCount = counts[id] || 0;
-          const mediaObj = mediaList.find((m) => m.id === id);
+          const mediaObj = [...mediaList, ...mostWatched].find((m) => m.id === id);
           const mediaDbCount = mediaObj?.views_count ?? mediaObj?.views ?? 0;
           merged[id] = Math.max(merged[id] || 0, tableCount, mediaDbCount);
         });
@@ -334,6 +378,60 @@ export default function Home() {
       });
     } catch (err) {
       console.error("View count fetch error:", err);
+    }
+  };
+
+  const handleOpenViewers = async (e, mediaItem) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!isAdmin || !mediaItem?.id) return;
+
+    setViewersModalMedia(mediaItem);
+    setShowViewersModal(true);
+    setViewersLoading(true);
+
+    try {
+      const { data: viewsData, error: viewsErr } = await supabase
+        .from("media_views")
+        .select("created_at, user_id")
+        .eq("media_id", mediaItem.id)
+        .order("created_at", { ascending: false });
+
+      if (viewsErr) throw viewsErr;
+
+      if (viewsData && viewsData.length > 0) {
+        const userIds = [...new Set(viewsData.filter((v) => v.user_id).map((v) => v.user_id))];
+
+        let profilesMap = {};
+        if (userIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from("profiles")
+            .select("id, full_name, email, account_type")
+            .in("id", userIds);
+
+          if (profilesData) {
+            profilesData.forEach((p) => {
+              profilesMap[p.id] = p;
+            });
+          }
+        }
+
+        const formatted = viewsData.map((v) => ({
+          created_at: v.created_at,
+          user_id: v.user_id,
+          profile: v.user_id ? profilesMap[v.user_id] : null,
+        }));
+
+        setViewersList(formatted);
+      } else {
+        setViewersList([]);
+      }
+    } catch (err) {
+      console.error("Viewers log fetch error:", err.message);
+    } finally {
+      setViewersLoading(false);
     }
   };
 
@@ -345,25 +443,21 @@ export default function Home() {
     const currentVal = viewCounts[mediaId] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0;
     const newCount = currentVal + 1;
 
-    // Fast UI State Update
     setViewCounts((prev) => ({
       ...prev,
       [mediaId]: newCount,
     }));
 
     try {
-      // 1. Record individual view event
       await supabase.from("media_views").insert([
         { media_id: mediaId, user_id: userProfile?.id || null }
       ]);
 
-      // 2. Direct sync with main media table
       await supabase
         .from("media")
         .update({ views_count: newCount, views: newCount })
         .eq("id", mediaId);
 
-      // 3. Fallback stored procedure call
       await supabase.rpc("increment_video_views", { p_media_id: mediaId }).catch(() => {});
     } catch (err) {
       console.error("Record view error:", err);
@@ -590,9 +684,7 @@ export default function Home() {
       e.stopPropagation();
     }
 
-    // 1. Kuhanin ang kasalukuyang scroll coordinate ng screen bago magbukas ang modal
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
-
     setSelectedMedia(item);
 
     const url = new URL(window.location.href);
@@ -609,9 +701,7 @@ export default function Home() {
       e.stopPropagation();
     }
     
-    // I-store ang huling naka-save na scroll coordinate
     const targetY = scrollPosRef.current;
-
     setSelectedMedia(null);
 
     const url = new URL(window.location.href);
@@ -619,7 +709,6 @@ export default function Home() {
     url.searchParams.delete("step");
     window.history.replaceState({}, "", url);
 
-    // 2. Awtomatikong ibalik ang window sa nakaimbak na Y-position
     setTimeout(() => {
       window.scrollTo(0, targetY);
     }, 20);
@@ -663,16 +752,6 @@ export default function Home() {
     setRedeemLoading(false);
   };
 
-  const myInviteLink = userProfile 
-    ? `${window.location.origin}/signup?ref=${userProfile.id}`
-    : '';
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(myInviteLink);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
       <EventPopup />
@@ -680,47 +759,155 @@ export default function Home() {
       <div className="max-w-7xl mx-auto">
         {!isAdFree && <TopNativeBanner />}
 
-        {userProfile && (
-          <div className="mb-8 p-4 md:p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+        {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
+        <div className="mb-10 bg-slate-900/80 border border-slate-800 rounded-3xl p-4 md:p-6 shadow-2xl backdrop-blur-md relative overflow-hidden">
+          {/* Subtle Ambient Background Glow */}
+          <div className="absolute -top-20 -left-20 w-60 h-60 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          {/* Header Bar ng Most Watched Section */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 relative z-10">
             <div className="flex items-center gap-3">
-              <div className={`p-3 rounded-xl ${isAdmin ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : isVIP ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-                {isAdmin ? "🛡️" : isVIP ? "👑" : "👤"}
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-2xl shadow-lg shadow-red-600/30 border border-amber-400/30">
+                🔥
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-white text-base">
-                    {userProfile.full_name || userProfile.email || "Member Account"}
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-xl md:text-2xl font-black text-white tracking-wide">
+                    Most Watched
                   </h2>
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${isAdmin ? 'bg-purple-600 text-white' : isVIP ? 'bg-amber-500 text-black' : 'bg-slate-800 text-blue-400 border border-blue-500/30'}`}>
-                    {isAdmin ? "ADMIN" : isVIP ? "VIP" : "STANDARD"}
+                  <span className="bg-gradient-to-r from-red-600 to-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow-md">
+                    TOP TRENDING
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {isAdFree ? "Unlimited Videos • Ad-Free" : "Unlimited Videos"}
+                  Ang pinakapinapanood na mga video sa komunidad
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 w-full sm:w-auto flex-wrap">
-              <button
-                onClick={() => setShowReferralModal(true)}
-                className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <span>🏆 Refer & Earn</span>
-              </button>
-            
-              {!isAdFree && (
+            {/* User Action Buttons */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {userProfile && (
+                <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 px-3 py-2 rounded-xl text-xs">
+                  <span className="text-slate-500 font-semibold">Account:</span>
+                  <span className={`font-black uppercase text-[11px] ${isAdmin ? 'text-purple-400' : isVIP ? 'text-amber-400' : 'text-blue-400'}`}>
+                    {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : "👤 Standard"}
+                  </span>
+                </div>
+              )}
+              {userProfile && !isAdFree && (
                 <button
                   onClick={() => setShowRedeemModal(true)}
-                  className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-1.5"
+                  className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5 border border-amber-400/30 active:scale-95"
                 >
                   <span>🔑 Upgrade VIP</span>
                 </button>
               )}
             </div>
           </div>
-        )}
 
+          {/* Cards Horizontal Slider */}
+          {mostWatchedLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 py-4">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <div key={n} className="bg-slate-950/80 border border-slate-800/80 rounded-2xl h-44 animate-pulse"></div>
+              ))}
+            </div>
+          ) : mostWatched.length > 0 ? (
+            <div className="flex gap-4 overflow-x-auto pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
+              {mostWatched.map((item, index) => {
+                const rank = index + 1;
+                const badgeStyle =
+                  rank === 1
+                    ? "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 text-black shadow-amber-500/40"
+                    : rank === 2
+                    ? "bg-gradient-to-r from-slate-200 to-slate-400 text-black shadow-slate-300/30"
+                    : rank === 3
+                    ? "bg-gradient-to-r from-amber-700 to-amber-900 text-white shadow-amber-800/30"
+                    : "bg-slate-950/90 text-slate-300 border border-slate-800";
+
+                return (
+                  <div
+                    key={`top-${item.id}`}
+                    onClick={(e) => handleSelectMedia(e, item)}
+                    className="min-w-[190px] sm:min-w-[210px] md:min-w-[230px] max-w-[230px] bg-slate-950 border border-slate-800/80 hover:border-amber-500/60 rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl hover:shadow-amber-500/10 transition-all duration-300 cursor-pointer group snap-start flex flex-col justify-between shrink-0 hover:-translate-y-1"
+                  >
+                    <div>
+                      {/* Thumbnail Box */}
+                      <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
+                        {/* Rank Badge */}
+                        <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
+                          #{rank} {rank === 1 ? "🔥" : ""}
+                        </div>
+
+                        {/* Duration Badge */}
+                        <div className="absolute bottom-2 right-2 z-10 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-amber-400 border border-amber-500/30">
+                          ⏱️ {formatDuration(item.duration)}
+                        </div>
+
+                        {item.thumbnail_url ? (
+                          <img
+                            src={getCdnUrl(item.thumbnail_url)}
+                            alt={item.title}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                        ) : item.media_url ? (
+                          <video
+                            src={`${getCdnUrl(item.media_url)}#t=1`}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                            preload="metadata"
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
+                            No Display
+                          </div>
+                        )}
+
+                        {/* Play Overlay */}
+                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                          <div className="w-10 h-10 bg-amber-500 group-hover:bg-red-600 text-black group-hover:text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
+                            <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Content Info */}
+                      <div className="p-3">
+                        <h4 className="text-white font-bold text-xs line-clamp-1 group-hover:text-amber-400 transition-colors">
+                          {item.title}
+                        </h4>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900">
+                          <span
+                            onClick={(e) => isAdmin && handleOpenViewers(e, item)}
+                            className={`text-[11px] font-bold text-amber-400/90 flex items-center gap-1 ${isAdmin ? 'hover:underline cursor-pointer' : ''}`}
+                            title={isAdmin ? "Click to view watch logs (Admin)" : ""}
+                          >
+                            👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {reactionCounts[item.id]?.likes ? `👍 ${reactionCounts[item.id].likes}` : ""}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-6 bg-slate-950/40 border border-slate-800/60 rounded-2xl text-center text-slate-500 text-xs">
+              Wala pang karagdagang data para sa Most Watched videos.
+            </div>
+          )}
+        </div>
+
+        {/* VAULT MEDIA LIST HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
@@ -728,6 +915,7 @@ export default function Home() {
           </span>
         </div>
 
+        {/* CATEGORY TABS */}
         <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
           <button
             onClick={() => handleCategoryChange("all")}
@@ -743,6 +931,7 @@ export default function Home() {
           </button>
         </div>
 
+        {/* MAIN VIDEO GRID */}
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -766,13 +955,13 @@ export default function Home() {
                       <img
                         src={getCdnUrl(item.thumbnail_url)}
                         alt={item.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                       />
                     ) : item.media_url ? (
                       <video
                         src={`${getCdnUrl(item.media_url)}#t=1`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
                         preload="metadata"
                         muted
                         playsInline
@@ -790,10 +979,14 @@ export default function Home() {
                   </div>
                   <div className="p-4 pb-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-red-950/60 text-red-400 rounded-md border border-red-900/40">
-                        Video
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-slate-950/80 text-red-400 rounded-md border border-red-900/40 flex items-center gap-1">
+                        ⏱️ {formatDuration(item.duration)}
                       </span>
-                      <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                      <span
+                        onClick={(e) => isAdmin && handleOpenViewers(e, item)}
+                        className={`text-[11px] text-slate-400 font-medium flex items-center gap-1 ${isAdmin ? 'hover:text-red-400 cursor-pointer underline decoration-dotted underline-offset-2' : ''}`}
+                        title={isAdmin ? "Click to view watch logs (Admin)" : ""}
+                      >
                         👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
@@ -850,6 +1043,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* PAGINATION */}
         {totalPages > 1 && (
           <div className="flex flex-wrap justify-center items-center gap-3 mt-10 mb-6">
             <button 
@@ -903,7 +1097,7 @@ export default function Home() {
             <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
               
               <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px]">
-                <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:w-full [&_video]:h-auto [&_video]:aspect-video [&_video]:bg-black">
+                <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
                   <VIPVideoPlayer 
                     key={selectedMedia.id}
                     mainVideoUrl={getCdnUrl(selectedMedia.media_url)} 
@@ -917,8 +1111,12 @@ export default function Home() {
               
               <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
-                    👁️ {viewCounts[selectedMedia.id] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0} Total Views
+                  <span 
+                    onClick={(e) => isAdmin && handleOpenViewers(e, selectedMedia)}
+                    className={`text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${isAdmin ? 'hover:text-red-400 hover:border-red-500/50 cursor-pointer' : ''}`}
+                    title={isAdmin ? "Click to view user watch logs (Admin)" : ""}
+                  >
+                    👁️ {viewCounts[selectedMedia.id] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0} Total Views {isAdmin && "🔍 (Log)"}
                   </span>
                   {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
                     <p className="text-slate-400 text-xs md:text-sm line-clamp-2">{selectedMedia.description}</p>
@@ -1034,6 +1232,59 @@ export default function Home() {
         </div>
       )}
 
+      {/* ADMIN VIEWERS LOG MODAL */}
+      {showViewersModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowViewersModal(false)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full relative shadow-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setShowViewersModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <span>👁️</span> Video Viewers Log (Admin Only)
+            </h3>
+            <p className="text-xs text-slate-400 mb-4 line-clamp-1 border-b border-slate-800 pb-2">
+              {viewersModalMedia?.title}
+            </p>
+
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-800/60 pr-1">
+              {viewersLoading ? (
+                <div className="text-center py-8 text-xs text-slate-400">Loading viewer accounts...</div>
+              ) : viewersList.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-500 italic">No user views recorded yet for this video.</div>
+              ) : (
+                viewersList.map((vw, idx) => (
+                  <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-slate-200">
+                        {vw.profile?.full_name || vw.profile?.email || (vw.user_id ? `User ID: ${vw.user_id.slice(0, 8)}...` : "Anonymous Guest")}
+                      </div>
+                      {vw.profile?.email && (
+                        <div className="text-[10px] text-slate-500 font-mono">{vw.profile.email}</div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase ${
+                        vw.profile?.account_type === "vip" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-slate-800 text-slate-400"
+                      }`}>
+                        {vw.profile?.account_type || "Guest"}
+                      </span>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {vw.created_at ? new Date(vw.created_at).toLocaleString() : "N/A"}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REDEEM CODE MODAL */}
       {showRedeemModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
@@ -1069,49 +1320,6 @@ export default function Home() {
                 {redeemLoading ? "Redeeming..." : "Redeem Code Now ➔"}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {showReferralModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-2xl relative shadow-2xl my-8">
-            <button
-              onClick={() => setShowReferralModal(false)}
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-            >
-              ✕
-            </button>
-            
-            <div className="mb-6 border-b border-slate-800 pb-6">
-              <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                <span>🔗</span> Your Invite Link
-              </h3>
-              <p className="text-slate-400 text-sm mb-4">
-                Share this link with your friends. Only registered accounts count towards the leaderboard.
-              </p>
-              
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={myInviteLink}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-300 font-mono focus:outline-none"
-                />
-                <button
-                  onClick={copyToClipboard}
-                  className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
-                    copiedLink 
-                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' 
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'
-                  }`}
-                >
-                  {copiedLink ? '✓ Copied!' : 'Copy Link'}
-                </button>
-              </div>
-            </div>
-
-            <TopInviters />
           </div>
         </div>
       )}
