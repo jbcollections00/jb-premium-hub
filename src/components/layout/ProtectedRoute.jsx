@@ -13,9 +13,12 @@ export default function ProtectedRoute({ adminOnly = false }) {
     // Listen for auth state changes (sign out, session expiration)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session?.user);
+
       if (session?.user) {
         checkUser();
       } else {
+        setIsAuthenticated(false);
+        setIsAdmin(false);
         setLoading(false);
       }
     });
@@ -25,6 +28,8 @@ export default function ProtectedRoute({ adminOnly = false }) {
 
   const checkUser = async () => {
     try {
+      setIsAdmin(false);
+
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
@@ -34,13 +39,13 @@ export default function ProtectedRoute({ adminOnly = false }) {
         if (adminOnly) {
           const { data: profile, error } = await supabase
             .from('profiles')
-            .select('*')
+            .select('account_type, role')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
 
           if (!error && profile) {
-            const hasAdminAccess = 
-              profile.account_type?.toLowerCase() === 'admin' || 
+            const hasAdminAccess =
+              profile.account_type?.toLowerCase() === 'admin' ||
               profile.role?.toLowerCase() === 'admin';
 
             setIsAdmin(hasAdminAccess);
@@ -48,10 +53,12 @@ export default function ProtectedRoute({ adminOnly = false }) {
         }
       } else {
         setIsAuthenticated(false);
+        setIsAdmin(false);
       }
     } catch (error) {
       console.error('Auth verification error:', error);
       setIsAuthenticated(false);
+      setIsAdmin(false);
     } finally {
       setLoading(false);
     }

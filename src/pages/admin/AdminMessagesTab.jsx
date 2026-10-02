@@ -6,6 +6,7 @@ export default function AdminMessagesTab({ users = [] }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState('');
   const [attachmentType, setAttachmentType] = useState('image');
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -64,14 +65,26 @@ export default function AdminMessagesTab({ users = [] }) {
       const isVideo = file.type.startsWith('video/');
       setAttachmentType(isVideo ? 'video' : 'image');
 
-      const { error } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('vault_media')
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-      if (error) throw error;
+      if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from('vault_media').getPublicUrl(filePath);
-      setAttachmentUrl(data.publicUrl);
+      // Store only the private Storage object path in the database.
+      setAttachmentUrl(filePath);
+
+      // Generate a short-lived signed URL only for the admin preview.
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('vault_media')
+        .createSignedUrl(filePath, 600);
+
+      if (signedError) throw signedError;
+
+      setAttachmentPreviewUrl(signedData?.signedUrl || '');
       setStatusMsg({ type: 'success', text: 'Attachment uploaded successfully.' });
     } catch (error) {
       setStatusMsg({ type: 'error', text: 'Upload failed: ' + error.message });
@@ -114,6 +127,7 @@ export default function AdminMessagesTab({ users = [] }) {
       setTitle('');
       setContent('');
       setAttachmentUrl('');
+      setAttachmentPreviewUrl('');
       setSelectedUser('');
     } catch (error) {
       setStatusMsg({ type: 'error', text: 'Failed to send message: ' + error.message });
@@ -224,7 +238,16 @@ export default function AdminMessagesTab({ users = [] }) {
               <input
                 type="text"
                 value={attachmentUrl}
-                onChange={(e) => setAttachmentUrl(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setAttachmentUrl(value);
+
+                  // Direct external URLs can preview directly.
+                  // Private Storage paths should be created through the upload button.
+                  setAttachmentPreviewUrl(
+                    /^https?:\/\//i.test(value.trim()) ? value.trim() : ''
+                  );
+                }}
                 placeholder="Paste direct media URL or upload file below"
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-sky-500 transition-colors"
               />
@@ -264,7 +287,10 @@ export default function AdminMessagesTab({ users = [] }) {
             {attachmentUrl && (
               <button
                 type="button"
-                onClick={() => setAttachmentUrl('')}
+                onClick={() => {
+                  setAttachmentUrl('');
+                  setAttachmentPreviewUrl('');
+                }}
                 className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
               >
                 Remove Attachment
@@ -275,15 +301,29 @@ export default function AdminMessagesTab({ users = [] }) {
           {/* Media Preview Box */}
           {attachmentUrl && (
             <div className="mt-3 p-3 bg-slate-900 rounded-xl border border-slate-800">
-              <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">Attachment Preview</p>
-              {attachmentType === 'image' ? (
-                <img
-                  src={attachmentUrl}
-                  alt="Attachment Preview"
-                  className="max-h-48 rounded-lg object-contain bg-slate-950"
-                />
+              <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">
+                Attachment Preview
+              </p>
+
+              {attachmentPreviewUrl ? (
+                attachmentType === 'image' ? (
+                  <img
+                    src={attachmentPreviewUrl}
+                    alt="Attachment Preview"
+                    className="max-h-48 rounded-lg object-contain bg-slate-950"
+                  />
+                ) : (
+                  <video
+                    src={attachmentPreviewUrl}
+                    controls
+                    className="max-h-48 rounded-lg bg-slate-950 w-full"
+                  />
+                )
               ) : (
-                <video src={attachmentUrl} controls className="max-h-48 rounded-lg bg-slate-950 w-full" />
+                <p className="text-[11px] text-slate-500">
+                  Private Storage path saved. Upload a file here to generate a secure preview,
+                  or paste a direct external URL.
+                </p>
               )}
             </div>
           )}
@@ -307,4 +347,4 @@ export default function AdminMessagesTab({ users = [] }) {
       </form>
     </div>
   );
-}
+7D

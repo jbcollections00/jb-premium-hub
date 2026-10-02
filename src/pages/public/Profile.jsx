@@ -53,50 +53,55 @@ export default function Profile() {
 
   const fetchUserData = async () => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw userError;
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw userError || new Error("No authenticated user.");
+      }
+
       setUser(user);
 
       // 1. Fetch Profile Data
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
+      if (profileError) throw profileError;
+
       if (profile) {
         setProfileData(profile);
         setDisplayName(profile.full_name || user.email?.split("@")[0] || "");
+      } else {
+        setProfileData(null);
+        setDisplayName(user.email?.split("@")[0] || "");
       }
 
-      // 2. Fetch Access Code Expiration
-      const { data: activeCodes } = await supabase
-        .from("access_codes")
-        .select("expires_at")
-        .eq("used_by", user.id)
-        .gt("expires_at", new Date().toISOString())
-        .order("expires_at", { ascending: false })
-        .limit(1);
-
-      if (activeCodes && activeCodes.length > 0 && activeCodes[0].expires_at) {
-        setExpirationDate(activeCodes[0].expires_at);
-        setTimeLeft(calculateTimeLeft(activeCodes[0].expires_at));
+      // 2. VIP expiration is authoritative on profiles.vip_until.
+      if (profile?.vip_until) {
+        setExpirationDate(profile.vip_until);
+        setTimeLeft(calculateTimeLeft(profile.vip_until));
       } else {
         setExpirationDate(null);
         setTimeLeft(null);
       }
 
       // 3. Code History
-      const { data: history } = await supabase
+      const { data: history, error: historyError } = await supabase
         .from("access_codes")
         .select("*")
         .eq("used_by", user.id)
         .order("used_at", { ascending: false });
 
-      if (history) setCodeHistory(history);
+      if (historyError) throw historyError;
 
+      setCodeHistory(history || []);
     } catch (error) {
-      console.error("Error fetching profile data:", error.message);
+      console.error("Error fetching profile data:", error?.message || error);
     } finally {
       setLoading(false);
     }
@@ -104,6 +109,7 @@ export default function Profile() {
 
   const calculateTimeLeft = (expDate) => {
     if (!expDate) return null;
+
     const difference = new Date(expDate) - new Date();
 
     if (difference <= 0) return { expired: true };
@@ -119,7 +125,8 @@ export default function Profile() {
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    if (!displayName.trim()) return;
+
+    if (!displayName.trim() || !user?.id) return;
 
     setUpdatingProfile(true);
     setProfileMsg({ type: "", text: "" });
@@ -127,22 +134,32 @@ export default function Profile() {
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ 
-          full_name: displayName.trim()
+        .update({
+          full_name: displayName.trim(),
         })
         .eq("id", user.id);
 
       if (error) throw error;
-      setProfileMsg({ type: "success", text: "Display name updated successfully!" });
-      fetchUserData();
+
+      setProfileMsg({
+        type: "success",
+        text: "Display name updated successfully!",
+      });
+
+      await fetchUserData();
     } catch (err) {
-      setProfileMsg({ type: "error", text: err.message });
+      setProfileMsg({
+        type: "error",
+        text: err?.message || "Failed to update profile.",
+      });
     } finally {
       setUpdatingProfile(false);
     }
   };
 
   const handleResetPassword = async () => {
+    if (!user?.email) return;
+
     setResetLoading(true);
     setResetMsg({ type: "", text: "" });
 
@@ -152,9 +169,16 @@ export default function Profile() {
       });
 
       if (error) throw error;
-      setResetMsg({ type: "success", text: "Password reset link sent to your email!" });
+
+      setResetMsg({
+        type: "success",
+        text: "Password reset link sent to your email!",
+      });
     } catch (err) {
-      setResetMsg({ type: "error", text: err.message });
+      setResetMsg({
+        type: "error",
+        text: err?.message || "Unable to send password reset link.",
+      });
     } finally {
       setResetLoading(false);
     }
@@ -167,118 +191,93 @@ export default function Profile() {
     setDeleteError("");
 
     try {
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", user.id);
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      if (profileError) throw profileError;
+      if (sessionError) throw sessionError;
 
-      await supabase.auth.signOut();
-      navigate("/admin-login");
+      if (!session?.access_token) {
+        throw new Error("No active authenticated session.");
+      }
+
+      const { data, error } = await supabase.functions.invoke(
+        "delete-account",
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      if (error) throw error;
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Unable to delete account.");
+      }
+
+      // The Auth user is already deleted by the Edge Function.
+      // This only clears the local browser session.
+      await supabase.auth.signOut({
+	  scope: "local",
+	});
+
+      setShowDeleteModal(false);
+      setDeleteConfirmText("");
+      setDeleteError("");
+
+      navigate("/", { replace: true });
     } catch (err) {
-      setDeleteError("Failed to delete account: " + err.message);
+      console.error("Delete account error:", err);
+
+      setDeleteError(
+        "Failed to delete account: " + (err?.message || "Unknown error")
+      );
+
       setDeletingAccount(false);
     }
   };
 
   const handleRedeemCode = async (e) => {
     e.preventDefault();
+
     if (!accessCode.trim()) return;
 
     setRedeemLoading(true);
     setRedeemMsg({ type: "", text: "" });
 
     try {
-      const cleanCode = accessCode.trim().toUpperCase();
-      const now = new Date();
+      const { data, error } = await supabase.rpc("redeem_access_code", {
+        p_code: accessCode.trim().toUpperCase(),
+      });
 
-      const { data: codeData, error: fetchError } = await supabase
-        .from("access_codes")
-        .select("*")
-        .eq("code", cleanCode)
-        .eq("is_used", false)
-        .single();
+      if (error) throw error;
 
-      if (fetchError || !codeData) {
-        setRedeemMsg({ type: "error", text: "Invalid or already used access code." });
-        setRedeemLoading(false);
-        return;
-      }
-
-      if (codeData.expires_at && new Date(codeData.expires_at) < now) {
+      if (!data?.success) {
         setRedeemMsg({
           type: "error",
-          text: "⛔ EXPIRED CODE: This code has exceeded its expiration limit.",
+          text: data?.message || "Invalid or already used access code.",
         });
-        setRedeemLoading(false);
         return;
       }
 
-      const isVip = (codeData.type || "VIP").toUpperCase() === "VIP";
-      const durationDays = codeData.duration_days || 30;
-
-      const { data: activeCodes } = await supabase
-        .from("access_codes")
-        .select("expires_at")
-        .eq("used_by", user.id)
-        .gt("expires_at", now.toISOString())
-        .order("expires_at", { ascending: false })
-        .limit(1);
-
-      let baseDate = now;
-      if (activeCodes && activeCodes.length > 0) {
-        const currentExp = new Date(activeCodes[0].expires_at);
-        if (currentExp > now) baseDate = currentExp;
-      }
-
-      const expiresAt = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
-
-      await supabase
-        .from("access_codes")
-        .update({
-          is_used: true,
-          used_by: user.id,
-          used_at: now.toISOString(),
-          expires_at: expiresAt.toISOString(),
-        })
-        .eq("id", codeData.id);
-
-      await supabase
-        .from("profiles")
-        .update({
-          account_type: isVip ? "VIP" : "STANDARD",
-          is_activated: true,
-        })
-        .eq("id", user.id);
-
-      const isExtension = baseDate > now;
-      const activationTitle = isExtension
-        ? `🎉 ${isVip ? "VIP" : "Standard"} Membership Extended!`
-        : `🎉 ${isVip ? "VIP" : "Standard"} Account Activated!`;
-
-      const activationMessage = isExtension
-        ? `Great news! Your access has been extended by ${durationDays} days until ${expiresAt.toLocaleDateString("en-US")}.`
-        : `Congratulations! Your account is active for ${durationDays} days until ${expiresAt.toLocaleDateString("en-US")}.`;
-
-      await supabase.from("admin_messages").insert([
-        {
-          user_id: user.id,
-          send_to_all: false,
-          title: activationTitle,
-          message: activationMessage,
-          is_read: false,
-        },
-      ]);
+      const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
 
       setRedeemMsg({
         type: "success",
-        text: `Success! Code applied. New Expiration: ${expiresAt.toLocaleDateString("en-US")}`,
+        text: expiresAt
+          ? `Success! Code applied. New Expiration: ${expiresAt.toLocaleDateString("en-US")}`
+          : "Success! Code applied.",
       });
+
       setAccessCode("");
-      fetchUserData();
+      await fetchUserData();
     } catch (err) {
-      setRedeemMsg({ type: "error", text: "Failed to redeem: " + err.message });
+      setRedeemMsg({
+        type: "error",
+        text: "Failed to redeem: " + (err?.message || "Unknown error"),
+      });
     } finally {
       setRedeemLoading(false);
     }
@@ -286,6 +285,7 @@ export default function Profile() {
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
+
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
@@ -302,9 +302,15 @@ export default function Profile() {
   }
 
   const rawAccountType = (profileData?.account_type || "STANDARD").toLowerCase();
-  const isAdmin = rawAccountType === "admin";
-  const hasActiveVipDate = expirationDate ? new Date(expirationDate) > new Date() : false;
-  const isVip = isAdmin || rawAccountType === "vip" || hasActiveVipDate;
+  const role = (profileData?.role || "").toLowerCase();
+  const isAdmin = rawAccountType === "admin" || role === "admin";
+
+  const hasActiveVipDate =
+    expirationDate && new Date(expirationDate) > new Date();
+
+  const isVip =
+    isAdmin ||
+    (rawAccountType === "vip" && Boolean(hasActiveVipDate));
 
   const faqs = [
     {
@@ -313,21 +319,22 @@ export default function Profile() {
     },
     {
       q: "What happens when my VIP status expires?",
-      a: "Your account reverts to Standard status, restricting access to exclusive VIP video content until renewed.",
+      a: "Your account reverts to Standard status until renewed.",
     },
     {
       q: "How can I buy an Access Code?",
-      a: "Click on 'Buy 30 Days VIP' button or contact Admin Support directly via Telegram.",
+      a: "Use the account's purchase page or contact Admin Support.",
     },
   ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10 font-sans">
       <div className="max-w-5xl mx-auto space-y-8">
-        
         {/* Header Section */}
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Account Dashboard</h1>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            Account Dashboard
+          </h1>
           <p className="text-slate-400 text-sm mt-1">
             Manage your profile, active subscription status, and security settings.
           </p>
@@ -335,12 +342,11 @@ export default function Profile() {
 
         {/* Top Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
           {/* Profile Card & Expiration Timer */}
           <div className="space-y-6">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-xl relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-600 via-amber-500 to-amber-300"></div>
-              
+
               <div className="w-24 h-24 mx-auto bg-slate-800 rounded-full flex items-center justify-center border-4 border-slate-950 shadow-inner my-3 relative">
                 <span className="text-3xl font-extrabold text-slate-300 uppercase">
                   {(displayName || user?.email)?.charAt(0)}
@@ -351,7 +357,9 @@ export default function Profile() {
               <h2 className="text-lg font-bold text-white truncate">
                 {displayName || "User"}
               </h2>
-              <p className="text-xs text-slate-400 truncate mb-3">{user?.email}</p>
+              <p className="text-xs text-slate-400 truncate mb-3">
+                {user?.email}
+              </p>
 
               {/* Dynamic Account Badge */}
               {isAdmin ? (
@@ -382,25 +390,47 @@ export default function Profile() {
                   <p className="text-[11px] uppercase font-bold text-amber-400 tracking-wider text-center mb-2">
                     ⏳ VIP Remaining Access Time
                   </p>
+
                   {timeLeft?.expired ? (
-                    <p className="text-xs font-bold text-rose-500 text-center py-1">MEMBERSHIP EXPIRED</p>
+                    <p className="text-xs font-bold text-rose-500 text-center py-1">
+                      MEMBERSHIP EXPIRED
+                    </p>
                   ) : timeLeft ? (
                     <div className="grid grid-cols-4 gap-1.5 text-center">
                       <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                        <span className="text-base font-black text-white block">{timeLeft.days}</span>
-                        <span className="text-[9px] text-slate-400 uppercase">Days</span>
+                        <span className="text-base font-black text-white block">
+                          {timeLeft.days}
+                        </span>
+                        <span className="text-[9px] text-slate-400 uppercase">
+                          Days
+                        </span>
                       </div>
+
                       <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                        <span className="text-base font-black text-white block">{timeLeft.hours}</span>
-                        <span className="text-[9px] text-slate-400 uppercase">Hours</span>
+                        <span className="text-base font-black text-white block">
+                          {timeLeft.hours}
+                        </span>
+                        <span className="text-[9px] text-slate-400 uppercase">
+                          Hours
+                        </span>
                       </div>
+
                       <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                        <span className="text-base font-black text-white block">{timeLeft.minutes}</span>
-                        <span className="text-[9px] text-slate-400 uppercase">Mins</span>
+                        <span className="text-base font-black text-white block">
+                          {timeLeft.minutes}
+                        </span>
+                        <span className="text-[9px] text-slate-400 uppercase">
+                          Mins
+                        </span>
                       </div>
+
                       <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                        <span className="text-base font-black text-amber-400 block">{timeLeft.seconds}</span>
-                        <span className="text-[9px] text-slate-400 uppercase">Secs</span>
+                        <span className="text-base font-black text-amber-400 block">
+                          {timeLeft.seconds}
+                        </span>
+                        <span className="text-[9px] text-slate-400 uppercase">
+                          Secs
+                        </span>
                       </div>
                     </div>
                   ) : null}
@@ -413,15 +443,19 @@ export default function Profile() {
               <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="text-amber-400">✨</span> VIP Member Advantages
               </h3>
+
               <ul className="space-y-3 text-xs text-slate-300">
                 <li className="flex items-center gap-2">
-                  <span className="text-emerald-400 font-bold">✓</span> Unlimited Video Streaming
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  Account-based VIP access
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-emerald-400 font-bold">✓</span> Full HD Quality Access
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  Subscription expiration tracking
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-emerald-400 font-bold">✓</span> Exclusive Priority Server
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  Access-code history
                 </li>
               </ul>
             </div>
@@ -429,7 +463,6 @@ export default function Profile() {
 
           {/* Right Column: Access Code Redemption & Profile Settings */}
           <div className="lg:col-span-2 space-y-6">
-            
             {/* Redeem Access Code */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
               <div className="mb-4">
@@ -450,6 +483,7 @@ export default function Profile() {
                     placeholder="ENTER CODE (E.G. VIP-XXXXXX)"
                     className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm uppercase font-mono tracking-wider focus:outline-none focus:border-red-500 transition-all"
                   />
+
                   <button
                     type="submit"
                     disabled={redeemLoading}
@@ -460,7 +494,13 @@ export default function Profile() {
                 </div>
 
                 {redeemMsg.text && (
-                  <p className={`text-xs font-bold mt-2 ${redeemMsg.type === "success" ? "text-emerald-400" : "text-rose-400"}`}>
+                  <p
+                    className={`text-xs font-bold mt-2 ${
+                      redeemMsg.type === "success"
+                        ? "text-emerald-400"
+                        : "text-rose-400"
+                    }`}
+                  >
                     {redeemMsg.text}
                   </p>
                 )}
@@ -472,9 +512,13 @@ export default function Profile() {
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 👤 Personal Details
               </h3>
+
               <form onSubmit={handleUpdateProfile} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-                  <label className="text-xs font-semibold text-slate-400 uppercase">Display Name</label>
+                  <label className="text-xs font-semibold text-slate-400 uppercase">
+                    Display Name
+                  </label>
+
                   <div className="sm:col-span-2 flex gap-2">
                     <input
                       type="text"
@@ -482,6 +526,7 @@ export default function Profile() {
                       onChange={(e) => setDisplayName(e.target.value)}
                       className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-red-500"
                     />
+
                     <button
                       type="submit"
                       disabled={updatingProfile}
@@ -491,8 +536,15 @@ export default function Profile() {
                     </button>
                   </div>
                 </div>
+
                 {profileMsg.text && (
-                  <p className={`text-xs font-bold ${profileMsg.type === "success" ? "text-emerald-400" : "text-rose-400"}`}>
+                  <p
+                    className={`text-xs font-bold ${
+                      profileMsg.type === "success"
+                        ? "text-emerald-400"
+                        : "text-rose-400"
+                    }`}
+                  >
                     {profileMsg.text}
                   </p>
                 )}
@@ -514,29 +566,49 @@ export default function Profile() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pb-3 border-b border-slate-800/80">
-                  <span className="text-slate-400 font-medium">Email Address</span>
-                  <span className="sm:col-span-2 text-slate-200 font-semibold">{user?.email}</span>
+                  <span className="text-slate-400 font-medium">
+                    Email Address
+                  </span>
+                  <span className="sm:col-span-2 text-slate-200 font-semibold">
+                    {user?.email}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pb-3 border-b border-slate-800/80">
-                  <span className="text-slate-400 font-medium">VIP Expiration Date</span>
+                  <span className="text-slate-400 font-medium">
+                    VIP Expiration Date
+                  </span>
                   <span className="sm:col-span-2 text-amber-400 font-bold">
-                    {expirationDate ? formatDate(expirationDate) : "No Active VIP Subscription"}
+                    {expirationDate
+                      ? formatDate(expirationDate)
+                      : "No Active VIP Subscription"}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center pt-2">
-                  <span className="text-slate-400 font-medium">Password Management</span>
+                  <span className="text-slate-400 font-medium">
+                    Password Management
+                  </span>
+
                   <div className="sm:col-span-2">
                     <button
                       onClick={handleResetPassword}
                       disabled={resetLoading}
                       className="bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer"
                     >
-                      {resetLoading ? "Sending Link..." : "🔑 Request Password Reset Link"}
+                      {resetLoading
+                        ? "Sending Link..."
+                        : "🔑 Request Password Reset Link"}
                     </button>
+
                     {resetMsg.text && (
-                      <p className={`text-xs font-bold mt-2 ${resetMsg.type === "success" ? "text-emerald-400" : "text-rose-400"}`}>
+                      <p
+                        className={`text-xs font-bold mt-2 ${
+                          resetMsg.type === "success"
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                        }`}
+                      >
                         {resetMsg.text}
                       </p>
                     )}
@@ -550,18 +622,23 @@ export default function Profile() {
               <h3 className="text-lg font-bold text-rose-400 mb-2 flex items-center gap-2">
                 ⚠️ Danger Zone
               </h3>
+
               <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                Permanently remove your account and access to any active VIP memberships. This action cannot be undone.
+                Permanently remove your account and access to any active VIP memberships.
+                This action cannot be undone.
               </p>
 
               <button
-                onClick={() => setShowDeleteModal(true)}
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleteConfirmText("");
+                  setShowDeleteModal(true);
+                }}
                 className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2"
               >
                 🗑️ Delete My Account
               </button>
             </div>
-
           </div>
         </div>
 
@@ -570,7 +647,10 @@ export default function Profile() {
           <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
             📜 Subscription Code History
           </h3>
-          <p className="text-xs text-slate-400 mb-4">Record of all codes you have successfully redeemed.</p>
+
+          <p className="text-xs text-slate-400 mb-4">
+            Record of all codes you have successfully redeemed.
+          </p>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300 border-collapse">
@@ -583,24 +663,45 @@ export default function Profile() {
                   <th className="py-3 px-4">Valid Until</th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-slate-800/50">
                 {codeHistory.length > 0 ? (
                   codeHistory.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-950/40 transition-colors">
-                      <td className="py-3 px-4 font-mono text-white font-bold">{item.code}</td>
+                    <tr
+                      key={item.id}
+                      className="hover:bg-slate-950/40 transition-colors"
+                    >
+                      <td className="py-3 px-4 font-mono text-white font-bold">
+                        {item.code
+                          ? `${item.code.slice(0, 4)}••••${item.code.slice(-4)}`
+                          : "N/A"}
+                      </td>
+
                       <td className="py-3 px-4">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">
                           {item.type || "VIP"}
                         </span>
                       </td>
-                      <td className="py-3 px-4 font-bold text-emerald-400">+{item.duration_days || 30} Days</td>
-                      <td className="py-3 px-4 text-slate-400">{formatDate(item.used_at)}</td>
-                      <td className="py-3 px-4 text-slate-300">{formatDate(item.expires_at)}</td>
+
+                      <td className="py-3 px-4 font-bold text-emerald-400">
+                        +{item.duration_days || 30} Days
+                      </td>
+
+                      <td className="py-3 px-4 text-slate-400">
+                        {formatDate(item.used_at)}
+                      </td>
+
+                      <td className="py-3 px-4 text-slate-300">
+                        {formatDate(item.expires_at)}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="5" className="py-6 text-center text-slate-500 italic">
+                    <td
+                      colSpan="5"
+                      className="py-6 text-center text-slate-500 italic"
+                    >
                       No redeemed codes found in your account history.
                     </td>
                   </tr>
@@ -612,27 +713,31 @@ export default function Profile() {
 
         {/* Support & FAQs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          {/* TICKET COMPONENT NA NASA KALIWA NA NGAYON (2 Columns space para lumapad) */}
           <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl flex flex-col overflow-hidden h-[450px]">
             <UserSupportTicket supabase={supabase} user={user} />
           </div>
 
-          {/* FAQ NA NASA KANAN NA NGAYON (1 Column space) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl h-fit">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               ❓ Frequently Asked Questions
             </h3>
+
             <div className="space-y-3">
               {faqs.map((faq, idx) => (
-                <div key={idx} className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/50">
+                <div
+                  key={idx}
+                  className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/50"
+                >
                   <button
                     onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
                     className="w-full text-left p-3 text-xs font-semibold text-slate-200 flex justify-between items-center hover:bg-slate-900 transition-colors cursor-pointer"
                   >
                     <span>{faq.q}</span>
-                    <span className="text-slate-500 font-bold">{openFaq === idx ? "−" : "+"}</span>
+                    <span className="text-slate-500 font-bold">
+                      {openFaq === idx ? "−" : "+"}
+                    </span>
                   </button>
+
                   {openFaq === idx && (
                     <div className="p-3 text-xs text-slate-400 border-t border-slate-800/80 bg-slate-950">
                       {faq.a}
@@ -642,9 +747,7 @@ export default function Profile() {
               ))}
             </div>
           </div>
-
         </div>
-
       </div>
 
       {/* CONFIRM DELETE MODAL */}
@@ -654,25 +757,38 @@ export default function Profile() {
             <h3 className="text-xl font-black text-rose-400 flex items-center gap-2">
               🚨 Permanently Delete Account?
             </h3>
+
             <p className="text-xs text-slate-300 leading-relaxed">
-              This action will completely erase your profile information and active VIP status. You will not be able to recover this account.
+              This action permanently deletes your authentication account,
+              profile, and dependent account data according to the configured
+              database cascade rules. This cannot be undone.
             </p>
 
             <div className="space-y-2">
               <label className="text-[11px] font-bold uppercase text-slate-400 block">
-                Type <span className="text-white font-mono font-black">DELETE</span> to confirm:
+                Type{" "}
+                <span className="text-white font-mono font-black">
+                  DELETE
+                </span>{" "}
+                to confirm:
               </label>
+
               <input
                 type="text"
                 value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                onChange={(e) =>
+                  setDeleteConfirmText(e.target.value.toUpperCase())
+                }
                 placeholder="DELETE"
+                autoComplete="off"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono uppercase text-white focus:outline-none focus:border-rose-500"
               />
             </div>
 
             {deleteError && (
-              <p className="text-xs text-rose-400 font-semibold">{deleteError}</p>
+              <p className="text-xs text-rose-400 font-semibold">
+                {deleteError}
+              </p>
             )}
 
             <div className="flex gap-3 pt-2">
@@ -683,10 +799,11 @@ export default function Profile() {
                   setDeleteError("");
                 }}
                 disabled={deletingAccount}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer"
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleDeleteAccount}
                 disabled={deleteConfirmText !== "DELETE" || deletingAccount}

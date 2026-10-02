@@ -37,10 +37,14 @@ export default function Contest() {
           .maybeSingle();
         setUserProfile(profile);
 
-        const { data: contest } = await supabase.rpc('get_or_create_active_contest', {
-          p_user_id: user.id,
-        });
-        if (contest && contest.length > 0) setContestData(contest[0]);
+        const { data: contest, error: contestError } =
+          await supabase.rpc('get_or_create_active_contest');
+
+        if (contestError) throw contestError;
+
+        if (contest && contest.length > 0) {
+          setContestData(contest[0]);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -163,7 +167,7 @@ export default function Contest() {
             <li>Invited users must register using your unique link.</li>
             <li>Referred users must watch at least 10 videos in a single day to count as qualified.</li>
             <li>You must also maintain active account engagement.</li>
-            <li>Rewards are automatically credited once the target target is achieved.</li>
+            <li>Rewards are automatically credited once the target is achieved.</li>
           </ul>
         </div>
 

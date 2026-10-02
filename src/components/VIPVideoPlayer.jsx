@@ -1,21 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 
-const SMARTLINK_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
-
 export default function VIPVideoPlayer({
   mainVideoUrl,
   userProfile,
   accountType,
+  vipUntil,
   isAdFree: isAdFreeProp,
   onPlay,
+  onDurationUpdate,
   mediaId,
-  currentDuration
+  currentDuration,
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const mainVideoRef = useRef(null);
   const hasLoggedWatchRef = useRef(false);
+  const hasSavedDurationRef = useRef(false);
 
   const CDN_DOMAIN = "https://cdn.jb-premium-hub.vip";
 
@@ -27,18 +28,28 @@ export default function VIPVideoPlayer({
 
   const videoSrc = getCleanVideoUrl(mainVideoUrl);
 
-  const checkAdFreeStatus = (type, role) => {
+  const checkAdFreeStatus = (type, role, expiresAt) => {
     const t = (type || '').toUpperCase();
     const r = (role || '').toUpperCase();
-    return t === 'VIP' || t === 'ADMIN' || r === 'ADMIN';
+
+    if (t === 'ADMIN' || r === 'ADMIN') {
+      return true;
+    }
+
+    if (t !== 'VIP' || !expiresAt) {
+      return false;
+    }
+
+    return new Date(expiresAt) > new Date();
   };
 
   const effectiveIsAdFree = isAdFreeProp || isAdFreeUser;
 
   useEffect(() => {
     hasLoggedWatchRef.current = false;
+    hasSavedDurationRef.current = false;
     setIsPlaying(false);
-  }, [mainVideoUrl]);
+  }, [mainVideoUrl, mediaId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -46,22 +57,31 @@ export default function VIPVideoPlayer({
     const determineStatus = async () => {
       let isAdFree = false;
 
-      if (accountType) {
-        isAdFree = checkAdFreeStatus(accountType);
-      } else if (userProfile) {
-        isAdFree = checkAdFreeStatus(userProfile.account_type, userProfile.role);
+      if (userProfile) {
+        isAdFree = checkAdFreeStatus(
+          userProfile.account_type,
+          userProfile.role,
+          userProfile.vip_until
+        );
+      } else if (accountType) {
+        isAdFree = checkAdFreeStatus(accountType, null, vipUntil);
       } else {
         try {
           const { data: { user } } = await supabase.auth.getUser();
+
           if (user?.id) {
             const { data: profile, error } = await supabase
               .from('profiles')
-              .select('account_type, role')
+              .select('account_type, role, vip_until')
               .eq('id', user.id)
               .maybeSingle();
 
             if (!error && profile) {
-              isAdFree = checkAdFreeStatus(profile.account_type, profile.role);
+              isAdFree = checkAdFreeStatus(
+                profile.account_type,
+                profile.role,
+                profile.vip_until
+              );
             }
           }
         } catch (err) {
@@ -81,14 +101,7 @@ export default function VIPVideoPlayer({
     return () => {
       isMounted = false;
     };
-  }, [mainVideoUrl, accountType, userProfile]);
-
-  const getStepFromUrl = () => {
-    if (typeof window === "undefined") return 1;
-    const params = new URLSearchParams(window.location.search);
-    const step = parseInt(params.get("step"), 10);
-    return isNaN(step) ? 1 : step;
-  };
+  }, [mainVideoUrl, accountType, vipUntil, userProfile]);
 
   const handlePlayOverlayClick = (e) => {
     if (e) {
@@ -96,81 +109,77 @@ export default function VIPVideoPlayer({
       e.stopPropagation();
     }
 
-    // 1. VIP / Admin -> Direct Play (No Ads)
-    if (effectiveIsAdFree) {
-      startVideoPlay();
-      return;
-    }
-
-    // 2. Standard User 3-Step Ad Logic
-    const currentStep = getStepFromUrl();
-
-    if (currentStep < 3) {
-      // Ihanda ang URL para sa bagong tab na may updated step
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set("step", String(currentStep + 1));
-
-      // 1. Unang i-open ang bagong tab para sa Video Page (Step + 1)
-      const newTab = window.open(nextUrl.toString(), "_blank");
-      if (newTab) {
-        newTab.focus();
-      }
-
-      // 2. Pagkatapos ay ire-direct ang lumang tab papunta sa Smartlink Ad
-      window.location.href = SMARTLINK_AD_URL;
-    } else {
-      // Step >= 3: Diretso nang mag-play ang video
-      startVideoPlay();
-    }
+    startVideoPlay();
   };
 
   const startVideoPlay = () => {
     setIsPlaying(true);
+
     if (mainVideoRef.current) {
-      mainVideoRef.current.play().catch((err) => console.error("Play error:", err));
+      mainVideoRef.current
+        .play()
+        .catch((err) => console.error("Play error:", err));
     }
   };
 
-  // Option 1: Auto-Detect at Save ng Duration sa Supabase
   const handleLoadedMetadata = async (e) => {
     const durationInSeconds = Math.round(e.target.duration);
+    const storedDuration = Number(currentDuration || 0);
 
-    if (durationInSeconds > 0 && (!currentDuration || currentDuration === 0)) {
-      try {
-        if (mediaId) {
-          await supabase
-            .from('media')
-            .update({ duration: durationInSeconds })
-            .eq('id', mediaId);
-        } else if (mainVideoUrl) {
-          await supabase
-            .from('media')
-            .update({ duration: durationInSeconds })
-            .eq('media_url', mainVideoUrl);
+    if (
+      !mediaId ||
+      hasSavedDurationRef.current ||
+      !Number.isFinite(durationInSeconds) ||
+      durationInSeconds <= 0 ||
+      durationInSeconds > 86400 ||
+      storedDuration > 0
+    ) {
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc(
+        'set_media_duration_if_missing',
+        {
+          p_media_id: mediaId,
+          p_duration: durationInSeconds,
         }
-      } catch (err) {
-        console.error("Auto-update video duration error:", err);
+      );
+
+      if (error) throw error;
+
+      // Avoid repeating the RPC during the same media session.
+      hasSavedDurationRef.current = true;
+
+      if (data === true && typeof onDurationUpdate === "function") {
+        onDurationUpdate(mediaId, durationInSeconds);
       }
+    } catch (err) {
+      hasSavedDurationRef.current = false;
+      console.error("Auto-update video duration error:", err);
     }
   };
 
   const handleVideoPlay = async () => {
     setIsPlaying(true);
 
-    // Tawagin ang onPlay handler para mag-increment ang view count sa Home.jsx
+    // Notify Home.jsx so it can record/increment the view count.
     if (typeof onPlay === "function") {
       onPlay();
     }
 
+    // Prevent duplicate watch logs during the same player session.
+    // Mark as logged only after the RPC succeeds so a failed request can retry.
     if (hasLoggedWatchRef.current) return;
-    hasLoggedWatchRef.current = true;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        await supabase.rpc('log_user_video_watch', { p_user_id: user.id });
-      }
+      const { error } = await supabase.rpc('log_user_video_watch');
+
+      if (error) throw error;
+
+      hasLoggedWatchRef.current = true;
     } catch (err) {
+      hasLoggedWatchRef.current = false;
       console.error("Error logging video watch:", err);
     }
   };
@@ -184,6 +193,7 @@ export default function VIPVideoPlayer({
     link.setAttribute("download", `Vault-Video-${Date.now()}.mp4`);
     link.setAttribute("target", "_blank");
     link.setAttribute("rel", "noopener noreferrer");
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -191,7 +201,7 @@ export default function VIPVideoPlayer({
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
-      
+
       {/* 📥 DOWNLOAD BUTTON (VIP/ADMIN ONLY) */}
       {effectiveIsAdFree && (
         <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -214,10 +224,17 @@ export default function VIPVideoPlayer({
         onLoadedMetadata={handleLoadedMetadata}
         onPlay={handleVideoPlay}
         className="w-full h-full max-h-[65vh] object-contain"
-        onError={(e) => console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc)}
+        onError={(e) =>
+          console.error(
+            "Error loading video:",
+            e.target.error,
+            "URL Attempted:",
+            videoSrc
+          )
+        }
       />
 
-      {/* 🔐 CUSTOM PLAY OVERLAY FOR ADS & INITIAL PLAY */}
+      {/* ▶️ CUSTOM INITIAL PLAY OVERLAY */}
       {!isPlaying && (
         <div
           onClick={handlePlayOverlayClick}
@@ -231,6 +248,7 @@ export default function VIPVideoPlayer({
               <path d="M8 5v14l11-7z" />
             </svg>
           </div>
+
           <span className="mt-4 text-xs font-bold text-white tracking-widest uppercase bg-slate-900/90 border border-slate-700/80 px-4 py-2 rounded-xl shadow-lg">
             Click to Play Video
           </span>

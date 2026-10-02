@@ -5,83 +5,276 @@ export default function Messages() {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [loading, setLoading] = useState(true);
-  
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  // Private attachment preview state
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState("");
+  const [attachmentLoading, setAttachmentLoading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
+
   // State to control mobile view toggle (Messenger style)
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
 
   useEffect(() => {
-    fetchUserMessages();
+    let adminMessagesChannel = null;
+    let userStatusChannel = null;
+    let isMounted = true;
 
-    // Live Realtime listener for admin messages changes
-    const channel = supabase
-      .channel("admin_messages_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "admin_messages" },
-        () => {
-          fetchUserMessages();
-        }
-      )
-      .subscribe();
+    const setup = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id || null;
+
+      if (!isMounted) return;
+
+      setCurrentUserId(userId);
+      await fetchUserMessages(userId);
+
+      // Refresh when admin announcements change.
+      adminMessagesChannel = supabase
+        .channel("admin_messages_changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "admin_messages" },
+          () => {
+            fetchUserMessages(userId);
+          }
+        )
+        .subscribe();
+
+      // Also refresh when this user's read/delete state changes
+      // (useful if the account is open on another device/tab).
+      if (userId) {
+        userStatusChannel = supabase
+          .channel(`user_message_status_${userId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "user_message_status",
+              filter: `user_id=eq.${userId}`,
+            },
+            () => {
+              fetchUserMessages(userId);
+            }
+          )
+          .subscribe();
+      }
+    };
+
+    setup();
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+
+      if (adminMessagesChannel) {
+        supabase.removeChannel(adminMessagesChannel);
+      }
+
+      if (userStatusChannel) {
+        supabase.removeChannel(userStatusChannel);
+      }
     };
   }, []);
 
-  // Update DB and Local State when message is read
-  const markAsReadInDBAndLocal = async (msgId) => {
+  // When the currently displayed message changes, mark only that
+  // user's status row as read. Realtime refreshes preserve the same
+  // selected message ID, so they do not keep replacing what is open.
+  useEffect(() => {
+    if (
+      currentUserId &&
+      selectedMessage?.id &&
+      !selectedMessage.is_read
+    ) {
+      markAsReadInDBAndLocal(selectedMessage.id);
+    }
+  }, [selectedMessage?.id, currentUserId]);
+
+  // Generate a short-lived URL for private vault_media attachments.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAttachment = async () => {
+      setAttachmentPreviewUrl("");
+      setAttachmentError("");
+
+      const storedValue = selectedMessage?.attachment_url?.trim();
+
+      if (!storedValue) {
+        setAttachmentLoading(false);
+        return;
+      }
+
+      // Legacy/external URLs can still be displayed directly.
+      if (/^https?:\/\//i.test(storedValue)) {
+        setAttachmentPreviewUrl(storedValue);
+        setAttachmentLoading(false);
+        return;
+      }
+
+      try {
+        setAttachmentLoading(true);
+
+        const { data, error } = await supabase.storage
+          .from("vault_media")
+          .createSignedUrl(storedValue, 600);
+
+        if (error) throw error;
+
+        if (!cancelled) {
+          setAttachmentPreviewUrl(data?.signedUrl || "");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error creating attachment signed URL:", error.message);
+          setAttachmentError(
+            error?.message || "Unable to load this private attachment."
+          );
+          setAttachmentPreviewUrl("");
+        }
+      } finally {
+        if (!cancelled) {
+          setAttachmentLoading(false);
+        }
+      }
+    };
+
+    loadAttachment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMessage?.id, selectedMessage?.attachment_url]);
+
+  const updateLocalMessageState = (msgId, patch) => {
     setMessages((prev) =>
-      prev.map((m) => (m.id === msgId ? { ...m, is_read: true } : m))
+      prev.map((m) => (m.id === msgId ? { ...m, ...patch } : m))
     );
+
     setSelectedMessage((prev) =>
-      prev?.id === msgId ? { ...prev, is_read: true } : prev
+      prev?.id === msgId ? { ...prev, ...patch } : prev
     );
+  };
+
+  const upsertUserMessageStatus = async (msgId, patch) => {
+    if (!currentUserId) {
+      throw new Error("No authenticated user found.");
+    }
+
+    const { error } = await supabase
+      .from("user_message_status")
+      .upsert(
+        {
+          user_id: currentUserId,
+          message_id: msgId,
+          ...patch,
+        },
+        { onConflict: "user_id,message_id" }
+      );
+
+    if (error) throw error;
+  };
+
+  // Mark read for this user only.
+  const markAsReadInDBAndLocal = async (msgId) => {
+    updateLocalMessageState(msgId, { is_read: true });
 
     window.dispatchEvent(new Event("messagesUpdated"));
 
-    const { error } = await supabase
-      .from("admin_messages")
-      .update({ is_read: true })
-      .eq("id", msgId);
-
-    if (error) {
-      console.error("Error updating read status in DB:", error.message);
+    try {
+      await upsertUserMessageStatus(msgId, {
+        is_read: true,
+        is_deleted: false,
+        read_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error updating read status:", error.message);
+      fetchUserMessages(currentUserId);
     }
   };
 
-  const fetchUserMessages = async () => {
+  const fetchUserMessages = async (knownUserId = null) => {
     setLoading(true);
 
-    const { data: { session } } = await supabase.auth.getSession();
+    try {
+      let userId = knownUserId;
 
-    if (session?.user) {
-      const { data, error } = await supabase
+      if (!userId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        userId = session?.user?.id || null;
+      }
+
+      if (!userId) {
+        setMessages([]);
+        setSelectedMessage(null);
+        return;
+      }
+
+      const { data: adminMessages, error: messagesError } = await supabase
         .from("admin_messages")
         .select("*")
-        .or(`user_id.eq.${session.user.id},and(send_to_all.eq.true,user_id.is.null)`)
+        .or(`user_id.eq.${userId},and(send_to_all.eq.true,user_id.is.null)`)
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching messages:", error.message);
-      } else {
-        setMessages(data || []);
+      if (messagesError) throw messagesError;
 
-        if (data && data.length > 0) {
-          const firstMsg = data[0];
-          setSelectedMessage(firstMsg);
+      const baseMessages = adminMessages || [];
 
-          if (!firstMsg.is_read) {
-            markAsReadInDBAndLocal(firstMsg.id);
-          }
-        } else {
-          setSelectedMessage(null);
+      if (baseMessages.length === 0) {
+        setMessages([]);
+        setSelectedMessage(null);
+        return;
+      }
+
+      const messageIds = baseMessages.map((m) => m.id);
+
+      const { data: statuses, error: statusError } = await supabase
+        .from("user_message_status")
+        .select("message_id, is_read, is_deleted, read_at")
+        .eq("user_id", userId)
+        .in("message_id", messageIds);
+
+      if (statusError) throw statusError;
+
+      const statusMap = new Map(
+        (statuses || []).map((status) => [status.message_id, status])
+      );
+
+      const mergedMessages = baseMessages
+        .map((message) => {
+          const status = statusMap.get(message.id);
+
+          return {
+            ...message,
+            is_read: status?.is_read ?? false,
+            is_deleted: status?.is_deleted ?? false,
+            read_at: status?.read_at ?? null,
+          };
+        })
+        .filter((message) => !message.is_deleted);
+
+      setMessages(mergedMessages);
+
+      // Preserve the message the user is currently reading.
+      // Only fall back to the newest visible message if the previous
+      // selection no longer exists.
+      setSelectedMessage((prev) => {
+        if (mergedMessages.length === 0) return null;
+
+        if (prev?.id) {
+          const refreshed = mergedMessages.find((m) => m.id === prev.id);
+          if (refreshed) return refreshed;
         }
 
-        window.dispatchEvent(new Event("messagesUpdated"));
-      }
+        return mergedMessages[0];
+      });
+
+      window.dispatchEvent(new Event("messagesUpdated"));
+    } catch (error) {
+      console.error("Error fetching messages:", error.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleMarkAsRead = async (msgId, e) => {
@@ -92,28 +285,27 @@ export default function Messages() {
   const handleMarkAsUnread = async (msgId, e) => {
     if (e) e.stopPropagation();
 
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msgId ? { ...m, is_read: false } : m))
-    );
-    setSelectedMessage((prev) =>
-      prev?.id === msgId ? { ...prev, is_read: false } : prev
-    );
+    updateLocalMessageState(msgId, { is_read: false });
     window.dispatchEvent(new Event("messagesUpdated"));
 
-    const { error } = await supabase
-      .from("admin_messages")
-      .update({ is_read: false })
-      .eq("id", msgId);
-
-    if (error) {
-      console.error("Error updating unread status in DB:", error.message);
+    try {
+      await upsertUserMessageStatus(msgId, {
+        is_read: false,
+        is_deleted: false,
+        read_at: null,
+      });
+    } catch (error) {
+      console.error("Error updating unread status:", error.message);
+      fetchUserMessages(currentUserId);
     }
   };
 
   const handleDeleteMessage = async (msgId, e) => {
     if (e) e.stopPropagation();
 
-    if (!confirm("Sigurado ka bang gusto mong burahin ang mensaheng ito?")) return;
+    if (!confirm("Sigurado ka bang gusto mong burahin ang mensaheng ito?")) {
+      return;
+    }
 
     const remaining = messages.filter((m) => m.id !== msgId);
     setMessages(remaining);
@@ -121,28 +313,30 @@ export default function Messages() {
     if (selectedMessage?.id === msgId) {
       const nextMsg = remaining.length > 0 ? remaining[0] : null;
       setSelectedMessage(nextMsg);
+
       if (!nextMsg) {
         setIsMobileDetailOpen(false);
-      } else if (!nextMsg.is_read) {
-        markAsReadInDBAndLocal(nextMsg.id);
       }
     }
+
     window.dispatchEvent(new Event("messagesUpdated"));
 
-    const { error } = await supabase
-      .from("admin_messages")
-      .delete()
-      .eq("id", msgId);
-
-    if (error) {
+    try {
+      // Soft-delete only this user's inbox state.
+      // The shared admin_messages row is never deleted here.
+      await upsertUserMessageStatus(msgId, {
+        is_deleted: true,
+      });
+    } catch (error) {
       alert("Bigo sa pagbura: " + error.message);
-      fetchUserMessages();
+      fetchUserMessages(currentUserId);
     }
   };
 
   const handleSelectMessage = (item) => {
     setSelectedMessage(item);
-    setIsMobileDetailOpen(true); // Opens message view on mobile
+    setIsMobileDetailOpen(true);
+
     if (!item.is_read) {
       markAsReadInDBAndLocal(item.id);
     }
@@ -382,22 +576,38 @@ export default function Messages() {
                       {renderFormattedContent(selectedMessage.content || selectedMessage.message)}
                     </div>
 
-                    {/* Attachment Display */}
+                    {/* Private Attachment Display */}
                     {selectedMessage.attachment_url && (
                       <div className="mt-4 rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-2">
-                        {selectedMessage.attachment_type === "image" ||
-                        selectedMessage.attachment_url.match(/\.(jpeg|jpg|gif|png|webp)/i) ? (
-                          <img
-                            src={selectedMessage.attachment_url}
-                            alt="Attachment"
-                            className="w-full max-h-[450px] object-contain rounded-lg"
-                          />
+                        {attachmentLoading ? (
+                          <div className="min-h-32 flex items-center justify-center gap-2 text-xs text-slate-400">
+                            <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-sky-400"></span>
+                            Loading secure attachment...
+                          </div>
+                        ) : attachmentError ? (
+                          <div className="p-4 text-xs text-rose-400 bg-rose-500/5 border border-rose-500/20 rounded-lg">
+                            Unable to load attachment: {attachmentError}
+                          </div>
+                        ) : attachmentPreviewUrl ? (
+                          selectedMessage.attachment_type === "image" ||
+                          selectedMessage.attachment_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                            <img
+                              src={attachmentPreviewUrl}
+                              alt="Attachment"
+                              className="w-full max-h-[450px] object-contain rounded-lg"
+                            />
+                          ) : (
+                            <video
+                              src={attachmentPreviewUrl}
+                              controls
+                              preload="metadata"
+                              className="w-full max-h-[450px] rounded-lg"
+                            />
+                          )
                         ) : (
-                          <video
-                            src={selectedMessage.attachment_url}
-                            controls
-                            className="w-full max-h-[450px] rounded-lg"
-                          />
+                          <div className="p-4 text-xs text-slate-500">
+                            No attachment preview is available.
+                          </div>
                         )}
                       </div>
                     )}

@@ -120,8 +120,8 @@ export default function BuyVip() {
       // Upload Receipt Image to Supabase Storage
       const rawExt = receiptFile.name.split(".").pop();
       const fileExt = rawExt ? rawExt.toLowerCase() : "jpg";
-      const fileName = `${user.id}_${Date.now()}.${fileExt}`;
-      const filePath = `payment_proofs/${fileName}`;
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `payment_proofs/${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("receipts")
@@ -132,12 +132,10 @@ export default function BuyVip() {
 
       if (uploadError) throw uploadError;
 
-      // Get Public URL
-      const { data: urlData } = supabase.storage
-        .from("receipts")
-        .getPublicUrl(filePath);
-
-      const receiptUrl = urlData?.publicUrl;
+      // The receipts bucket is private.
+      // Store only the Storage object path in the ticket.
+      // Authorized viewers should generate a short-lived signed URL when needed.
+      const receiptPath = filePath;
 
       // Extract metadata
       const userName = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.username || user.email?.split("@")[0] || "VIP Member";
@@ -153,10 +151,10 @@ export default function BuyVip() {
           name: userName,
           subject: "💳 VIP Payment Proof Verification",
           reference_number: refNumber.trim(),
-          receipt_url: receiptUrl,
-          attachment_url: receiptUrl,
-          proof_url: receiptUrl,
-          message: `VIP Access Purchase Proof:\n\n• Reference No: ${refNumber.trim()}\n• Receipt URL: ${receiptUrl}`,
+          receipt_url: receiptPath,
+          attachment_url: receiptPath,
+          proof_url: receiptPath,
+          message: `VIP Access Purchase Proof:\n\n• Reference No: ${refNumber.trim()}\n• Receipt: securely uploaded`,
           status: "open",
         },
       ]);

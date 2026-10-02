@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
-import EventPopup from "../../components/EventPopup";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -108,6 +107,10 @@ export default function Home() {
   // Ref para i-save ang eksaktong scroll position bago magbukas ng video
   const scrollPosRef = useRef(0);
 
+  // Immediate lock para hindi mag-double insert ang media_views kapag
+  // sunod-sunod ang onPlay events bago ma-update ang React state.
+  const viewRecordedRef = useRef(false);
+
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("cat") || "all";
@@ -153,7 +156,11 @@ export default function Home() {
   const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
   const roleUpper = (userProfile?.role || "").toUpperCase();
   const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
-  const isVIP = accountTypeUpper === "VIP" || roleUpper === "VIP";
+  const hasActiveVip =
+    accountTypeUpper === "VIP" &&
+    userProfile?.vip_until &&
+    new Date(userProfile.vip_until) > new Date();
+  const isVIP = Boolean(hasActiveVip);
   const isAdFree = isAdmin || isVIP;
 
   // Body scroll management
@@ -192,7 +199,7 @@ export default function Home() {
   useEffect(() => {
     fetchUserProfile();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         await loadProfileForUser(session.user);
       } else {
@@ -225,7 +232,6 @@ export default function Home() {
       setViewCounts((prev) => ({ ...initialViews, ...prev }));
 
       fetchReactionsData(uniqueIds, userProfile?.id);
-      fetchViewCountsData(uniqueIds);
     }
   }, [mediaList, mostWatched, userProfile]);
 
@@ -234,6 +240,7 @@ export default function Home() {
       fetchComments(selectedMedia.id);
       generateCaptcha();
       setHasRecordedCurrentView(false);
+      viewRecordedRef.current = false;
     }
   }, [selectedMedia]);
 
@@ -278,6 +285,7 @@ export default function Home() {
 
   const loadProfileForUser = async (user) => {
     if (!user?.id) return;
+
     try {
       let { data: profile, error } = await supabase
         .from("profiles")
@@ -285,26 +293,33 @@ export default function Home() {
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profile && !error) {
-        const { data: newProfile } = await supabase
+      if (error) throw error;
+
+      if (!profile) {
+        const { data: newProfile, error: createProfileError } = await supabase
           .from("profiles")
           .upsert([{ id: user.id, account_type: "standard" }])
           .select()
           .maybeSingle();
+
+        if (createProfileError) throw createProfileError;
         profile = newProfile;
       }
 
+      // profiles table ang source of truth para sa role/account_type.
+      // Huwag gumamit ng user_metadata bilang authorization fallback.
       const mergedProfile = {
         ...(profile || {}),
         id: user.id,
         email: user.email || profile?.email,
-        role: profile?.role || user.app_metadata?.role || user.user_metadata?.role || "user",
-        account_type: profile?.account_type || user.user_metadata?.account_type || "standard",
+        role: profile?.role || "user",
+        account_type: profile?.account_type || "standard",
       };
 
       setUserProfile(mergedProfile);
     } catch (err) {
       console.error("Profile load error:", err);
+      setUserProfile(null);
     }
   };
 
@@ -336,9 +351,8 @@ export default function Home() {
         .order("views_count", { ascending: false })
         .limit(6);
 
-      if (!error && data) {
-        setMostWatched(data);
-      }
+      if (error) throw error;
+      setMostWatched(data || []);
     } catch (err) {
       console.error("Fetch most watched error:", err);
     } finally {
@@ -357,46 +371,17 @@ export default function Home() {
       query = query.or("category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%");
     }
 
-    const { data, count, error } = await query.order("created_at", { ascending: false }).range(from, to);
+    try {
+      const { data, count, error } = await query.order("created_at", { ascending: false }).range(from, to);
 
-    if (!error) {
+      if (error) throw error;
+
       setMediaList(data || []);
       if (count !== null) setTotalCount(count);
-    }
-    setLoading(false);
-  };
-
-  const fetchViewCountsData = async (mediaIds) => {
-    if (!mediaIds.length) return;
-    try {
-      const { data, error } = await supabase
-        .from("media_views")
-        .select("media_id")
-        .in("media_id", mediaIds);
-
-      const counts = {};
-      mediaIds.forEach((id) => (counts[id] = 0));
-
-      if (!error && data) {
-        data.forEach((item) => {
-          if (counts[item.media_id] !== undefined) {
-            counts[item.media_id] += 1;
-          }
-        });
-      }
-
-      setViewCounts((prev) => {
-        const merged = { ...prev };
-        mediaIds.forEach((id) => {
-          const tableCount = counts[id] || 0;
-          const mediaObj = [...mediaList, ...mostWatched].find((m) => m.id === id);
-          const mediaDbCount = mediaObj?.views_count ?? mediaObj?.views ?? 0;
-          merged[id] = Math.max(merged[id] || 0, tableCount, mediaDbCount);
-        });
-        return merged;
-      });
     } catch (err) {
-      console.error("View count fetch error:", err);
+      console.error("Fetch media error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -425,10 +410,12 @@ export default function Home() {
 
         let profilesMap = {};
         if (userIds.length > 0) {
-          const { data: profilesData } = await supabase
+          const { data: profilesData, error: profilesErr } = await supabase
             .from("profiles")
             .select("id, full_name, email, account_type")
             .in("id", userIds);
+
+          if (profilesErr) throw profilesErr;
 
           if (profilesData) {
             profilesData.forEach((p) => {
@@ -448,38 +435,63 @@ export default function Home() {
         setViewersList([]);
       }
     } catch (err) {
-      console.error("Viewers log fetch error:", err.message);
+      console.error("Viewers log fetch error:", err.message || err);
+      setViewersList([]);
     } finally {
       setViewersLoading(false);
     }
   };
 
   const handleVideoPlay = async () => {
-    if (!selectedMedia?.id || hasRecordedCurrentView) return;
+    if (
+      !selectedMedia?.id ||
+      hasRecordedCurrentView ||
+      viewRecordedRef.current ||
+      !userProfile?.id
+    ) {
+      return;
+    }
 
+    // Immediate lock bago pa mag-render ang React state update.
+    viewRecordedRef.current = true;
     setHasRecordedCurrentView(true);
-    const mediaId = selectedMedia.id;
-    const currentVal = viewCounts[mediaId] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0;
-    const newCount = currentVal + 1;
 
+    const mediaId = selectedMedia.id;
+    const currentVal =
+      viewCounts[mediaId] ??
+      selectedMedia.views_count ??
+      selectedMedia.views ??
+      0;
+
+    // Optimistic UI update lang.
     setViewCounts((prev) => ({
       ...prev,
-      [mediaId]: newCount,
+      [mediaId]: currentVal + 1,
     }));
 
     try {
-      await supabase.from("media_views").insert([
-        { media_id: mediaId, user_id: userProfile?.id || null }
-      ]);
+      const { error } = await supabase
+        .from("media_views")
+        .insert({
+          media_id: mediaId,
+          user_id: userProfile.id,
+        });
 
-      await supabase
-        .from("media")
-        .update({ views_count: newCount, views: newCount })
-        .eq("id", mediaId);
+      if (error) throw error;
 
-      await supabase.rpc("increment_video_views", { p_media_id: mediaId });
+      // HUWAG tumawag ng increment_video_views() dito.
+      // Ang INSERT sa media_views ay magti-trigger ng sync_media_views_count(),
+      // kaya iyon na ang single source of truth ng media.views/views_count.
     } catch (err) {
       console.error("Record view error:", err);
+
+      viewRecordedRef.current = false;
+      setHasRecordedCurrentView(false);
+
+      setViewCounts((prev) => ({
+        ...prev,
+        [mediaId]: currentVal,
+      }));
     }
   };
 
@@ -492,27 +504,27 @@ export default function Home() {
         .select("media_id, reaction_type, user_id")
         .in("media_id", mediaIds);
 
-      if (!error && reactions) {
-        const counts = {};
-        const userMap = {};
+      if (error) throw error;
 
-        mediaIds.forEach((id) => {
-          counts[id] = { likes: 0, dislikes: 0 };
-        });
+      const counts = {};
+      const userMap = {};
 
-        reactions.forEach((r) => {
-          if (counts[r.media_id]) {
-            if (r.reaction_type === "like") counts[r.media_id].likes += 1;
-            if (r.reaction_type === "dislike") counts[r.media_id].dislikes += 1;
-          }
-          if (userId && r.user_id === userId) {
-            userMap[r.media_id] = r.reaction_type;
-          }
-        });
+      mediaIds.forEach((id) => {
+        counts[id] = { likes: 0, dislikes: 0 };
+      });
 
-        setReactionCounts((prev) => ({ ...prev, ...counts }));
-        setUserReactions((prev) => ({ ...prev, ...userMap }));
-      }
+      (reactions || []).forEach((r) => {
+        if (counts[r.media_id]) {
+          if (r.reaction_type === "like") counts[r.media_id].likes += 1;
+          if (r.reaction_type === "dislike") counts[r.media_id].dislikes += 1;
+        }
+        if (userId && r.user_id === userId) {
+          userMap[r.media_id] = r.reaction_type;
+        }
+      });
+
+      setReactionCounts((prev) => ({ ...prev, ...counts }));
+      setUserReactions((prev) => ({ ...prev, ...userMap }));
     } catch (err) {
       console.error("Error loading reactions:", err);
     }
@@ -526,11 +538,11 @@ export default function Home() {
         .eq("media_id", mediaId)
         .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        setComments(data);
-      }
+      if (error) throw error;
+      setComments(data || []);
     } catch (err) {
       console.error("Fetch comments error:", err);
+      setComments([]);
     }
   };
 
@@ -572,22 +584,21 @@ export default function Home() {
         ])
         .select();
 
-      if (error) {
-        alert("Bumagsak ang pag-post ng comment: " + error.message);
+      if (error) throw error;
+
+      setNewComment("");
+      generateCaptcha();
+      if (data && data.length > 0) {
+        setComments((prev) => [data[0], ...prev]);
       } else {
-        setNewComment("");
-        generateCaptcha();
-        if (data && data.length > 0) {
-          setComments((prev) => [data[0], ...prev]);
-        } else {
-          fetchComments(selectedMedia.id);
-        }
+        fetchComments(selectedMedia.id);
       }
     } catch (err) {
       console.error("Comment submit error:", err);
+      alert("Bumagsak ang pag-post ng comment: " + (err?.message || "Unknown error"));
+    } finally {
+      setCommentLoading(false);
     }
-
-    setCommentLoading(false);
   };
 
   const handleReaction = async (e, mediaId, targetReaction) => {
@@ -609,6 +620,8 @@ export default function Home() {
     } else {
       newReaction = targetReaction;
     }
+
+    const oldCounts = reactionCounts[mediaId] || { likes: 0, dislikes: 0 };
 
     setUserReactions((prev) => {
       const updated = { ...prev };
@@ -639,13 +652,15 @@ export default function Home() {
 
     try {
       if (newReaction === null) {
-        await supabase
+        const { error } = await supabase
           .from("media_reactions")
           .delete()
           .eq("user_id", userProfile.id)
           .eq("media_id", mediaId);
+
+        if (error) throw error;
       } else {
-        await supabase.from("media_reactions").upsert(
+        const { error } = await supabase.from("media_reactions").upsert(
           {
             user_id: userProfile.id,
             media_id: mediaId,
@@ -654,9 +669,27 @@ export default function Home() {
           },
           { onConflict: "user_id,media_id" }
         );
+
+        if (error) throw error;
       }
     } catch (err) {
       console.error("Reaction save error:", err);
+
+      // Roll back optimistic state kapag nag-fail ang DB operation.
+      setReactionCounts((prev) => ({
+        ...prev,
+        [mediaId]: oldCounts,
+      }));
+
+      setUserReactions((prev) => {
+        const restored = { ...prev };
+        if (currentReaction) {
+          restored[mediaId] = currentReaction;
+        } else {
+          delete restored[mediaId];
+        }
+        return restored;
+      });
     }
   };
 
@@ -665,11 +698,11 @@ export default function Home() {
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
-      
+
       const url = new URL(window.location.href);
       url.searchParams.set("page", newPage);
       window.history.replaceState({}, "", url);
-      
+
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -685,6 +718,15 @@ export default function Home() {
   };
 
   const handleUpdateCategory = async (videoId, newCategory) => {
+    // UI guard lang; RLS pa rin ang tunay na security boundary.
+    if (!isAdmin || !videoId) return;
+
+    const allowedCategories = ["general", "pinay_asian"];
+    if (!allowedCategories.includes(newCategory)) {
+      alert("Invalid category.");
+      return;
+    }
+
     const { error } = await supabase
       .from("media")
       .update({ category: newCategory })
@@ -719,9 +761,11 @@ export default function Home() {
       e.preventDefault();
       e.stopPropagation();
     }
-    
+
     const targetY = scrollPosRef.current;
     setSelectedMedia(null);
+    setHasRecordedCurrentView(false);
+    viewRecordedRef.current = false;
 
     const url = new URL(window.location.href);
     url.searchParams.delete("v");
@@ -738,43 +782,44 @@ export default function Home() {
     if (!accessCodeInput.trim() || !userProfile) return;
 
     setRedeemLoading(true);
-    const codeUpper = accessCodeInput.trim().toUpperCase();
 
-    const { data: codeData, error: codeErr } = await supabase
-      .from("access_codes")
-      .select("*")
-      .eq("code", codeUpper)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase.rpc("redeem_access_code", {
+        p_code: accessCodeInput.trim().toUpperCase(),
+      });
 
-    if (codeErr || !codeData || codeData.is_used) {
-      alert(codeData?.is_used ? "This access code has already been used!" : "Invalid Access Code!");
-      setRedeemLoading(false);
-      return;
-    }
+      if (error) throw error;
 
-    const { error: markUsedErr } = await supabase
-      .from("access_codes")
-      .update({ is_used: true, used_by: userProfile.id, used_at: new Date().toISOString() })
-      .eq("id", codeData.id);
+      if (!data?.success) {
+        alert(data?.message || "Unable to redeem this access code.");
+        return;
+      }
 
-    if (!markUsedErr) {
-      const isVipCode = codeData.type === "VIP" || codeUpper.startsWith("VIP");
-      const newType = isVipCode ? "vip" : "standard";
+      setUserProfile((prev) => ({
+        ...prev,
+        account_type: data.account_type || "VIP",
+        vip_until: data.expires_at || prev?.vip_until || null,
+        is_activated: true,
+      }));
 
-      await supabase.from("profiles").update({ account_type: newType }).eq("id", userProfile.id);
-
-      setUserProfile((prev) => ({ ...prev, account_type: newType }));
       setAccessCodeInput("");
       setShowRedeemModal(false);
-      alert(isVipCode ? "👑 VIP ACCESS Unlocked!" : "🎉 Standard Code Redeemed!");
+
+      const expiryText = data.expires_at
+        ? new Date(data.expires_at).toLocaleDateString("en-US")
+        : "N/A";
+
+      alert(`👑 VIP ACCESS Unlocked! Valid until ${expiryText}.`);
+    } catch (err) {
+      console.error("Redeem access code error:", err);
+      alert("Failed to redeem access code: " + (err?.message || "Unknown error"));
+    } finally {
+      setRedeemLoading(false);
     }
-    setRedeemLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
-      <EventPopup />
-
       <div className="max-w-7xl mx-auto">
         {!isAdFree && <TopNativeBanner />}
 
@@ -1040,7 +1085,7 @@ export default function Home() {
                 </div>
 
                 {isAdmin && (
-                  <div 
+                  <div
                     className="p-3 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -1065,9 +1110,9 @@ export default function Home() {
         {/* PAGINATION */}
         {totalPages > 1 && (
           <div className="flex flex-wrap justify-center items-center gap-3 mt-10 mb-6">
-            <button 
-              onClick={() => handlePageChange(currentPage - 1)} 
-              disabled={currentPage === 1 || loading} 
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1 || loading}
               className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer transition-all"
             >
               ← Previous
@@ -1089,9 +1134,9 @@ export default function Home() {
               <span className="text-xs text-slate-400 font-semibold">of <strong className="text-white">{totalPages}</strong></span>
             </div>
 
-            <button 
-              onClick={() => handlePageChange(currentPage + 1)} 
-              disabled={currentPage === totalPages || loading} 
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages || loading}
               className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer transition-all"
             >
               Next →
@@ -1104,7 +1149,7 @@ export default function Home() {
       {selectedMedia && (
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-2 md:p-6" onClick={handleCloseMedia}>
           <div className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
-            
+
             <div className="p-4 md:px-6 md:py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900 shrink-0">
               <div className="flex flex-col pr-4">
                 <span className="text-[10px] md:text-xs font-black text-red-500 uppercase tracking-widest">Video Vault</span>
@@ -1114,26 +1159,27 @@ export default function Home() {
             </div>
 
             <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
-              
+
               <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px]">
                 <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
-                  <VIPVideoPlayer 
+                  <VIPVideoPlayer
                     key={selectedMedia.id}
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
-                    mainVideoUrl={getCdnUrl(selectedMedia.media_url)} 
-                    isAdFree={isAdFree} 
-                    accountType={userProfile?.account_type} 
-                    userProfile={userProfile} 
+                    mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
+                    isAdFree={isAdFree}
+                    accountType={userProfile?.account_type}
+                    vipUntil={userProfile?.vip_until}
+                    userProfile={userProfile}
                     onPlay={handleVideoPlay}
                     onDurationUpdate={handleDurationUpdate}
                   />
                 </div>
               </div>
-              
+
               <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span 
+                  <span
                     onClick={(e) => isAdmin && handleOpenViewers(e, selectedMedia)}
                     className={`text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${isAdmin ? 'hover:text-red-400 hover:border-red-500/50 cursor-pointer' : ''}`}
                     title={isAdmin ? "Click to view user watch logs (Admin)" : ""}

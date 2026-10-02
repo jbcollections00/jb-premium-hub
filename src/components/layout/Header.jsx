@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
-const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
-
 // 🎨 Modernized Vector SVG Icons
 const IconMessage = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -40,27 +38,66 @@ export default function Header() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchMessageCount();
+    let adminMessagesChannel = null;
+    let userStatusChannel = null;
+    let isMounted = true;
 
     const handleUpdate = () => {
       fetchMessageCount();
     };
+
     window.addEventListener("messagesUpdated", handleUpdate);
 
-    const channel = supabase
-      .channel("header_unread_messages")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "admin_messages" },
-        () => {
-          fetchMessageCount();
-        }
-      )
-      .subscribe();
+    const setupRealtime = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!isMounted) return;
+
+      await fetchMessageCount();
+
+      adminMessagesChannel = supabase
+        .channel("header_admin_messages")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "admin_messages" },
+          () => {
+            fetchMessageCount();
+          }
+        )
+        .subscribe();
+
+      if (session?.user?.id) {
+        userStatusChannel = supabase
+          .channel(`header_user_message_status_${session.user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "user_message_status",
+              filter: `user_id=eq.${session.user.id}`,
+            },
+            () => {
+              fetchMessageCount();
+            }
+          )
+          .subscribe();
+      }
+    };
+
+    setupRealtime();
 
     return () => {
+      isMounted = false;
       window.removeEventListener("messagesUpdated", handleUpdate);
-      supabase.removeChannel(channel);
+
+      if (adminMessagesChannel) {
+        supabase.removeChannel(adminMessagesChannel);
+      }
+
+      if (userStatusChannel) {
+        supabase.removeChannel(userStatusChannel);
+      }
     };
   }, []);
 
@@ -73,39 +110,71 @@ export default function Header() {
         return;
       }
 
+      const userId = session.user.id;
       const email = session.user.email || "";
+
       if (email) {
         setUserInitial(email.charAt(0).toUpperCase());
       }
 
-      const { count, error } = await supabase
+      const { data: visibleMessages, error: messagesError } = await supabase
         .from("admin_messages")
-        .select("*", { count: "exact", head: true })
-        .or(`user_id.eq.${session.user.id},and(send_to_all.eq.true,user_id.is.null)`)
-        .or("is_read.eq.false,is_read.is.null");
+        .select("id")
+        .or(`user_id.eq.${userId},and(send_to_all.eq.true,user_id.is.null)`);
 
-      if (!error && count !== null) {
-        setMessageCount(count);
+      if (messagesError) {
+        throw messagesError;
       }
+
+      const messageIds = (visibleMessages || []).map((message) => message.id);
+
+      if (messageIds.length === 0) {
+        setMessageCount(0);
+        return;
+      }
+
+      const { data: statuses, error: statusError } = await supabase
+        .from("user_message_status")
+        .select("message_id, is_read, is_deleted")
+        .eq("user_id", userId)
+        .in("message_id", messageIds);
+
+      if (statusError) {
+        throw statusError;
+      }
+
+      const statusMap = new Map(
+        (statuses || []).map((status) => [status.message_id, status])
+      );
+
+      const unreadCount = messageIds.reduce((count, messageId) => {
+        const status = statusMap.get(messageId);
+
+        if (status?.is_deleted) {
+          return count;
+        }
+
+        if (!status || !status.is_read) {
+          return count + 1;
+        }
+
+        return count;
+      }, 0);
+
+      setMessageCount(unreadCount);
     } catch (err) {
       console.error("Error fetching message count:", err);
+      setMessageCount(0);
     }
+  };
+
+  const handleNavigation = (targetPath) => {
+    navigate(targetPath);
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/');
-  };
-
-  // 🚀 Function para sa Popunder at pagbukas ng Profile/Messages sa bagong tab
-  const handleTabFlipNav = (targetPath, e) => {
-    if (e) e.preventDefault();
-
-    // 1. Bubuksan ang totoong destinasyon sa bagong tab
-    window.open(window.location.origin + targetPath, "_blank");
-
-    // 2. Ire-redirect ang dating tab papunta sa Popunder Ad
-    window.location.href = POPUNDER_AD_URL;
   };
 
   return (
@@ -312,10 +381,13 @@ export default function Header() {
 
       {/* 2️⃣ User Controls */}
       <div className="nav-controls">
-        {/* 👤 Profile Link (Popunder Trigger) */}
-        <a 
-          href="/profile" 
-          onClick={(e) => handleTabFlipNav('/profile', e)} 
+        {/* 👤 Profile Link */}
+        <Link 
+          to="/profile"
+          onClick={(e) => {
+            e.preventDefault();
+            handleNavigation('/profile');
+          }}
           className="nav-item-btn" 
           title="Profile"
         >
@@ -323,12 +395,15 @@ export default function Header() {
             {userInitial}
           </div>
           <span className="hide-on-mobile">Profile</span>
-        </a>
+        </Link>
 
-        {/* 💬 Messages Link (Popunder Trigger) */}
-        <a 
-          href="/messages" 
-          onClick={(e) => handleTabFlipNav('/messages', e)} 
+        {/* 💬 Messages Link */}
+        <Link 
+          to="/messages"
+          onClick={(e) => {
+            e.preventDefault();
+            handleNavigation('/messages');
+          }}
           className="nav-item-btn" 
           title="Messages"
         >
@@ -342,7 +417,7 @@ export default function Header() {
             )}
           </div>
           <span className="hide-on-mobile">Messages</span>
-        </a>
+        </Link>
 
         {/* 🚪 Logout Button */}
         <button onClick={handleLogout} className="btn-logout" title="Logout">

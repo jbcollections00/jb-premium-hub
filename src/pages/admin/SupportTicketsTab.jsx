@@ -15,6 +15,10 @@ export default function SupportTicketsTab({ supabase }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
 
+  // Private receipt preview state
+  const [proofImageUrl, setProofImageUrl] = useState(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -47,6 +51,10 @@ export default function SupportTicketsTab({ supabase }) {
       fetchMessages(selectedTicket.id);
     }
   }, [selectedTicket]);
+
+  useEffect(() => {
+    loadReceiptPreview(selectedTicket);
+  }, [selectedTicket, supabase]);
 
   const fetchTickets = async () => {
     if (!supabase) {
@@ -207,7 +215,7 @@ export default function SupportTicketsTab({ supabase }) {
     });
   }, [tickets, searchQuery, statusFilter]);
 
-  // Helper Function: Kumuha ng URL sa loob ng text (Regular expression)
+  // Legacy helper: older tickets may still contain a direct URL in the message.
   const extractUrlFromText = (text) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+(?:\.jpg|\.jpeg|\.png|\.webp|\/storage\/v1\/object\/public\/[^\s]+))/i;
@@ -215,13 +223,49 @@ export default function SupportTicketsTab({ supabase }) {
     return match ? match[0] : null;
   };
 
-  // Hanapin ang image URL sa receipt_url, attachment_url, o sa loob mismo ng message string
-  const proofImageUrl = useMemo(() => {
-    if (!selectedTicket) return null;
-    if (selectedTicket.receipt_url) return selectedTicket.receipt_url;
-    if (selectedTicket.attachment_url) return selectedTicket.attachment_url;
-    return extractUrlFromText(selectedTicket.message);
-  }, [selectedTicket]);
+  // Receipts are now stored in a private Storage bucket.
+  // New tickets store the private object path, not a public URL.
+  const loadReceiptPreview = async (ticket) => {
+    setProofImageUrl(null);
+
+    if (!ticket || !supabase) return;
+
+    const storedValue =
+      ticket.receipt_url ||
+      ticket.attachment_url ||
+      ticket.proof_url ||
+      null;
+
+    // Support old tickets that may still contain a direct public URL.
+    if (!storedValue) {
+      const legacyUrl = extractUrlFromText(ticket.message);
+      setProofImageUrl(legacyUrl);
+      return;
+    }
+
+    if (/^https?:\/\//i.test(storedValue)) {
+      setProofImageUrl(storedValue);
+      return;
+    }
+
+    try {
+      setReceiptLoading(true);
+
+      const { data, error: signedUrlError } = await supabase.storage
+        .from('receipts')
+        .createSignedUrl(storedValue, 600);
+
+      if (signedUrlError) throw signedUrlError;
+
+      setProofImageUrl(data?.signedUrl || null);
+    } catch (err) {
+      console.error('Failed to create signed receipt URL:', err);
+      setError(err.message || 'Failed to load the private receipt image.');
+      setProofImageUrl(null);
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] bg-slate-950 text-slate-100 rounded-xl border border-slate-800 overflow-hidden">
@@ -374,8 +418,13 @@ export default function SupportTicketsTab({ supabase }) {
                   </div>
                 )}
 
-                {/* 2. AUTOMATIC IMAGE PREVIEW CARD */}
-                {proofImageUrl ? (
+                {/* 2. PRIVATE RECEIPT IMAGE PREVIEW */}
+                {receiptLoading ? (
+                  <div className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
+                    Loading secure receipt preview...
+                  </div>
+                ) : proofImageUrl ? (
                   <div className="p-4 bg-slate-900/90 border border-amber-500/30 rounded-xl space-y-3">
                     <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                       <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">

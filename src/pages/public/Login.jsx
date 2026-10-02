@@ -1,101 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
-
-const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  
+
   const [loading, setLoading] = useState(false);
-  const [guestLoading, setGuestLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
-  // Ad Tracker States
-  const [hasTriggeredLoginAd, setHasTriggeredLoginAd] = useState(false);
-  const [hasTriggeredGuestAd, setHasTriggeredGuestAd] = useState(false);
-
   const navigate = useNavigate();
 
-  // Dynamic Injection ng Adsterra Popunder Script
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
-
-  // Handle standard user login
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    // 1st Click: Trigger Popunder Ad
-    if (!hasTriggeredLoginAd) {
-      window.open(POPUNDER_AD_URL, "_blank");
-      setHasTriggeredLoginAd(true);
-      return;
-    }
-
-    // 2nd Click: Perform Login
     setLoading(true);
     setMsg({ type: '', text: '' });
 
     const trimmedEmail = email.trim().toLowerCase();
-    const trimmedPassword = password.trim();
+    const loginPassword = password;
 
     const { error } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
-      password: trimmedPassword,
+      password: loginPassword,
     });
 
     if (error) {
       setLoading(false);
+
       if (error.message.toLowerCase().includes('email not confirmed')) {
         setMsg({
           type: 'unconfirmed',
           text: 'Email not confirmed yet. Please check your Inbox and Spam folder for the verification link.',
         });
       } else {
-        setMsg({ type: 'error', text: error.message });
+        setMsg({
+          type: 'error',
+          text: error.message,
+        });
       }
-    } else {
-      setLoading(false);
-      navigate('/home');
-    }
-  };
 
-  // Handle guest login (Anonymous Authentication)
-  const handleGuestLogin = async () => {
-    // 1st Click: Trigger Popunder Ad
-    if (!hasTriggeredGuestAd) {
-      window.open(POPUNDER_AD_URL, "_blank");
-      setHasTriggeredGuestAd(true);
       return;
     }
 
-    // 2nd Click: Perform Guest Login
-    setGuestLoading(true);
-    setMsg({ type: '', text: '' });
-
-    const { error } = await supabase.auth.signInAnonymously();
-
-    if (error) {
-      setGuestLoading(false);
-      setMsg({ 
-        type: 'error', 
-        text: `Guest Access Error: ${error.message}. (Ensure Anonymous provider is enabled in Supabase)` 
-      });
-    } else {
-      setGuestLoading(false);
-      navigate('/home');
-    }
+    setLoading(false);
+    navigate('/home');
   };
 
   const handleResendConfirmation = async () => {
@@ -152,19 +103,16 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
       <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-md w-full shadow-2xl space-y-6">
-        
-        {/* Logo & Header Section */}
         <div className="text-center">
-          <img 
-            src="/jb-logo.png" 
-            alt="JB Logo" 
+          <img
+            src="/jb-logo.png"
+            alt="JB Logo"
             className="w-16 h-16 mx-auto mb-3 object-contain drop-shadow-md"
           />
           <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
           <p className="text-slate-400 text-xs mt-1">Log in to access your VIP status and vault</p>
         </div>
 
-        {/* Dynamic Alert Banner */}
         {msg.text && (
           <div
             className={`text-xs p-3.5 rounded-xl text-center font-medium leading-relaxed ${
@@ -192,12 +140,12 @@ export default function Login() {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="text-slate-400 text-xs block mb-1">Email Address</label>
-            <input 
-              type="email" 
-              required 
+            <input
+              type="email"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="user@example.com" 
+              placeholder="user@example.com"
               className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -214,12 +162,12 @@ export default function Login() {
               </button>
             </div>
             <div className="relative">
-              <input 
-                type={showPassword ? 'text' : 'password'} 
-                required 
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••" 
+                placeholder="••••••••"
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 pr-10"
               />
               <button
@@ -232,31 +180,14 @@ export default function Login() {
             </div>
           </div>
 
-          <button 
+          <button
             type="submit"
-            disabled={loading || guestLoading || !email || !password}
+            disabled={loading || !email || !password}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
           >
             {loading ? 'Logging In...' : 'Log In'}
           </button>
         </form>
-
-        <div className="relative flex items-center justify-center my-2">
-          <div className="border-t border-slate-800 w-full"></div>
-          <span className="bg-slate-900 px-3 text-[10px] text-slate-500 uppercase font-semibold absolute">
-            Or
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleGuestLogin}
-          disabled={loading || guestLoading}
-          className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
-        >
-          <span>👤</span>
-          {guestLoading ? 'Entering as Guest...' : 'Continue as Guest'}
-        </button>
 
         <div className="text-center text-xs text-slate-400">
           Don't have an account?{' '}
