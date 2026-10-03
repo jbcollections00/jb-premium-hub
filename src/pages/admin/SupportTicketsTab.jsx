@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, AlertCircle, Send, RefreshCw, User, 
-  ShieldAlert, ExternalLink, Image as ImageIcon, Zap, Trash2, FileText
+  ShieldAlert, ExternalLink, Image as ImageIcon, Zap, Trash2, FileText, ArrowLeft
 } from 'lucide-react';
 
 export default function SupportTicketsTab({ supabase }) {
@@ -73,9 +73,6 @@ export default function SupportTicketsTab({ supabase }) {
 
       if (fetchError) throw fetchError;
       setTickets(data || []);
-      if (data && data.length > 0 && !selectedTicket) {
-        setSelectedTicket(data[0]);
-      }
     } catch (err) {
       setError(err.message || 'Failed to fetch support tickets.');
     } finally {
@@ -196,14 +193,23 @@ export default function SupportTicketsTab({ supabase }) {
       setTickets(updatedTickets);
 
       if (selectedTicket?.id === ticketId) {
-        setSelectedTicket(updatedTickets.length > 0 ? updatedTickets[0] : null);
+        setSelectedTicket(null);
         setMessages([]);
+        setReplyText('');
       }
     } catch (err) {
       setError(err.message || 'Failed to delete ticket.');
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleBackToTickets = () => {
+    setSelectedTicket(null);
+    setMessages([]);
+    setReplyText('');
+    setProofImageUrl(null);
+    setError(null);
   };
 
   const filteredTickets = useMemo(() => {
@@ -268,280 +274,414 @@ export default function SupportTicketsTab({ supabase }) {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] bg-slate-950 text-slate-100 rounded-xl border border-slate-800 overflow-hidden">
-      {/* Top Search & Filter Bar */}
-      <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search user email or name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-700"
-            />
-          </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none"
-          >
-            <option value="all">All Statuses</option>
-            <option value="open">Open</option>
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-            <option value="closed">Closed</option>
-          </select>
-        </div>
+    <div className="flex flex-col min-h-[calc(100vh-120px)] bg-slate-950 text-slate-100 rounded-xl border border-slate-800 overflow-hidden">
 
-        <button
-          onClick={fetchTickets}
-          className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
-          title="Refresh List"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
-
-      {/* Error Banner */}
-      {error && (
-        <div className="mx-4 mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-between text-sm shrink-0">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button onClick={() => setError(null)} className="text-red-400 font-bold hover:text-red-300">
-            ×
-          </button>
-        </div>
-      )}
-
-      {/* Main Container */}
-      <div className="flex flex-1 overflow-hidden">
-        
-        {/* Left Sidebar */}
-        <div className="w-1/3 min-w-[220px] max-w-[320px] border-r border-slate-800 overflow-y-auto divide-y divide-slate-800/40 bg-slate-950">
-          {loading ? (
-            <div className="p-6 text-center text-slate-500 text-xs">Loading users...</div>
-          ) : filteredTickets.length === 0 ? (
-            <div className="p-6 text-center text-slate-500 text-xs">No users found.</div>
-          ) : (
-            filteredTickets.map((ticket) => {
-              const displayName = ticket.email || ticket.name || ticket.user_email || `User #${ticket.id}`;
-              const isSelected = selectedTicket?.id === ticket.id;
-
-              return (
-                <div
-                  key={ticket.id}
-                  onClick={() => setSelectedTicket(ticket)}
-                  className={`p-3.5 cursor-pointer transition-all duration-150 hover:bg-slate-900/70 flex items-center gap-2.5 ${
-                    isSelected ? 'bg-slate-900 border-l-4 border-indigo-500 text-white font-semibold' : 'text-slate-300'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-slate-400 text-xs">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-xs truncate font-medium">{displayName}</span>
-                    <span className="text-[10px] text-slate-500 truncate">{ticket.subject}</span>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Right Conversation & Details View */}
-        <div className="flex-1 flex flex-col bg-slate-950">
-          {selectedTicket ? (
-            <>
-              {/* Header */}
-              <div className="p-4 border-b border-slate-800 bg-slate-900/30 flex items-center justify-between shrink-0">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-slate-100">
-                      {selectedTicket.subject || 'VIP Payment Proof Verification'}
-                    </h3>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">
-                    User: <span className="text-indigo-400 font-medium">{selectedTicket.email || selectedTicket.name || 'Anonymous'}</span> 
-                    <span className="mx-2">•</span> 
-                    Submitted: {new Date(selectedTicket.created_at).toLocaleString()}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedTicket.status || 'pending'}
-                    onChange={(e) => handleUpdateStatus(selectedTicket.id, e.target.value)}
-                    className="bg-slate-900 border border-slate-700 text-xs rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none cursor-pointer"
-                  >
-                    <option value="pending">Mark Pending</option>
-                    <option value="open">Mark Open</option>
-                    <option value="in_progress">Mark In Progress</option>
-                    <option value="resolved">Mark Resolved</option>
-                    <option value="closed">Mark Closed</option>
-                  </select>
-
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    onClick={() => handleDeleteTicket(selectedTicket.id)}
-                    className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:border-rose-500/50 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                    title="Delete Ticket"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                    <span>{deleting ? 'Deleting...' : 'Delete'}</span>
-                  </button>
-                </div>
+      {!selectedTicket ? (
+        <>
+          {/* =========================
+              TICKET LIST VIEW
+             ========================= */}
+          <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white">Support Tickets</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Select a ticket to open the full conversation.
+                </p>
               </div>
 
-              {/* Body Content */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-4">
-                
-                {/* 1. TEXT DETAILS (REFERENCE NUMBER) */}
-                {selectedTicket.message && (
-                  <div className="p-4 bg-slate-900/90 border border-indigo-500/30 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <span className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5">
-                        <FileText className="w-4 h-4" /> Submitted Reference Details
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {new Date(selectedTicket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
-                      {selectedTicket.message}
-                    </div>
-                  </div>
-                )}
+              <button
+                onClick={fetchTickets}
+                className="self-start lg:self-auto px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors flex items-center gap-2 text-xs font-semibold"
+                title="Refresh List"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
 
-                {/* 2. PRIVATE RECEIPT IMAGE PREVIEW */}
-                {receiptLoading ? (
-                  <div className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
-                    Loading secure receipt preview...
-                  </div>
-                ) : proofImageUrl ? (
-                  <div className="p-4 bg-slate-900/90 border border-amber-500/30 rounded-xl space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
-                        <ImageIcon className="w-4 h-4" /> Uploaded Payment Receipt Screenshot
-                      </span>
-                      <a 
-                        href={proofImageUrl} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
-                      >
-                        Open Original Image <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    {/* ANG LARAWAN MISMO */}
-                    <div className="mt-2 rounded-lg overflow-hidden border border-slate-800 bg-black/60 p-2 flex justify-center">
-                      <img 
-                        src={proofImageUrl} 
-                        alt="Payment Proof Receipt" 
-                        className="max-h-96 w-auto object-contain rounded-md hover:scale-[1.01] transition-transform" 
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-slate-500" /> Walang nakitang resibo o larawan sa ticket na ito.
-                  </div>
-                )}
-
-                {/* 3. CONVERSATION / REPLIES */}
-                {messagesLoading ? (
-                  <div className="p-8 text-center text-slate-500 text-sm">Loading ticket conversation...</div>
-                ) : messages.length === 0 ? (
-                  <div className="p-4 text-center text-slate-500 text-xs italic">
-                    No admin replies sent yet. Send a reply below.
-                  </div>
-                ) : (
-                  messages.map((msg) => {
-                    const isAdmin = msg.sender_type === 'admin';
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`flex flex-col max-w-[85%] ${isAdmin ? 'ml-auto items-end' : 'mr-auto items-start'}`}
-                      >
-                        <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-400">
-                          {isAdmin ? <ShieldAlert className="w-3 h-3 text-indigo-400" /> : <User className="w-3 h-3 text-slate-400" />}
-                          <span className="font-medium text-slate-300">{isAdmin ? 'Support Admin' : (selectedTicket.email || 'User')}</span>
-                          <span>•</span>
-                          <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        <div
-                          className={`p-3.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${
-                            isAdmin
-                              ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
-                              : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
-                          }`}
-                        >
-                          {msg.message}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search user email or name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-slate-700"
+                />
               </div>
 
-              {/* Reply Box */}
-              <form onSubmit={handleSendReply} className="p-4 border-t border-slate-800 bg-slate-900/30 shrink-0 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                    <Zap className="w-3.5 h-3.5 text-amber-400" /> Quick Reply:
-                  </span>
-                  <select
-                    onChange={(e) => {
-                      const template = QUICK_TEMPLATES.find(t => t.id === e.target.value);
-                      if (template) {
-                        setReplyText(template.text);
-                      }
-                      e.target.value = '';
-                    }}
-                    className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-indigo-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="">Select an automated response template...</option>
-                    {QUICK_TEMPLATES.map((tmpl) => (
-                      <option key={tmpl.id} value={tmpl.id}>
-                        {tmpl.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-slate-300 focus:outline-none sm:w-48"
+              >
+                <option value="all">All Statuses</option>
+                <option value="open">Open</option>
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+          </div>
 
-                <div className="flex gap-2">
-                  <textarea
-                    rows={3}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Type official support response or choose a Quick Reply above..."
-                    className="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={submitting || !replyText.trim()}
-                    className="px-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold text-sm rounded-lg flex items-center justify-center gap-2 transition-colors shrink-0 cursor-pointer"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>Send</span>
-                  </button>
-                </div>
-              </form>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
-              Select a user from the list to view ticket details and messages.
+          {error && (
+            <div className="mx-4 mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 font-bold hover:text-red-300"
+              >
+                ×
+              </button>
             </div>
           )}
-        </div>
-      </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {loading ? (
+              <div className="py-16 text-center text-slate-500 text-sm">
+                Loading support tickets...
+              </div>
+            ) : filteredTickets.length === 0 ? (
+              <div className="py-16 text-center text-slate-500 text-sm">
+                No support tickets found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {filteredTickets.map((ticket) => {
+                  const displayName =
+                    ticket.email ||
+                    ticket.name ||
+                    ticket.user_email ||
+                    `User #${ticket.id}`;
+
+                  const status = ticket.status || 'pending';
+
+                  return (
+                    <button
+                      type="button"
+                      key={ticket.id}
+                      onClick={() => setSelectedTicket(ticket)}
+                      className="text-left bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-4 transition-all group"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-slate-400">
+                            <User className="w-4 h-4" />
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-100 truncate">
+                              {displayName}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate mt-0.5">
+                              {ticket.subject || 'Support Ticket'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md bg-slate-800 text-slate-400 shrink-0">
+                          {status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-slate-800/70 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>
+                          {ticket.created_at
+                            ? new Date(ticket.created_at).toLocaleString()
+                            : 'No date'}
+                        </span>
+                        <span className="text-indigo-400 group-hover:text-indigo-300 font-semibold">
+                          Open →
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* =========================
+              FULL TICKET VIEW
+             ========================= */}
+          <div className="p-4 border-b border-slate-800 bg-slate-900/60 flex flex-col gap-3 shrink-0">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleBackToTickets}
+                className="inline-flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Tickets
+              </button>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedTicket.status || 'pending'}
+                  onChange={(e) =>
+                    handleUpdateStatus(selectedTicket.id, e.target.value)
+                  }
+                  className="bg-slate-900 border border-slate-700 text-xs rounded-lg px-3 py-2 text-slate-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="pending">Mark Pending</option>
+                  <option value="open">Mark Open</option>
+                  <option value="in_progress">Mark In Progress</option>
+                  <option value="resolved">Mark Resolved</option>
+                  <option value="closed">Mark Closed</option>
+                </select>
+
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => handleDeleteTicket(selectedTicket.id)}
+                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:border-rose-500/50 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Delete Ticket"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deleting ? 'Deleting...' : 'Delete'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-slate-100">
+                {selectedTicket.subject || 'Support Ticket'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                User:{' '}
+                <span className="text-indigo-400 font-medium">
+                  {selectedTicket.email ||
+                    selectedTicket.name ||
+                    selectedTicket.user_email ||
+                    'Registered User'}
+                </span>
+                <span className="mx-2">•</span>
+                Submitted:{' '}
+                {selectedTicket.created_at
+                  ? new Date(selectedTicket.created_at).toLocaleString()
+                  : 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mx-4 mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-between text-sm shrink-0">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 font-bold hover:text-red-300"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
+            {/* Submitted ticket details */}
+            {selectedTicket.message && (
+              <div className="p-4 bg-slate-900/90 border border-indigo-500/30 rounded-xl space-y-2">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4" />
+                    Submitted Reference Details
+                  </span>
+
+                  <span className="text-[11px] text-slate-500">
+                    {selectedTicket.created_at
+                      ? new Date(selectedTicket.created_at).toLocaleTimeString(
+                          [],
+                          { hour: '2-digit', minute: '2-digit' }
+                        )
+                      : ''}
+                  </span>
+                </div>
+
+                <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                  {selectedTicket.message}
+                </div>
+              </div>
+            )}
+
+            {/* Private receipt */}
+            {receiptLoading ? (
+              <div className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
+                Loading secure receipt preview...
+              </div>
+            ) : proofImageUrl ? (
+              <div className="p-4 bg-slate-900/90 border border-amber-500/30 rounded-xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4" />
+                    Uploaded Payment Receipt Screenshot
+                  </span>
+
+                  <a
+                    href={proofImageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    Open Original Image
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="rounded-lg overflow-hidden border border-slate-800 bg-black/60 p-3 flex justify-center">
+                  <img
+                    src={proofImageUrl}
+                    alt="Payment Proof Receipt"
+                    className="max-h-[520px] w-auto max-w-full object-contain rounded-md"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-500" />
+                Walang nakitang resibo o larawan sa ticket na ito.
+              </div>
+            )}
+
+            {/* Conversation */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-white">
+                  Conversation
+                </h4>
+                <span className="text-[11px] text-slate-500">
+                  {messages.length} message{messages.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {messagesLoading ? (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  Loading ticket conversation...
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="p-5 text-center text-slate-500 text-xs italic bg-slate-900/40 border border-slate-800 rounded-xl">
+                  No admin replies sent yet. Send a reply below.
+                </div>
+              ) : (
+                messages.map((msg) => {
+                  const isAdmin = msg.sender_type === 'admin';
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col max-w-[90%] md:max-w-[75%] ${
+                        isAdmin
+                          ? 'ml-auto items-end'
+                          : 'mr-auto items-start'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-400">
+                        {isAdmin ? (
+                          <ShieldAlert className="w-3 h-3 text-indigo-400" />
+                        ) : (
+                          <User className="w-3 h-3 text-slate-400" />
+                        )}
+
+                        <span className="font-medium text-slate-300">
+                          {isAdmin
+                            ? 'Support Admin'
+                            : selectedTicket.email || 'User'}
+                        </span>
+
+                        <span>•</span>
+
+                        <span>
+                          {new Date(msg.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`p-3.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          isAdmin
+                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
+                            : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
+                        }`}
+                      >
+                        {msg.message}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Reply area */}
+          <form
+            onSubmit={handleSendReply}
+            className="p-4 border-t border-slate-800 bg-slate-900/50 shrink-0 space-y-3"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 shrink-0">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                Quick Reply:
+              </span>
+
+              <select
+                onChange={(e) => {
+                  const template = QUICK_TEMPLATES.find(
+                    (t) => t.id === e.target.value
+                  );
+
+                  if (template) {
+                    setReplyText(template.text);
+                  }
+
+                  e.target.value = '';
+                }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-indigo-300 focus:outline-none focus:border-indigo-500 cursor-pointer flex-1"
+              >
+                <option value="">
+                  Select an automated response template...
+                </option>
+
+                {QUICK_TEMPLATES.map((tmpl) => (
+                  <option key={tmpl.id} value={tmpl.id}>
+                    {tmpl.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <textarea
+                rows={3}
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Type official support response or choose a Quick Reply above..."
+                className="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+
+              <button
+                type="submit"
+                disabled={submitting || !replyText.trim()}
+                className="px-6 py-3 sm:py-0 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold text-sm rounded-lg flex items-center justify-center gap-2 transition-colors shrink-0 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>{submitting ? 'Sending...' : 'Send'}</span>
+              </button>
+            </div>
+          </form>
+        </>
+      )}
     </div>
   );
 }

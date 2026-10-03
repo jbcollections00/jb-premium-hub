@@ -188,16 +188,10 @@ export default function AdminDashboard() {
     (u) => u.account_type?.toLowerCase() === 'vip'
   ).length;
 
-  const guestUsersCount = users.filter(
-    (u) => u.is_anonymous || u.account_type?.toLowerCase() === 'guest' || u.account_type?.toLowerCase() === 'anonymous' || !u.email
-  ).length;
-
   const standardUsersCount = users.filter(
-    (u) => 
-      (u.account_type?.toLowerCase() === 'standard' || !u.account_type) && 
-      !u.is_anonymous && 
-      u.email && 
-      u.account_type?.toLowerCase() !== 'vip' && 
+    (u) =>
+      (u.account_type?.toLowerCase() === 'standard' || !u.account_type) &&
+      u.account_type?.toLowerCase() !== 'vip' &&
       u.account_type?.toLowerCase() !== 'admin'
   ).length;
 
@@ -206,7 +200,6 @@ export default function AdminDashboard() {
   const pieChartData = [
     { name: 'VIP Members', value: vipUsersCount, color: '#10b981' },
     { name: 'Standard Users', value: standardUsersCount, color: '#3b82f6' },
-    { name: 'Guest Users', value: guestUsersCount, color: '#f59e0b' },
   ].filter(item => item.value > 0);
 
   const getLast7DaysData = () => {
@@ -219,14 +212,13 @@ export default function AdminDashboard() {
       const dateString = date.toISOString().split('T')[0];
       const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short' });
 
-      const dayUsers = users.filter(u => u.created_at && u.created_at.startsWith(dateString));
-      const registeredCount = dayUsers.filter(u => u.email && !u.is_anonymous).length;
-      const guestCount = dayUsers.filter(u => u.is_anonymous || !u.email).length;
+      const dayUsers = users.filter(
+        (u) => u.created_at && u.created_at.startsWith(dateString)
+      );
 
       result.push({
         day: dayLabel,
-        Registered: registeredCount,
-        Guests: guestCount,
+        Registered: dayUsers.length,
       });
     }
     return result;
@@ -314,7 +306,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* 7 Metric Cards Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Total Users</p>
                 <p className="text-2xl font-black text-purple-400 mt-1">{users.length}</p>
@@ -339,11 +331,6 @@ export default function AdminDashboard() {
               </div>
 
               <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
-                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Guest Users</p>
-                <p className="text-2xl font-black text-amber-400 mt-1">{guestUsersCount}</p>
-              </div>
-
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Vault Videos</p>
                 <p className="text-2xl font-black text-sky-400 mt-1">{totalMediaCount}</p>
               </div>
@@ -358,7 +345,7 @@ export default function AdminDashboard() {
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white mb-1">User Tier Distribution</h3>
-                  <p className="text-[11px] text-gray-400">Ratio of VIP vs Standard vs Guest Users</p>
+                  <p className="text-[11px] text-gray-400">Ratio of VIP vs Standard registered users</p>
                 </div>
 
                 <div className="h-52 my-2 flex items-center justify-center">
@@ -395,17 +382,13 @@ export default function AdminDashboard() {
                     <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
                     <span className="text-gray-300 font-medium">Standard ({standardUsersCount})</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                    <span className="text-gray-300 font-medium">Guest ({guestUsersCount})</span>
-                  </div>
                 </div>
               </div>
 
               <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl lg:col-span-2 flex flex-col justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white mb-1">Weekly Registration & Guest Activity</h3>
-                  <p className="text-[11px] text-gray-400">New user signups and guest logins over the last 7 days</p>
+                  <h3 className="text-sm font-bold text-white mb-1">Weekly Registrations</h3>
+                  <p className="text-[11px] text-gray-400">New registered account signups over the last 7 days</p>
                 </div>
 
                 <div className="h-56 my-2">
@@ -417,7 +400,6 @@ export default function AdminDashboard() {
                         contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '12px', fontSize: '12px' }}
                       />
                       <Bar dataKey="Registered" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Guests" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

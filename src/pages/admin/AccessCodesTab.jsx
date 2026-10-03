@@ -30,72 +30,107 @@ export default function AccessCodesTab() {
       .order('created_at', { ascending: false });
     if (codesData) setCodes(codesData);
 
-    const { data: usersData } = await supabase
+    const { data: usersData, error: usersError } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, account_type, role, created_at')
+      .not('email', 'is', null)
       .order('created_at', { ascending: false });
-    if (usersData) setUsers(usersData);
+
+    if (usersError) {
+      console.error('Failed to load registered users:', usersError);
+      setUsers([]);
+    } else {
+      const registeredUsers = (usersData || []).filter((u) => {
+        const role = (u.role || '').toLowerCase();
+        const accountType = (u.account_type || '').toLowerCase();
+
+        return (
+          Boolean(u.id && u.email) &&
+          role !== 'admin' &&
+          accountType !== 'admin'
+        );
+      });
+
+      setUsers(registeredUsers);
+    }
 
     setLoading(false);
   };
 
-  const generateRandomCode = () => {
-    const randomChars = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return `VIP-${randomChars}`;
-  };
 
   const handleGenerateCode = async (e) => {
     e.preventDefault();
-    setGenerating(true);
 
-    const finalCode = customCode.trim()
-      ? customCode.trim().toUpperCase()
-      : generateRandomCode();
-
-    const codeDuration = 30;
-
-    const { data: newCodeData, error: codeErr } = await supabase
-      .from('access_codes')
-      .insert([
-        {
-          code: finalCode,
-          type: 'VIP',
-          duration_days: codeDuration,
-          is_used: false,
-        },
-      ])
-      .select()
-      .single();
-
-    if (codeErr) {
-      alert('Error generating code: ' + codeErr.message);
-      setGenerating(false);
+    if (directSendUser && !users.some((u) => u.id === directSendUser)) {
+      alert('Invalid recipient. Please select a registered non-admin user.');
       return;
     }
 
-    if (directSendUser && newCodeData) {
-      const selectedUserObj = users.find((u) => u.id === directSendUser);
-      const userEmail = selectedUserObj?.email || selectedUserObj?.full_name || 'User';
+    setGenerating(true);
 
-      const sendErr = await sendMessageToUser(
-        directSendUser,
-        finalCode,
-        codeDuration
+    try {
+      const requestedCode = customCode.trim()
+        ? customCode.trim().toUpperCase()
+        : null;
+
+      const codeDuration = 30;
+
+      const { data: createdCode, error: codeErr } = await supabase.rpc(
+        'admin_create_vip_access_code',
+        {
+          p_custom_code: requestedCode,
+          p_duration_days: codeDuration,
+        }
       );
 
-      if (sendErr) {
-        alert(`Code generated (${finalCode}), but failed to send message: ${sendErr.message}`);
-      } else {
-        alert(`✅ VIP Code generated (${finalCode}) and sent directly to ${userEmail}!`);
-      }
-    } else {
-      alert(`✅ VIP Access Code (${finalCode}) successfully generated!`);
-    }
+      if (codeErr) throw codeErr;
 
-    setCustomCode('');
-    setDirectSendUser('');
-    setGenerating(false);
-    fetchData();
+      const newCodeData = Array.isArray(createdCode)
+        ? createdCode[0]
+        : createdCode;
+
+      const finalCode = newCodeData?.code;
+
+      if (!finalCode) {
+        throw new Error('VIP code was created but no code value was returned.');
+      }
+
+      if (directSendUser) {
+        const selectedUserObj = users.find((u) => u.id === directSendUser);
+        const userEmail = selectedUserObj?.email || 'Registered User';
+
+        const sendErr = await sendMessageToUser(
+          directSendUser,
+          finalCode,
+          codeDuration
+        );
+
+        if (sendErr) {
+          alert(
+            `Code generated (${finalCode}), but failed to send message: ${sendErr.message}`
+          );
+        } else {
+          alert(
+            `✅ VIP Code generated (${finalCode}) and sent directly to ${userEmail}!`
+          );
+        }
+      } else {
+        alert(`✅ VIP Access Code (${finalCode}) successfully generated!`);
+      }
+
+      setCustomCode('');
+      setDirectSendUser('');
+      await fetchData();
+    } catch (err) {
+      const message =
+        err?.code === '23505'
+          ? 'That VIP access code already exists. Please use a different code.'
+          : err?.message || 'Unable to generate VIP access code.';
+
+      alert('Error generating code: ' + message);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const sendMessageToUser = async (userId, code, days = 30) => {
@@ -123,6 +158,16 @@ export default function AccessCodesTab() {
       return;
     }
 
+    if (!users.some((u) => u.id === targetUserId)) {
+      alert('Invalid recipient. Please select a registered non-admin user.');
+      return;
+    }
+
+    if (selectedCodeForSend.is_used) {
+      alert('This access code has already been redeemed.');
+      return;
+    }
+
     setSendingMessage(true);
     const err = await sendMessageToUser(
       targetUserId,
@@ -142,28 +187,35 @@ export default function AccessCodesTab() {
     setSendingMessage(false);
   };
 
-  // 🛠️ ONE-CLICK FIX FOR MISSING DATES (e.g., VIP-M5NBRR)
+  // 🛠️ ADMIN RPC: FIX MISSING USED-AT DATE
   const handleFixMissingDate = async (codeId) => {
-    const { error } = await supabase
-      .from('access_codes')
-      .update({ used_at: new Date().toISOString() })
-      .eq('id', codeId);
+    try {
+      const { error } = await supabase.rpc('admin_fix_vip_code_used_at', {
+        p_code_id: codeId,
+      });
 
-    if (error) {
-      alert('Failed to update date: ' + error.message);
-    } else {
+      if (error) throw error;
+
       alert('✅ Successfully set timestamp! Dynamic countdown is now active.');
-      fetchData();
+      await fetchData();
+    } catch (err) {
+      alert('Failed to update date: ' + (err?.message || 'Unknown error'));
     }
   };
 
   const handleDeleteCode = async (codeId) => {
     if (!confirm('Are you sure you want to delete this access code?')) return;
-    const { error } = await supabase.from('access_codes').delete().eq('id', codeId);
-    if (error) {
-      alert('Delete failed: ' + error.message);
-    } else {
-      fetchData();
+
+    try {
+      const { error } = await supabase.rpc('admin_delete_vip_access_code', {
+        p_code_id: codeId,
+      });
+
+      if (error) throw error;
+
+      await fetchData();
+    } catch (err) {
+      alert('Delete failed: ' + (err?.message || 'Unknown error'));
     }
   };
 
@@ -249,7 +301,7 @@ export default function AccessCodesTab() {
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight">VIP Access Code Management</h1>
         <p className="text-xs text-gray-400 mt-1">
-          Generate 30-Day VIP access keys, dispatch to subscribers, and track redemption status.
+          Generate 30-Day VIP access keys for registered non-admin users and track redemption status.
         </p>
       </div>
 
@@ -304,10 +356,10 @@ export default function AccessCodesTab() {
               onChange={(e) => setDirectSendUser(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sky-300 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
             >
-              <option value="">📩 Direct Send to User? (Optional)</option>
+              <option value="">📩 Direct Send to Registered User? (Optional)</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.email || u.full_name || 'User'} ({u.account_type || 'STD'})
+                  {u.email} ({u.account_type || 'standard'})
                 </option>
               ))}
             </select>
@@ -460,7 +512,7 @@ export default function AccessCodesTab() {
                   type="text"
                   value={modalUserSearch}
                   onChange={(e) => setModalUserSearch(e.target.value)}
-                  placeholder="Type email, name, or user ID to search..."
+                  placeholder="Type registered user email, name, or user ID..."
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -486,7 +538,7 @@ export default function AccessCodesTab() {
                             : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                         }`}
                       >
-                        {u.email || u.full_name || 'Unnamed'} ({u.account_type || 'STANDARD'})
+                        {u.email} ({u.account_type || 'standard'})
                       </button>
                     ))
                   )}

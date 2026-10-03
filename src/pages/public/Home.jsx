@@ -648,37 +648,37 @@ export default function Home() {
 
   // Video Selection Handler with Popunder Smartlink Trigger
   const handleSelectMedia = (e, item) => {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  // 1. Para sa Standard Users: Subukang magbukas ng Smartlink sa bagong tab
-  if (!isAdFree) {
-    try {
-      const pop = window.open(SMARTLINK_URL, "_blank", "noopener,noreferrer");
-      if (pop) {
-        // Ibalik ang focus sa kasalukuyang window para manatiling background tab ang ad
-        pop.blur();
-        window.focus();
-      }
-    } catch (err) {
-      console.warn("Smartlink popup was blocked or failed:", err);
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
-  }
 
-  // 2. Para sa Lahat ng User (kasama ang Standard users kahit ma-block ang popup):
-  // Direktang bubukas ang video modal sa kasalukuyang tab
-  scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
-  setSelectedMedia(item);
+    // 1. Para sa Standard Users: Subukang magbukas ng Smartlink sa bagong tab
+    if (!isAdFree) {
+      try {
+        const pop = window.open(SMARTLINK_URL, "_blank", "noopener,noreferrer");
+        if (pop) {
+          // Ibalik ang focus sa kasalukuyang window para manatiling background tab ang ad
+          pop.blur();
+          window.focus();
+        }
+      } catch (err) {
+        console.warn("Smartlink popup was blocked or failed:", err);
+      }
+    }
 
-  const url = new URL(window.location.href);
-  url.searchParams.set("v", item.id);
-  url.searchParams.set("page", currentPage);
-  url.searchParams.set("cat", activeCategory);
-  url.searchParams.delete("step");
-  window.history.replaceState({}, "", url);
-};
+    // 2. Para sa Lahat ng User (kasama ang Standard users kahit ma-block ang popup):
+    // Direktang bubukas ang video modal sa kasalukuyang tab
+    scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
+    setSelectedMedia(item);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", item.id);
+    url.searchParams.set("page", currentPage);
+    url.searchParams.set("cat", activeCategory);
+    url.searchParams.delete("step");
+    window.history.replaceState({}, "", url);
+  };
 
   const handleCloseMedia = (e) => {
     if (e) {
@@ -858,7 +858,8 @@ export default function Home() {
                       </div>
 
                       <div className="p-3">
-                        <h4 className="text-white font-bold text-xs line-clamp-1 group-hover:text-amber-400 transition-colors">
+                        {/* Pinalitan ang line-clamp-1 ng break-words para ipakita ang buong title */}
+                        <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
                           {item.title}
                         </h4>
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900">
@@ -971,7 +972,8 @@ export default function Home() {
                         👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
-                    <h3 className="text-white font-semibold text-base mt-2 line-clamp-1 group-hover:text-red-400 transition-colors">{item.title}</h3>
+                    {/* Pinalitan ang line-clamp-1 ng break-words para maipakita ang buong pamagat */}
+                    <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">{item.title}</h3>
                   </div>
                 </div>
 
@@ -1072,7 +1074,7 @@ export default function Home() {
             <div className="p-4 md:px-6 md:py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900 shrink-0">
               <div className="flex flex-col pr-4">
                 <span className="text-[10px] md:text-xs font-black text-red-500 uppercase tracking-widest">Video Vault</span>
-                <h2 className="text-sm md:text-lg font-bold text-white line-clamp-1 mt-0.5">{selectedMedia.title}</h2>
+                <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">{selectedMedia.title}</h2>
               </div>
               <button onClick={handleCloseMedia} className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50">✕</button>
             </div>
@@ -1164,7 +1166,7 @@ export default function Home() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
                         <span className="text-xs text-amber-400 font-bold">
-                          🛡️ Security: {captchaNum1} + {captchaNum2} =
+                          🛡️️ Security: {captchaNum1} + {captchaNum2} =
                         </span>
                         <input
                           type="number"
@@ -1231,7 +1233,7 @@ export default function Home() {
             <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
               <span>👁️</span> Video Viewers Log (Admin Only)
             </h3>
-            <p className="text-xs text-slate-400 mb-4 line-clamp-1 border-b border-slate-800 pb-2">
+            <p className="text-xs text-slate-400 mb-4 break-words border-b border-slate-800 pb-2">
               {viewersModalMedia?.title}
             </p>
 

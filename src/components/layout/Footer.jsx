@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
 export default function Footer() {
-  const [onlineNow, setOnlineNow] = useState(1);
+  const [onlineNow, setOnlineNow] = useState(0);
   const [stats, setStats] = useState({
     today: 0,
     thisWeek: 0,
@@ -16,29 +16,28 @@ export default function Footer() {
     let isMounted = true;
 
     const initializeFooter = async () => {
-      await logSiteVisit();
-
-      if (isMounted) {
-        await fetchAnalytics();
-      }
-    };
-
-    initializeFooter();
-
-    const setupPresence = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-        let presenceKey = user?.id;
-        if (!presenceKey) {
-          presenceKey = sessionStorage.getItem('jb_guest_id');
-          if (!presenceKey) {
-            presenceKey = 'guest_' + Math.random().toString(36).substring(2, 9);
-            sessionStorage.setItem('jb_guest_id', presenceKey);
-          }
+        if (user?.id) {
+          await logSiteVisit(user.id);
         }
 
-        const existingChannel = supabase.getChannels().find(c => c.topic === 'realtime:online-users');
+        if (!user?.id || !isMounted) {
+          setOnlineNow(0);
+          return;
+        }
+
+        if (isMounted) {
+          await fetchAnalytics();
+        }
+
+        const existingChannel = supabase
+          .getChannels()
+          .find((c) => c.topic === "realtime:online-users");
+
         if (existingChannel) {
           await supabase.removeChannel(existingChannel);
         }
@@ -46,56 +45,62 @@ export default function Footer() {
         if (!isMounted) return;
 
         channel = supabase
-          .channel('online-users', {
-            config: { presence: { key: presenceKey } },
+          .channel("online-users", {
+            config: {
+              presence: { key: user.id },
+            },
           })
-          .on('presence', { event: 'sync' }, () => {
+          .on("presence", { event: "sync" }, () => {
             if (!isMounted || !channel) return;
+
             const state = channel.presenceState();
-            const count = Object.keys(state).length;
-            setOnlineNow(count > 0 ? count : 1);
+            const uniqueAccountCount = Object.keys(state).length;
+            setOnlineNow(uniqueAccountCount);
           });
 
         channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED' && isMounted && channel) {
-            await channel.track({ online_at: new Date().toISOString() });
+          if (status === "SUBSCRIBED" && isMounted && channel) {
+            await channel.track({
+              user_id: user.id,
+              online_at: new Date().toISOString(),
+            });
           }
         });
-
       } catch (error) {
-        console.error('Presence setup error:', error);
+        console.error("Footer initialization error:", error);
+        if (isMounted) setOnlineNow(0);
       }
     };
 
-    setupPresence();
+    void initializeFooter();
 
     return () => {
       isMounted = false;
       if (channel) {
-        supabase.removeChannel(channel);
+        void supabase.removeChannel(channel);
       }
     };
   }, []);
 
-  const logSiteVisit = async () => {
-    const hasVisited = sessionStorage.getItem('jb_visited');
+  const logSiteVisit = async (userId) => {
+    if (!userId) return;
+
+    const storageKey = `jb_visited_${userId}`;
+    const hasVisited = sessionStorage.getItem(storageKey);
 
     if (hasVisited) return;
 
-    // Lock immediately so React StrictMode / duplicate mounts
-    // cannot log the same browser session twice.
-    sessionStorage.setItem('jb_visited', 'pending');
+    sessionStorage.setItem(storageKey, "pending");
 
     try {
-      const { error } = await supabase.rpc('log_site_visit');
+      const { error } = await supabase.rpc("log_site_visit");
 
       if (error) throw error;
 
-      sessionStorage.setItem('jb_visited', 'true');
+      sessionStorage.setItem(storageKey, "true");
     } catch (error) {
-      // Allow retry on a later mount/reload if the RPC genuinely failed.
-      sessionStorage.removeItem('jb_visited');
-      console.error('Error logging visit:', error);
+      sessionStorage.removeItem(storageKey);
+      console.error("Error logging account visit:", error);
     }
   };
 
@@ -187,7 +192,7 @@ export default function Footer() {
               <svg className="w-3.5 h-3.5 text-pink-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
-              <span className="truncate">Total Visits</span>
+              <span className="truncate">Total Visitors</span>
             </div>
             <div className="text-lg sm:text-xl font-bold text-pink-500 mt-1.5">
               {stats.totalVisits}

@@ -379,7 +379,8 @@ export default function Header() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Naitago ang pangalan sa mobile gamit ang hide-on-mobile */}
+        <div className="hide-on-mobile" style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
             <span style={{ fontSize: '1.2rem', fontWeight: 900, background: 'linear-gradient(to right, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               JB
@@ -392,7 +393,7 @@ export default function Header() {
             </span>
           </div>
 
-          <span className="brand-subtitle hide-on-mobile">
+          <span className="brand-subtitle">
             Premium Vault & Media Gallery
           </span>
         </div>
