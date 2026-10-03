@@ -8,27 +8,19 @@ export default function ProtectedRoute({ adminOnly = false }) {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
-    const verifyAccess = async (sessionFromEvent = null) => {
-      if (!isMounted) return;
-
-      setLoading(true);
-
+    const initialCheck = async () => {
       try {
-        let session = sessionFromEvent;
+        setLoading(true);
 
-        if (!session) {
-          const {
-            data: { session: currentSession },
-            error: sessionError,
-          } = await supabase.auth.getSession();
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-          if (sessionError) throw sessionError;
-          session = currentSession;
-        }
-
-        if (!isMounted) return;
+        if (sessionError) throw sessionError;
+        if (!mounted) return;
 
         if (!session?.user) {
           setIsAuthenticated(false);
@@ -38,53 +30,49 @@ export default function ProtectedRoute({ adminOnly = false }) {
 
         setIsAuthenticated(true);
 
-        // Normal authenticated user route: no admin lookup needed.
+        // Normal protected user routes do not need an admin profile lookup.
         if (!adminOnly) {
           setIsAdmin(false);
           return;
         }
 
-        // Admin route: keep loading until the profile check is complete.
-        // This prevents temporary non-admin redirects during auth refreshes.
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('account_type, role')
+          .select('role, account_type')
           .eq('id', session.user.id)
           .maybeSingle();
 
         if (profileError) throw profileError;
-        if (!isMounted) return;
+        if (!mounted) return;
 
         const role = (profile?.role || '').toLowerCase();
         const accountType = (profile?.account_type || '').toLowerCase();
 
-        const hasAdminAccess =
-          role === 'admin' ||
-          accountType === 'admin';
-
-        setIsAdmin(hasAdminAccess);
+        setIsAdmin(role === 'admin' || accountType === 'admin');
       } catch (error) {
-        console.error('Auth verification error:', error);
+        console.error('ProtectedRoute initial auth check failed:', error);
 
-        if (!isMounted) return;
-
-        setIsAuthenticated(false);
-        setIsAdmin(false);
+        if (mounted) {
+          setIsAuthenticated(false);
+          setIsAdmin(false);
+        }
       } finally {
-        if (isMounted) {
+        if (mounted) {
           setLoading(false);
         }
       }
     };
 
-    // Initial verification.
-    verifyAccess();
+    initialCheck();
 
-    // Keep access in sync with Supabase auth changes.
+    // IMPORTANT:
+    // Do NOT re-run the admin profile query for every auth event.
+    // Supabase can emit SIGNED_IN / TOKEN_REFRESHED more than once,
+    // which previously caused the "Verifying Account..." loop.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isMounted) return;
+      if (!mounted) return;
 
       if (event === 'SIGNED_OUT' || !session?.user) {
         setIsAuthenticated(false);
@@ -93,12 +81,13 @@ export default function ProtectedRoute({ adminOnly = false }) {
         return;
       }
 
-      // Never reset isAdmin to false before the profile lookup finishes.
-      verifyAccess(session);
+      // Keep the current page stable on SIGNED_IN / TOKEN_REFRESHED.
+      // The admin role was already verified on mount.
+      setIsAuthenticated(true);
     });
 
     return () => {
-      isMounted = false;
+      mounted = false;
       subscription?.unsubscribe();
     };
   }, [adminOnly]);
@@ -107,7 +96,7 @@ export default function ProtectedRoute({ adminOnly = false }) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-sans">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
           <p className="animate-pulse text-xs text-slate-400 font-medium">
             Verifying Account...
           </p>
@@ -116,12 +105,10 @@ export default function ProtectedRoute({ adminOnly = false }) {
     );
   }
 
-  // Not logged in -> Login.
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  // Authenticated but not admin -> Home.
   if (adminOnly && !isAdmin) {
     return <Navigate to="/home" replace />;
   }
