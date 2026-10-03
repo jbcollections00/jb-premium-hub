@@ -8,6 +8,7 @@ import Login from './pages/public/Login';
 import Signup from './pages/public/Signup';
 import ResetPassword from './pages/public/ResetPassword';
 import Home from './pages/public/Home';
+import ForYou from './pages/public/ForYou';
 import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
@@ -49,6 +50,7 @@ function App() {
           {/* Protected User Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/home" element={<Home />} />
+            <Route path="/for-you" element={<ForYou />} />
             <Route path="/activate" element={<ActivateCode />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/messages" element={<Messages />} />

@@ -12,6 +12,8 @@ export default function AdminMediaTab() {
   const [uploadFiles, setUploadFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notifyUsers, setNotifyUsers] = useState(true);
+  const [thumbnailBackfillLoading, setThumbnailBackfillLoading] = useState(false);
+  const [thumbnailUploadingId, setThumbnailUploadingId] = useState(null);
 
   // Search, Filter, Edit & Pagination States
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,6 +42,63 @@ export default function AdminMediaTab() {
     return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, 'cdn.jb-premium-hub.vip');
   };
 
+  // Neutral built-in cover: no frame extraction from the uploaded video.
+  // This avoids exposing protected video frames while still giving Home / For You
+  // a consistent thumbnail_url to render.
+  const createNeutralThumbnailDataUrl = (category = 'Vault Content') => {
+    const cleanCategory = String(category || 'Vault Content')
+      .replace(/[<>&"'`]/g, '')
+      .slice(0, 28);
+
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#020617"/>
+            <stop offset="55%" stop-color="#0f172a"/>
+            <stop offset="100%" stop-color="#2e1065"/>
+          </linearGradient>
+          <radialGradient id="glow" cx="50%" cy="42%" r="55%">
+            <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.34"/>
+            <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <rect width="1280" height="720" fill="url(#bg)"/>
+        <rect width="1280" height="720" fill="url(#glow)"/>
+
+        <g transform="translate(640 300)">
+          <rect x="-78" y="-78" width="156" height="156" rx="34"
+                fill="#8b5cf6" fill-opacity="0.12"
+                stroke="#a78bfa" stroke-opacity="0.45" stroke-width="3"/>
+          <path d="M0 -44L12 -10L46 2L12 14L0 48L-12 14L-46 2L-12 -10Z"
+                fill="none" stroke="#c4b5fd" stroke-width="7"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+
+        <text x="640" y="430" text-anchor="middle"
+              fill="#f8fafc" font-family="Arial, Helvetica, sans-serif"
+              font-size="46" font-weight="800" letter-spacing="5">
+          JB PREMIUM HUB
+        </text>
+
+        <text x="640" y="486" text-anchor="middle"
+              fill="#a78bfa" font-family="Arial, Helvetica, sans-serif"
+              font-size="24" font-weight="700" letter-spacing="7">
+          ${cleanCategory.toUpperCase()}
+        </text>
+
+        <text x="640" y="545" text-anchor="middle"
+              fill="#64748b" font-family="Arial, Helvetica, sans-serif"
+              font-size="18" font-weight="600" letter-spacing="3">
+          PRIVATE MEDIA LIBRARY
+        </text>
+      </svg>
+    `;
+
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  };
+
   useEffect(() => {
     fetchMedia();
   }, []);
@@ -54,13 +113,21 @@ export default function AdminMediaTab() {
   }, [searchQuery, showDuplicatesOnly]);
 
   const fetchMedia = async () => {
-    const { data: mediaData, count: mediaCount } = await supabase
-      .from('media')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false });
+    try {
+      const { data: mediaData, count: mediaCount, error } = await supabase
+        .from('media')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false });
 
-    if (mediaData) setMediaList(mediaData);
-    if (mediaCount !== null) setTotalMediaCount(mediaCount);
+      if (error) throw error;
+
+      setMediaList(mediaData || []);
+      setTotalMediaCount(mediaCount || 0);
+    } catch (error) {
+      console.error('Failed to fetch media:', error);
+      setMediaList([]);
+      setTotalMediaCount(0);
+    }
   };
 
   const formatBytes = (bytes, decimals = 2) => {
@@ -142,9 +209,132 @@ export default function AdminMediaTab() {
       size: file.size,
       progress: 0,
       status: 'pending',
-      errorMsg: ''
+      errorMsg: '',
+      thumbnailFile: null,
+      thumbnailPreview: ''
     }));
     setUploadFiles(formattedFiles);
+  };
+
+  const handleThumbnailSelect = (fileId, file) => {
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const maxSize = 5 * 1024 * 1024;
+
+    if (!allowedTypes.includes(file.type)) {
+      alert('Thumbnail must be JPEG, PNG, or WEBP.');
+      return;
+    }
+
+    if (file.size > maxSize) {
+      alert('Thumbnail must be 5 MB or smaller.');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+
+    setUploadFiles((prev) =>
+      prev.map((item) => {
+        if (item.id !== fileId) return item;
+
+        if (item.thumbnailPreview?.startsWith('blob:')) {
+          URL.revokeObjectURL(item.thumbnailPreview);
+        }
+
+        return {
+          ...item,
+          thumbnailFile: file,
+          thumbnailPreview: previewUrl
+        };
+      })
+    );
+  };
+
+  const removeSelectedThumbnail = (fileId) => {
+    setUploadFiles((prev) =>
+      prev.map((item) => {
+        if (item.id !== fileId) return item;
+
+        if (item.thumbnailPreview?.startsWith('blob:')) {
+          URL.revokeObjectURL(item.thumbnailPreview);
+        }
+
+        return {
+          ...item,
+          thumbnailFile: null,
+          thumbnailPreview: ''
+        };
+      })
+    );
+  };
+
+  const uploadThumbnailToR2 = async (file, baseName = 'thumbnail') => {
+    if (!file) return null;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const key = `thumbnails/${Date.now()}-${Math.random().toString(36).substring(2)}-${baseName}.${ext}`;
+
+    const thumbnailUpload = new Upload({
+      client: r2Client,
+      params: {
+        Bucket: 'jb-collections-hub',
+        Key: key,
+        Body: file,
+        ContentType: file.type
+      },
+      queueSize: 2,
+      partSize: 5 * 1024 * 1024
+    });
+
+    await thumbnailUpload.done();
+
+    return `${r2PublicDomain}/${key}`;
+  };
+
+  const missingThumbnailCount = useMemo(
+    () => mediaList.filter((item) => !item.thumbnail_url).length,
+    [mediaList]
+  );
+
+  const handleGenerateMissingThumbnails = async () => {
+    const missingItems = mediaList.filter((item) => !item.thumbnail_url);
+    if (missingItems.length === 0) {
+      alert('All media already have a thumbnail.');
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Generate neutral covers for ${missingItems.length} media item(s) with missing thumbnails?`
+      )
+    ) {
+      return;
+    }
+
+    setThumbnailBackfillLoading(true);
+
+    try {
+      const updates = missingItems.map(async (item) => {
+        const thumbnailUrl = createNeutralThumbnailDataUrl(item.category || 'Vault Content');
+
+        const { error } = await supabase
+          .from('media')
+          .update({ thumbnail_url: thumbnailUrl })
+          .eq('id', item.id);
+
+        if (error) throw error;
+      });
+
+      await Promise.all(updates);
+      await fetchMedia();
+      alert(`Generated ${missingItems.length} neutral thumbnail cover(s).`);
+    } catch (error) {
+      console.error('Thumbnail backfill failed:', error);
+      alert('Failed to generate missing thumbnail covers: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setThumbnailBackfillLoading(false);
+    }
   };
 
   // 🚀 Bulk Upload & Admin Messages Broadcaster
@@ -189,8 +379,21 @@ export default function AdminMediaTab() {
         const videoPublicUrl = `${r2PublicDomain}/${fileName}`;
         const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
 
+        let thumbnailUrl = createNeutralThumbnailDataUrl('Vault Content');
+
+        if (fileObj.thumbnailFile) {
+          updateFileState(fileObj.id, { status: 'thumbnail', progress: 100 });
+          thumbnailUrl = await uploadThumbnailToR2(fileObj.thumbnailFile, 'vault');
+        }
+
         const { error: dbError } = await supabase.from('media').insert([
-          { title: cleanTitle, media_url: videoPublicUrl, category: 'Vault Content', type: 'video' }
+          {
+            title: cleanTitle,
+            media_url: videoPublicUrl,
+            thumbnail_url: thumbnailUrl,
+            category: 'Vault Content',
+            type: 'video'
+          }
         ]);
 
         if (dbError) throw new Error(dbError.message);
@@ -213,22 +416,11 @@ export default function AdminMediaTab() {
         const announcementBody = `Hi! New videos have just been added to the JB Premium Vault:\n\n${titleListFormatted}\n\nCheck them out in your media library now!`;
 
         try {
-          const { data: users } = await supabase.from('profiles').select('id');
-
-          if (users && users.length > 0) {
-            const userMessages = users.map((u) => ({
-              user_id: u.id,
-              title: announcementTitle,
-              content: announcementBody,
-              message: announcementBody,
-              is_read: false,
-              send_to_all: true
-            }));
-
-            await supabase.from('admin_messages').insert(userMessages);
-          } else {
-            await supabase.from('admin_messages').insert([
+          const { error: announcementError } = await supabase
+            .from('admin_messages')
+            .insert([
               {
+                user_id: null,
                 title: announcementTitle,
                 content: announcementBody,
                 message: announcementBody,
@@ -236,7 +428,8 @@ export default function AdminMediaTab() {
                 is_read: false
               }
             ]);
-          }
+
+          if (announcementError) throw announcementError;
         } catch (err) {
           console.error("Admin messages notification error:", err);
         }
@@ -246,6 +439,67 @@ export default function AdminMediaTab() {
       setUploadFiles([]);
       fetchMedia();
       setActiveTab('files'); // Switch to files view after successful upload
+    }
+  };
+
+  const handleExistingThumbnailUpload = async (item, file) => {
+    if (!item?.id || !file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const maxSize = 5 * 1024 * 1024;
+
+    if (!allowedTypes.includes(file.type)) {
+      alert('Thumbnail must be JPEG, PNG, or WEBP.');
+      return;
+    }
+
+    if (file.size > maxSize) {
+      alert('Thumbnail must be 5 MB or smaller.');
+      return;
+    }
+
+    setThumbnailUploadingId(item.id);
+
+    try {
+      const thumbnailUrl = await uploadThumbnailToR2(file, 'vault');
+
+      const { error } = await supabase
+        .from('media')
+        .update({ thumbnail_url: thumbnailUrl })
+        .eq('id', item.id);
+
+      if (error) throw error;
+
+      await fetchMedia();
+    } catch (error) {
+      console.error('Thumbnail upload failed:', error);
+      alert('Failed to update thumbnail: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setThumbnailUploadingId(null);
+    }
+  };
+
+  const handleUseDefaultCover = async (item) => {
+    if (!item?.id) return;
+
+    setThumbnailUploadingId(item.id);
+
+    try {
+      const { error } = await supabase
+        .from('media')
+        .update({
+          thumbnail_url: createNeutralThumbnailDataUrl(item.category || 'Vault Content')
+        })
+        .eq('id', item.id);
+
+      if (error) throw error;
+
+      await fetchMedia();
+    } catch (error) {
+      console.error('Default cover update failed:', error);
+      alert('Failed to apply default cover: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setThumbnailUploadingId(null);
     }
   };
 
@@ -331,23 +585,35 @@ export default function AdminMediaTab() {
           <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
             <span>Vault Media Uploader</span>
             <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono font-semibold">
-              v2.1
+              v3.0
             </span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Dedicated upload manager & 5x6 card grid gallery for vault media.
+            Secure bulk upload, media library management, duplicate review, and neutral thumbnail automation.
           </p>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl">
-          <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl">
+            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Media</p>
+              <p className="text-2xl font-black text-white font-mono mt-0.5">{totalMediaCount}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Vault Videos</p>
-            <p className="text-2xl font-black text-white font-mono mt-0.5">{totalMediaCount}</p>
+
+          <div className="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl">
+            <div className="p-3 bg-violet-500/10 border border-violet-500/20 rounded-xl text-violet-400">
+              <span className="text-xl">✨</span>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Missing Covers</p>
+              <p className="text-2xl font-black text-white font-mono mt-0.5">{missingThumbnailCount}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -407,7 +673,7 @@ export default function AdminMediaTab() {
                   </svg>
                 </div>
                 <span className="text-base font-bold text-white tracking-wide">Click or drag video files here to upload</span>
-                <span className="text-xs text-slate-500 mt-1">Supports MP4, MKV, MOV, AVI, WEBM, M4V</span>
+                <span className="text-xs text-slate-500 mt-1">Video files only • optional reviewed thumbnail • neutral cover used when no image is chosen</span>
               </label>
             </div>
 
@@ -442,7 +708,11 @@ export default function AdminMediaTab() {
                             item.status === 'error' ? 'text-rose-400' :
                             item.status === 'completed' ? 'text-emerald-400' : 'text-indigo-400'
                           }`}>
-                            {item.status === 'error' ? 'Failed' : `${item.progress}%`}
+                            {item.status === 'error'
+                              ? 'Failed'
+                              : item.status === 'thumbnail'
+                              ? 'Saving thumbnail...'
+                              : `${item.progress}%`}
                           </span>
                         </div>
                       </div>
@@ -460,6 +730,60 @@ export default function AdminMediaTab() {
                       {item.errorMsg && (
                         <p className="text-[10px] text-rose-400 font-medium">{item.errorMsg}</p>
                       )}
+
+                      <div className="pt-2 border-t border-slate-800/70">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                              Thumbnail
+                            </p>
+                            <p className="text-[9px] text-slate-500 mt-0.5">
+                              Optional. JPEG, PNG or WEBP up to 5 MB.
+                            </p>
+                          </div>
+
+                          {item.thumbnailFile && (
+                            <button
+                              type="button"
+                              onClick={() => removeSelectedThumbnail(item.id)}
+                              className="text-[10px] font-bold text-rose-400 hover:text-rose-300"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3 items-start">
+                          <div className="w-full sm:w-44 aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+                            {item.thumbnailPreview ? (
+                              <img
+                                src={item.thumbnailPreview}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <img
+                                src={createNeutralThumbnailDataUrl('Vault Content')}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            )}
+                          </div>
+
+                          <label className="inline-flex items-center justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-bold text-slate-200 cursor-pointer transition-colors">
+                            Choose Thumbnail
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) =>
+                                handleThumbnailSelect(item.id, e.target.files?.[0])
+                              }
+                              disabled={loading}
+                            />
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -561,6 +885,18 @@ export default function AdminMediaTab() {
                 </button>
               )}
             </div>
+
+            <button
+              onClick={handleGenerateMissingThumbnails}
+              disabled={thumbnailBackfillLoading || missingThumbnailCount === 0}
+              className="px-3 py-2 bg-violet-500/10 hover:bg-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-violet-300 border border-violet-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              title="Generate safe neutral covers for items without thumbnails"
+            >
+              <span>✨</span>
+              {thumbnailBackfillLoading
+                ? 'Generating Covers...'
+                : `Generate Covers (${missingThumbnailCount})`}
+            </button>
 
             {mediaList.length > 0 && (
               <button
@@ -668,20 +1004,19 @@ export default function AdminMediaTab() {
                       key={item.id}
                       className="bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 rounded-2xl overflow-hidden flex flex-col justify-between transition-all group shadow-lg hover:shadow-indigo-500/10"
                     >
-                      {/* Video Player Box (FIT TO CARD - NO STRETCH) */}
+                      {/* Safe neutral thumbnail preview */}
                       <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-800/80">
-                        <video
-                          src={getCdnUrl(item.media_url)}
-                          className="w-full h-full object-contain"
-                          controls={false}
-                          preload="metadata"
+                        <img
+                          src={item.thumbnail_url || createNeutralThumbnailDataUrl(item.category || 'Vault Content')}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
                         />
-                        <div className="absolute inset-0 bg-slate-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                          <div className="p-2.5 bg-indigo-600/90 text-white rounded-full shadow-lg">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M8 5v14l11-7z" />
-                            </svg>
-                          </div>
+
+                        <div className="absolute top-2 left-2">
+                          <span className="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-700/70 text-[9px] font-bold uppercase tracking-wider text-slate-300">
+                            {item.thumbnail_url ? 'Thumbnail Ready' : 'Fallback Cover'}
+                          </span>
                         </div>
                       </div>
 
@@ -731,6 +1066,43 @@ export default function AdminMediaTab() {
                             </p>
                           </div>
                         )}
+
+                        <div className="pt-2 border-t border-slate-800/60 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-slate-500">
+                              Thumbnail
+                            </span>
+                            <span className={`text-[9px] font-bold ${
+                              item.thumbnail_url ? 'text-emerald-400' : 'text-amber-400'
+                            }`}>
+                              {item.thumbnail_url ? 'Approved' : 'Missing'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <label className="py-1.5 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl text-[10px] font-bold cursor-pointer text-center transition-all">
+                              {thumbnailUploadingId === item.id ? 'Uploading...' : 'Change Thumbnail'}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                disabled={thumbnailUploadingId === item.id}
+                                onChange={(e) =>
+                                  handleExistingThumbnailUpload(item, e.target.files?.[0])
+                                }
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => handleUseDefaultCover(item)}
+                              disabled={thumbnailUploadingId === item.id}
+                              className="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 rounded-xl text-[10px] font-bold transition-all"
+                            >
+                              Use Default
+                            </button>
+                          </div>
+                        </div>
 
                         <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800/60">
                           <button

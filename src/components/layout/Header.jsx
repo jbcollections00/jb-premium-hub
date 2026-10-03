@@ -18,6 +18,25 @@ const IconMessage = () => (
   </svg>
 );
 
+const IconForYou = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M12 3L13.8 8.2L19 10L13.8 11.8L12 17L10.2 11.8L5 10L10.2 8.2L12 3Z"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M18.5 15L19.4 17.6L22 18.5L19.4 19.4L18.5 22L17.6 19.4L15 18.5L17.6 17.6L18.5 15Z"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const IconLogout = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path 
@@ -395,6 +414,22 @@ export default function Header() {
             {userInitial}
           </div>
           <span className="hide-on-mobile">Profile</span>
+        </Link>
+
+        {/* ✨ For You Link */}
+        <Link
+          to="/for-you"
+          onClick={(e) => {
+            e.preventDefault();
+            handleNavigation('/for-you');
+          }}
+          className="nav-item-btn"
+          title="For You"
+        >
+          <div className="icon-wrapper">
+            <IconForYou />
+          </div>
+          <span className="hide-on-mobile">For You</span>
         </Link>
 
         {/* 💬 Messages Link */}

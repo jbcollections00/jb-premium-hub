@@ -15,8 +15,15 @@ export default function Footer() {
     let channel;
     let isMounted = true;
 
-    logSiteVisit();
-    fetchAnalytics();
+    const initializeFooter = async () => {
+      await logSiteVisit();
+
+      if (isMounted) {
+        await fetchAnalytics();
+      }
+    };
+
+    initializeFooter();
 
     const setupPresence = async () => {
       try {
@@ -71,52 +78,49 @@ export default function Footer() {
   }, []);
 
   const logSiteVisit = async () => {
+    const hasVisited = sessionStorage.getItem('jb_visited');
+
+    if (hasVisited) return;
+
+    // Lock immediately so React StrictMode / duplicate mounts
+    // cannot log the same browser session twice.
+    sessionStorage.setItem('jb_visited', 'pending');
+
     try {
-      const hasVisited = sessionStorage.getItem('jb_visited');
-      if (!hasVisited) {
-        await supabase.from('site_visits').insert({});
-        sessionStorage.setItem('jb_visited', 'true');
-      }
+      const { error } = await supabase.rpc('log_site_visit');
+
+      if (error) throw error;
+
+      sessionStorage.setItem('jb_visited', 'true');
     } catch (error) {
+      // Allow retry on a later mount/reload if the RPC genuinely failed.
+      sessionStorage.removeItem('jb_visited');
       console.error('Error logging visit:', error);
     }
   };
 
   const fetchAnalytics = async () => {
     try {
-      const now = new Date();
-      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const dayOfWeek = now.getDay();
-      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).toISOString();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const { data, error } = await supabase.rpc('get_site_visit_stats');
 
-      const { count: total } = await supabase
-        .from('site_visits')
-        .select('*', { count: 'exact', head: true });
+      if (error) throw error;
 
-      const { count: today } = await supabase
-        .from('site_visits')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', startOfToday);
-
-      const { count: week } = await supabase
-        .from('site_visits')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', startOfWeek);
-
-      const { count: month } = await supabase
-        .from('site_visits')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', startOfMonth);
+      const row = Array.isArray(data) ? data[0] : data;
 
       setStats({
-        today: today || 0,
-        thisWeek: week || 0,
-        thisMonth: month || 0,
-        totalVisits: (total || 0).toLocaleString(),
+        today: Number(row?.today ?? 0),
+        thisWeek: Number(row?.this_week ?? 0),
+        thisMonth: Number(row?.this_month ?? 0),
+        totalVisits: Number(row?.total_visits ?? 0).toLocaleString(),
       });
     } catch (error) {
       console.error('Error fetching analytics:', error);
+      setStats({
+        today: 0,
+        thisWeek: 0,
+        thisMonth: 0,
+        totalVisits: 0,
+      });
     }
   };
 

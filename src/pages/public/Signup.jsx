@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
-const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
 export default function Signup() {
   const [fullName, setFullName] = useState('');
@@ -13,22 +12,9 @@ export default function Signup() {
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [hasTriggeredSignupAd, setHasTriggeredSignupAd] = useState(false);
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-
-  // Dynamic Injection ng Adsterra Popunder Script
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
 
   // Save referral code from URL
   useEffect(() => {
@@ -53,14 +39,7 @@ export default function Signup() {
       return;
     }
 
-    // 1st Click: Trigger Popunder Ad
-    if (!hasTriggeredSignupAd) {
-      window.open(POPUNDER_AD_URL, "_blank");
-      setHasTriggeredSignupAd(true);
-      return;
-    }
-
-    // 2nd Click: Submit Signup
+    // Submit signup directly after validation.
     setLoading(true);
     setErrorMsg('');
 
@@ -102,7 +81,15 @@ export default function Signup() {
         }
       }
 
-      navigate('/home');
+      if (data?.session) {
+        navigate('/home');
+      } else {
+        navigate('/login', {
+          state: {
+            signupMessage: 'Account created. Please confirm your email before logging in.'
+          }
+        });
+      }
     } catch (err) {
       setErrorMsg(err.message);
     } finally {

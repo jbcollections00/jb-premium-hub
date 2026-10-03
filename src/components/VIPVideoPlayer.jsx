@@ -11,6 +11,8 @@ export default function VIPVideoPlayer({
   onDurationUpdate,
   mediaId,
   currentDuration,
+  showWatermark = true,
+  watermarkPosition = "top-right",
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -27,6 +29,16 @@ export default function VIPVideoPlayer({
   };
 
   const videoSrc = getCleanVideoUrl(mainVideoUrl);
+
+  const watermarkPositionClasses = {
+    "top-right": "top-3 right-3",
+    "top-left": "top-3 left-3",
+    "bottom-right": "bottom-3 right-3",
+    "bottom-left": "bottom-3 left-3",
+  };
+
+  const watermarkClass =
+    watermarkPositionClasses[watermarkPosition] || watermarkPositionClasses["top-right"];
 
   const checkAdFreeStatus = (type, role, expiresAt) => {
     const t = (type || '').toUpperCase();
@@ -202,58 +214,75 @@ export default function VIPVideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
 
-      {/* 📥 DOWNLOAD BUTTON (VIP/ADMIN ONLY) */}
-      {effectiveIsAdFree && (
-        <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          <button
-            onClick={handleVipDownload}
-            className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
-          >
-            <span className="text-base">📥</span>
-            <span>Download Video</span>
-          </button>
-        </div>
-      )}
+      {/* 🎬 ACTUAL VIDEO FRAME
+          This wrapper shrink-wraps the rendered video, so overlays stay
+          inside the real landscape/portrait video area instead of black bars. */}
+      <div className="relative inline-block max-w-full max-h-[65vh]">
 
-      {/* 🎬 DIRECT VIDEO PLAYER */}
-      <video
-        ref={mainVideoRef}
-        src={videoSrc}
-        controls={isPlaying}
-        playsInline
-        onLoadedMetadata={handleLoadedMetadata}
-        onPlay={handleVideoPlay}
-        className="w-full h-full max-h-[65vh] object-contain"
-        onError={(e) =>
-          console.error(
-            "Error loading video:",
-            e.target.error,
-            "URL Attempted:",
-            videoSrc
-          )
-        }
-      />
+        <video
+          ref={mainVideoRef}
+          src={videoSrc}
+          controls={isPlaying}
+          playsInline
+          onLoadedMetadata={handleLoadedMetadata}
+          onPlay={handleVideoPlay}
+          className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
+          onError={(e) =>
+            console.error(
+              "Error loading video:",
+              e.target.error,
+              "URL Attempted:",
+              videoSrc
+            )
+          }
+        />
 
-      {/* ▶️ CUSTOM INITIAL PLAY OVERLAY */}
-      {!isPlaying && (
-        <div
-          onClick={handlePlayOverlayClick}
-          className="absolute inset-0 bg-black/60 hover:bg-black/40 transition-all flex flex-col items-center justify-center cursor-pointer z-20 group"
-        >
-          <div className="w-20 h-20 bg-red-600 group-hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-300 border border-red-400/30">
-            <svg
-              className="w-10 h-10 fill-current ml-1"
-              viewBox="0 0 24 24"
+        {/* 🏷️ JB LOGO WATERMARK - always anchored to the actual video frame */}
+        {showWatermark && (
+          <img
+            src="/jb-logo.png"
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            className={`absolute ${watermarkClass} z-30 w-12 sm:w-14 md:w-16 h-auto opacity-55 pointer-events-none select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)]`}
+          />
+        )}
+
+        {/* 📥 DOWNLOAD BUTTON (VIP/ADMIN ONLY) */}
+        {effectiveIsAdFree && (
+          <div className="absolute top-3 left-3 z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <button
+              onClick={handleVipDownload}
+              className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
             >
-              <path d="M8 5v14l11-7z" />
-            </svg>
+              <span className="text-base">📥</span>
+              <span className="hidden sm:inline">Download Video</span>
+            </button>
           </div>
+        )}
 
-          <span className="mt-4 text-xs font-bold text-white tracking-widest uppercase bg-slate-900/90 border border-slate-700/80 px-4 py-2 rounded-xl shadow-lg">
-            Click to Play Video
-          </span>
-        </div>
-      )}
+        {/* ▶️ CUSTOM INITIAL PLAY OVERLAY
+            Also bound to the actual video frame for portrait + landscape. */}
+        {!isPlaying && (
+          <div
+            onClick={handlePlayOverlayClick}
+            className="absolute inset-0 bg-black/60 hover:bg-black/40 transition-all flex flex-col items-center justify-center cursor-pointer z-20 group"
+          >
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-600 group-hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-300 border border-red-400/30">
+              <svg
+                className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1"
+                viewBox="0 0 24 24"
+              >
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+
+            <span className="mt-4 text-[10px] sm:text-xs font-bold text-white tracking-widest uppercase bg-slate-900/90 border border-slate-700/80 px-3 sm:px-4 py-2 rounded-xl shadow-lg">
+              Click to Play Video
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

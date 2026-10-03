@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
+import AdSlot from "../../components/AdSlot";
 
 const ITEMS_PER_PAGE = 50;
+const SMARTLINK_URL =
+  import.meta.env.VITE_SMARTLINK_URL ||
+  "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
 // Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
 const USE_CUSTOM_CDN = true;
-
-// --- ADSTERRA CONFIGURATION ---
-const ADSTERRA_SOCIALBAR_URL = "https://deeprootedpressure.com/77/84/87/7784879ac907b760977addd43bca7b1a.js";
 
 const getCdnUrl = (url) => {
   if (!url) return "";
@@ -32,68 +33,6 @@ const formatDuration = (duration) => {
   }
   return `${mins}:${remSec < 10 ? "0" : ""}${remSec}`;
 };
-
-// Single Native Banner Component for Top Placement (Isolating in Iframe)
-function TopNativeBanner() {
-  const adHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }
-      </style>
-    </head>
-    <body>
-      <script async="async" data-cfasync="false" src="https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js"></script>
-      <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
-    </body>
-    </html>
-  `;
-
-  return (
-    <div className="w-full flex flex-col items-center justify-center mb-6 p-3 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
-      <span className="text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest">Advertisement</span>
-      <iframe
-        srcDoc={adHtml}
-        className="w-full h-[100px] border-0 overflow-hidden"
-        scrolling="no"
-        title="Top Adsterra Banner"
-      />
-    </div>
-  );
-}
-
-// Native Banner Component inside Video Modal (Isolating in Iframe)
-function ModalNativeBanner() {
-  const adHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }
-      </style>
-    </head>
-    <body>
-      <script async="async" data-cfasync="false" src="https://deeprootedpressure.com/07daf68a9e786bf55c0980163fb30853/invoke.js"></script>
-      <div id="container-07daf68a9e786bf55c0980163fb30853"></div>
-    </body>
-    </html>
-  `;
-
-  return (
-    <div className="w-full flex flex-col items-center justify-center my-4 p-3 bg-slate-950/80 border border-amber-500/20 rounded-xl overflow-hidden shadow-md">
-      <span className="text-[9px] text-amber-500/70 font-semibold mb-1 uppercase tracking-widest">Sponsored Content</span>
-      <iframe
-        srcDoc={adHtml}
-        className="w-full h-[100px] border-0 overflow-hidden"
-        scrolling="no"
-        title="Modal Adsterra Banner"
-      />
-    </div>
-  );
-}
 
 export default function Home() {
   const [mediaList, setMediaList] = useState([]);
@@ -175,26 +114,6 @@ export default function Home() {
     };
   }, [selectedMedia]);
 
-  // Load Socialbar Script dynamically
-  useEffect(() => {
-    if (isAdFree) return;
-
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.src = ADSTERRA_SOCIALBAR_URL;
-    script.id = "adsterra-socialbar";
-    script.async = true;
-
-    document.body.appendChild(script);
-
-    return () => {
-      const existingScript = document.getElementById("adsterra-socialbar");
-      if (existingScript) {
-        existingScript.remove();
-      }
-    };
-  }, [isAdFree]);
-
   // Handle Auth Session Restoration
   useEffect(() => {
     fetchUserProfile();
@@ -270,7 +189,6 @@ export default function Home() {
     setCaptchaInput("");
   };
 
-  // Handler kapag na-auto-detect/update ang duration mula sa VIPVideoPlayer
   const handleDurationUpdate = (mediaId, newDuration) => {
     setMediaList((prev) =>
       prev.map((item) => (item.id === mediaId ? { ...item, duration: newDuration } : item))
@@ -306,8 +224,6 @@ export default function Home() {
         profile = newProfile;
       }
 
-      // profiles table ang source of truth para sa role/account_type.
-      // Huwag gumamit ng user_metadata bilang authorization fallback.
       const mergedProfile = {
         ...(profile || {}),
         id: user.id,
@@ -340,7 +256,6 @@ export default function Home() {
     }
   };
 
-  // Kumuha ng Top Most Watched Videos
   const fetchMostWatched = async () => {
     setMostWatchedLoading(true);
     try {
@@ -452,7 +367,6 @@ export default function Home() {
       return;
     }
 
-    // Immediate lock bago pa mag-render ang React state update.
     viewRecordedRef.current = true;
     setHasRecordedCurrentView(true);
 
@@ -463,7 +377,6 @@ export default function Home() {
       selectedMedia.views ??
       0;
 
-    // Optimistic UI update lang.
     setViewCounts((prev) => ({
       ...prev,
       [mediaId]: currentVal + 1,
@@ -478,10 +391,6 @@ export default function Home() {
         });
 
       if (error) throw error;
-
-      // HUWAG tumawag ng increment_video_views() dito.
-      // Ang INSERT sa media_views ay magti-trigger ng sync_media_views_count(),
-      // kaya iyon na ang single source of truth ng media.views/views_count.
     } catch (err) {
       console.error("Record view error:", err);
 
@@ -675,7 +584,6 @@ export default function Home() {
     } catch (err) {
       console.error("Reaction save error:", err);
 
-      // Roll back optimistic state kapag nag-fail ang DB operation.
       setReactionCounts((prev) => ({
         ...prev,
         [mediaId]: oldCounts,
@@ -718,7 +626,6 @@ export default function Home() {
   };
 
   const handleUpdateCategory = async (videoId, newCategory) => {
-    // UI guard lang; RLS pa rin ang tunay na security boundary.
     if (!isAdmin || !videoId) return;
 
     const allowedCategories = ["general", "pinay_asian"];
@@ -739,22 +646,39 @@ export default function Home() {
     }
   };
 
+  // Video Selection Handler with Popunder Smartlink Trigger
   const handleSelectMedia = (e, item) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  // 1. Para sa Standard Users: Subukang magbukas ng Smartlink sa bagong tab
+  if (!isAdFree) {
+    try {
+      const pop = window.open(SMARTLINK_URL, "_blank", "noopener,noreferrer");
+      if (pop) {
+        // Ibalik ang focus sa kasalukuyang window para manatiling background tab ang ad
+        pop.blur();
+        window.focus();
+      }
+    } catch (err) {
+      console.warn("Smartlink popup was blocked or failed:", err);
     }
+  }
 
-    scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
-    setSelectedMedia(item);
+  // 2. Para sa Lahat ng User (kasama ang Standard users kahit ma-block ang popup):
+  // Direktang bubukas ang video modal sa kasalukuyang tab
+  scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
+  setSelectedMedia(item);
 
-    const url = new URL(window.location.href);
-    url.searchParams.set("v", item.id);
-    url.searchParams.set("page", currentPage);
-    url.searchParams.set("cat", activeCategory);
-    url.searchParams.delete("step");
-    window.history.replaceState({}, "", url);
-  };
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", item.id);
+  url.searchParams.set("page", currentPage);
+  url.searchParams.set("cat", activeCategory);
+  url.searchParams.delete("step");
+  window.history.replaceState({}, "", url);
+};
 
   const handleCloseMedia = (e) => {
     if (e) {
@@ -821,15 +745,13 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
       <div className="max-w-7xl mx-auto">
-        {!isAdFree && <TopNativeBanner />}
+        <AdSlot position="top" enabled={!isAdFree} />
 
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="mb-10 bg-slate-900/80 border border-slate-800 rounded-3xl p-4 md:p-6 shadow-2xl backdrop-blur-md relative overflow-hidden">
-          {/* Subtle Ambient Background Glow */}
           <div className="absolute -top-20 -left-20 w-60 h-60 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
           <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-          {/* Header Bar ng Most Watched Section */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 relative z-10">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-2xl shadow-lg shadow-red-600/30 border border-amber-400/30">
@@ -850,7 +772,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* User Action Buttons */}
             <div className="flex items-center gap-2.5 flex-wrap">
               {userProfile && (
                 <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 px-3 py-2 rounded-xl text-xs">
@@ -871,7 +792,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Cards Horizontal Slider */}
           {mostWatchedLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 py-4">
               {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -898,14 +818,11 @@ export default function Home() {
                     className="min-w-[190px] sm:min-w-[210px] md:min-w-[230px] max-w-[230px] bg-slate-950 border border-slate-800/80 hover:border-amber-500/60 rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl hover:shadow-amber-500/10 transition-all duration-300 cursor-pointer group snap-start flex flex-col justify-between shrink-0 hover:-translate-y-1"
                   >
                     <div>
-                      {/* Thumbnail Box */}
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
-                        {/* Rank Badge */}
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
                           #{rank} {rank === 1 ? "🔥" : ""}
                         </div>
 
-                        {/* Duration Badge */}
                         <div className="absolute bottom-2 right-2 z-10 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-amber-400 border border-amber-500/30">
                           ⏱️ {formatDuration(item.duration)}
                         </div>
@@ -931,7 +848,6 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* Play Overlay */}
                         <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-amber-500 group-hover:bg-red-600 text-black group-hover:text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
                             <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
@@ -941,7 +857,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Content Info */}
                       <div className="p-3">
                         <h4 className="text-white font-bold text-xs line-clamp-1 group-hover:text-amber-400 transition-colors">
                           {item.title}
@@ -994,6 +909,8 @@ export default function Home() {
             <span>🇵🇭</span> Pinay / Asian
           </button>
         </div>
+
+        <AdSlot position="middle" enabled={!isAdFree} />
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
@@ -1143,6 +1060,8 @@ export default function Home() {
             </button>
           </div>
         )}
+
+        <AdSlot position="footer" enabled={!isAdFree} />
       </div>
 
       {/* VIDEO PLAYER MODAL */}
@@ -1222,11 +1141,9 @@ export default function Home() {
                 </div>
               </div>
 
-              {!isAdFree && (
-                <div className="px-4 md:px-6">
-                  <ModalNativeBanner />
-                </div>
-              )}
+              <div className="px-4 md:px-6">
+                <AdSlot position="modal" enabled={!isAdFree} />
+              </div>
 
               <div className="px-4 py-5 md:px-6 bg-slate-900/90">
                 <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">

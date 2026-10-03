@@ -1,33 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const POPUNDER_AD_URL = "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
 export default function LandingPage() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const navigate = useNavigate();
 
-  // Dynamic Injection ng Adsterra Popunder Script
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
-
   const handleEnterClick = () => {
-    // Popunder Trigger + Open Age Modal
-    window.open(POPUNDER_AD_URL, "_blank");
     setShowDisclaimer(true);
   };
 
   const handleConfirmAge = () => {
-    // Popunder Trigger + Proceed to Login
-    window.open(POPUNDER_AD_URL, "_blank");
     navigate('/login');
   };
 
