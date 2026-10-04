@@ -9,34 +9,22 @@ const NATIVE_CONTAINER_ID =
 const SLOT_STYLES = {
   top: {
     wrapper:
-      "w-full max-w-[280px] mx-auto flex flex-col items-center justify-center mb-4 p-2 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
-    label: "Advertisement",
-    labelClass:
-      "text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
+      "w-[320px] max-w-full h-[300px] mx-auto flex items-center justify-center mb-4 p-2 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
   },
 
   middle: {
     wrapper:
-      "w-full max-w-[280px] mx-auto flex flex-col items-center justify-center my-6 p-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
-    label: "Advertisement",
-    labelClass:
-      "text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
+      "w-[320px] max-w-full h-[300px] mx-auto flex items-center justify-center my-6 p-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
   },
 
   modal: {
     wrapper:
-      "w-full max-w-[240px] mx-auto flex flex-col items-center justify-center my-2 p-2 bg-slate-950/80 border border-slate-700 rounded-xl overflow-hidden shadow-md",
-    label: "Sponsored",
-    labelClass:
-      "text-[9px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
+      "w-[320px] max-w-full h-[300px] mx-auto flex items-center justify-center my-2 p-2 bg-slate-950/80 border border-slate-700 rounded-xl overflow-hidden shadow-md",
   },
 
   footer: {
     wrapper:
-      "w-full max-w-[280px] mx-auto flex flex-col items-center justify-center mt-6 p-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
-    label: "Advertisement",
-    labelClass:
-      "text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
+      "w-[320px] max-w-full h-[300px] mx-auto flex items-center justify-center mt-6 p-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
   },
 };
 
@@ -145,11 +133,10 @@ export default function AdSlot({ position = "top", enabled = true }) {
 
   return (
     <div className={style.wrapper}>
-      <span className={style.labelClass}>{style.label}</span>
       <iframe
         ref={iframeRef}
         srcDoc={adHtml}
-        style={{ height: `${adHeight}px`, width: "100%" }}
+        style={{ height: `${Math.min(adHeight, 284)}px`, width: "100%" }}
         className="border-0 transition-all duration-300 ease-out"
         scrolling="no"
         title={`Advertisement - ${position}`}

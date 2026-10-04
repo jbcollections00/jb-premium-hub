@@ -38,6 +38,7 @@ export default function Home() {
   const [mediaList, setMediaList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
 
   // AutoPlay state para sa Step 2 Play Trigger
   const [autoPlay, setAutoPlay] = useState(() => {
@@ -784,6 +785,58 @@ export default function Home() {
     }
   };
 
+  // Share button shown to all users in the modal comments header
+  const handleShareSelectedMedia = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!selectedMedia?.id) return;
+
+    const shareUrl = `https://www.jb-premium-hub.vip/v/${selectedMedia.id}`;
+    const shareData = {
+      title: selectedMedia.title || "JB Premium Hub",
+      text: "Watch this video on JB Premium Hub Vault!",
+      url: shareUrl,
+    };
+
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopiedShareLink(true);
+        window.setTimeout(() => setCopiedShareLink(false), 2000);
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        console.error("Share error:", err);
+      }
+    }
+  };
+
+  // Download button is rendered only for active VIP or Admin users
+  const handleDownloadSelectedMedia = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!isAdFree || !selectedMedia?.media_url) return;
+
+    const videoUrl = getCdnUrl(selectedMedia.media_url);
+    const link = document.createElement("a");
+    link.href = videoUrl;
+    link.setAttribute("download", `Vault-Video-${selectedMedia.id}.mp4`);
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
       <div className="max-w-7xl mx-auto">
@@ -1247,10 +1300,36 @@ export default function Home() {
               </div>
 
               <div className="px-4 py-5 md:px-6 bg-slate-900/90">
-                <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-                  <span>💬 Comments</span>
-                  <span className="text-xs text-slate-400">({comments.length})</span>
-                </h3>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>💬 Comments</span>
+                    <span className="text-xs text-slate-400">({comments.length})</span>
+                  </h3>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleShareSelectedMedia}
+                      className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                      title="Share video"
+                    >
+                      <span>📤</span>
+                      <span>{copiedShareLink ? "Copied!" : "Share"}</span>
+                    </button>
+
+                    {isAdFree && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSelectedMedia}
+                        className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                        title="VIP / Admin Video Download"
+                      >
+                        <span>📥</span>
+                        <span>Download</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
 
                 {userProfile ? (
                   <form onSubmit={handleAddComment} className="flex flex-col gap-3 mb-6 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">

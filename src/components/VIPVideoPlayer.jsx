@@ -254,6 +254,10 @@ export default function VIPVideoPlayer({
             ref={mainVideoRef}
             src={videoSrc}
             controls={isPlaying}
+            controlsList={!effectiveIsAdFree ? "nodownload" : undefined}
+            onContextMenu={(e) => {
+              if (!effectiveIsAdFree) e.preventDefault();
+            }}
             playsInline
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={handleVideoPlay}
