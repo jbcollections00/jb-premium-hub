@@ -5,37 +5,53 @@ export const config = {
 };
 
 export default async function handler(req: Request) {
-  const url = new URL(req.url);
-  const videoId = url.searchParams.get("id") || url.searchParams.get("v");
+  try {
+    const url = new URL(req.url);
+    const videoId = url.searchParams.get("id") || url.searchParams.get("v");
 
-  if (!videoId) {
-    return Response.redirect("https://www.jb-premium-hub.vip/home", 302);
-  }
+    if (!videoId) {
+      return Response.redirect("https://www.jb-premium-hub.vip/home", 302);
+    }
 
-  const supabaseUrl = process.env.SUPABASE_URL || "";
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    // Kumuha ng Environment Variables mula sa iba't ibang posibleng pangalan
+    const supabaseUrl =
+      process.env.SUPABASE_URL ||
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      "";
+    const supabaseAnonKey =
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      "";
 
-  // Kumuha ng data sa Supabase Database
-  const { data: video } = await supabase
-    .from("media")
-    .select("title, description, thumbnail_url")
-    .eq("id", videoId)
-    .maybeSingle();
+    let title = "JB Premium Hub";
+    let description = "Watch on JB Premium Hub Vault";
+    let imageUrl = "https://www.jb-premium-hub.vip/og-default.jpg";
 
-  const title = video?.title?.trim() || "JB Premium Hub";
-  const description =
-    video?.description?.trim() || "Watch on JB Premium Hub Vault";
+    // Subukang kumuha ng metadata kung may valid na Supabase credentials
+    if (supabaseUrl && supabaseAnonKey) {
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data: video } = await supabase
+        .from("media")
+        .select("title, description, thumbnail_url")
+        .eq("id", videoId)
+        .maybeSingle();
 
-  let imageUrl = video?.thumbnail_url?.trim() || "https://www.jb-premium-hub.vip/og-default.jpg";
-  if (imageUrl.startsWith("/")) {
-    imageUrl = `https://www.jb-premium-hub.vip${imageUrl}`;
-  }
+      if (video?.title?.trim()) title = video.title.trim();
+      if (video?.description?.trim()) description = video.description.trim();
+      if (video?.thumbnail_url?.trim()) {
+        imageUrl = video.thumbnail_url.trim();
+        if (imageUrl.startsWith("/")) {
+          imageUrl = `https://www.jb-premium-hub.vip${imageUrl}`;
+        }
+      }
+    }
 
-  const redirectUrl = `https://www.jb-premium-hub.vip/home?v=${encodeURIComponent(videoId)}`;
-  const canonicalUrl = `https://www.jb-premium-hub.vip/v/${encodeURIComponent(videoId)}`;
+    const redirectUrl = `https://www.jb-premium-hub.vip/home?v=${encodeURIComponent(videoId)}`;
+    const canonicalUrl = `https://www.jb-premium-hub.vip/v/${encodeURIComponent(videoId)}`;
 
-  const html = `<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -68,11 +84,15 @@ export default async function handler(req: Request) {
 </body>
 </html>`;
 
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=300, s-maxage=300",
-    },
-  });
+    return new Response(html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "public, max-age=300, s-maxage=300",
+      },
+    });
+  } catch (err) {
+    console.error("Vercel Edge Function Error:", err);
+    return new Response("Internal Server Error", { status: 500 });
+  }
 }
