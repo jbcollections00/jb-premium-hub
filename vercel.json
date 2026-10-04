@@ -3,6 +3,10 @@
     {
       "source": "/v/:id",
       "destination": "/api/v?id=:id"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
