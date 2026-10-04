@@ -13,6 +13,7 @@ export default function VIPVideoPlayer({
   currentDuration,
   showWatermark = true,
   watermarkPosition = "top-right",
+  commentsCount = 0,
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -205,7 +206,6 @@ export default function VIPVideoPlayer({
       url: shareUrl,
     };
 
-    // Use native share sheet if available (Mobile phones: Messenger, Facebook, Telegram, WhatsApp)
     if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
       try {
         await navigator.share(shareData);
@@ -217,7 +217,6 @@ export default function VIPVideoPlayer({
       }
     }
 
-    // Fallback: Copy link directly to clipboard
     if (navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(shareUrl);
@@ -303,30 +302,44 @@ export default function VIPVideoPlayer({
         </div>
       </div>
 
-      {/* 🔘 DEDICATED ACTION BAR BELOW VIDEO (Mobile & Desktop Friendly) */}
+      {/* 💬 COMMENTS & ACTION BAR (In-Line: Comments on Left, Share & Download on Right) */}
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-t border-slate-800/80 gap-3">
-        {/* Share Button */}
-        {mediaId ? (
-          <button
-            onClick={handleShare}
-            className="flex-1 sm:flex-none bg-sky-600 hover:bg-sky-500 text-white font-bold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center justify-center gap-2 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
-            title="Share with Facebook, Messenger, or Copy Link"
-          >
-            <span className="text-base">📤</span>
-            <span>{copied ? "Link Copied!" : "Share Video"}</span>
-          </button>
-        ) : <div />}
+        
+        {/* KALIWA: Comments Title */}
+        <div className="flex items-center gap-2 select-none">
+          <span className="text-lg sm:text-xl">💭</span>
+          <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
+            Comments <span className="text-xs sm:text-sm font-normal text-slate-400">({commentsCount})</span>
+          </h3>
+        </div>
 
-        {/* VIP/Admin Download Button */}
-        {effectiveIsAdFree && (
-          <button
-            onClick={handleVipDownload}
-            className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-2 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
-          >
-            <span className="text-base">📥</span>
-            <span>Download</span>
-          </button>
-        )}
+        {/* KANAN: Action Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Share Button (Lalabas para sa Lahat ng Users) */}
+          {mediaId && (
+            <button
+              onClick={handleShare}
+              className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
+              title="Share with Facebook, Messenger, or Copy Link"
+            >
+              <span className="text-sm sm:text-base">📤</span>
+              <span>{copied ? "Copied!" : "Share"}</span>
+            </button>
+          )}
+
+          {/* Download Button (Lalabas LAMANG para sa VIP at Admin Users) */}
+          {effectiveIsAdFree && (
+            <button
+              onClick={handleVipDownload}
+              className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
+              title="VIP / Admin Video Download"
+            >
+              <span className="text-sm sm:text-base">📥</span>
+              <span>Download</span>
+            </button>
+          )}
+        </div>
+
       </div>
 
     </div>
