@@ -369,7 +369,7 @@ export default function Home() {
     } catch (err) {
       console.error("Viewers log fetch error:", err.message || err);
       setViewersList([]);
-    } fontally {
+    } finally {
       setViewersLoading(false);
     }
   };
