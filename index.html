@@ -1,32 +1,39 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>${video.title} - JB Premium Hub</title>
-  
-  <!-- Open Graph -->
-  <meta property="og:type" content="video.other" />
-  <meta property="og:site_name" content="JB Premium Hub" />
-  <meta property="og:title" content="${video.title}" />
-  <meta property="og:description" content="${video.description || 'Watch on JB Premium Hub'}" />
-  <meta property="og:image" content="${video.thumbnail_url}" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:url" content="https://www.jb-premium-hub.vip/share/video/${videoId}" />
-  
-  <!-- Twitter Cards -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${video.title}" />
-  <meta name="twitter:description" content="${video.description || 'Watch on JB Premium Hub'}" />
-  <meta name="twitter:image" content="${video.thumbnail_url}" />
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Instant redirect for human visitors -->
-  <meta http-equiv="refresh" content="0; url=https://www.jb-premium-hub.vip/home?v=${videoId}" />
-  <script>
-    window.location.href = "https://www.jb-premium-hub.vip/home?v=${videoId}";
-  </script>
-</head>
-<body style="background: #0f172a; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
-  <p>Loading video... <a href="https://www.jb-premium-hub.vip/home?v=${videoId}" style="color: #38bdf8;">Click here if you are not redirected</a>.</p>
-</body>
+    <!-- Search Engine Meta Tags -->
+    <title>JB Premium Hub</title>
+    <meta name="description" content="JB Premium Hub Vault & Premium Collections" />
+
+    <!-- Favicons & App Icons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!-- Open Graph / Facebook / Messenger -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="JB Premium Hub" />
+    <meta property="og:url" content="https://www.jb-premium-hub.vip/home" />
+    <meta property="og:title" content="JB Premium Hub" />
+    <meta property="og:description" content="JB Premium Hub Vault & Premium Collections" />
+    <meta property="og:image" content="https://www.jb-premium-hub.vip/og-default.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter / Telegram Preview Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://www.jb-premium-hub.vip/home" />
+    <meta name="twitter:title" content="JB Premium Hub" />
+    <meta name="twitter:description" content="JB Premium Hub Vault & Premium Collections" />
+    <meta name="twitter:image" content="https://www.jb-premium-hub.vip/og-default.jpg" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

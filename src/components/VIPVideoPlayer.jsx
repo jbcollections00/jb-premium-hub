@@ -16,6 +16,7 @@ export default function VIPVideoPlayer({
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [copied, setCopied] = useState(false);
   const mainVideoRef = useRef(null);
   const hasLoggedWatchRef = useRef(false);
   const hasSavedDurationRef = useRef(false);
@@ -160,7 +161,6 @@ export default function VIPVideoPlayer({
 
       if (error) throw error;
 
-      // Avoid repeating the RPC during the same media session.
       hasSavedDurationRef.current = true;
 
       if (data === true && typeof onDurationUpdate === "function") {
@@ -175,13 +175,10 @@ export default function VIPVideoPlayer({
   const handleVideoPlay = async () => {
     setIsPlaying(true);
 
-    // Notify Home.jsx so it can record/increment the view count.
     if (typeof onPlay === "function") {
       onPlay();
     }
 
-    // Prevent duplicate watch logs during the same player session.
-    // Mark as logged only after the RPC succeeds so a failed request can retry.
     if (hasLoggedWatchRef.current) return;
 
     try {
@@ -193,6 +190,22 @@ export default function VIPVideoPlayer({
     } catch (err) {
       hasLoggedWatchRef.current = false;
       console.error("Error logging video watch:", err);
+    }
+  };
+
+  // 🔗 SHARE LINK GENERATOR WITH META PREVIEW CARD
+  const handleShare = (e) => {
+    if (e) e.stopPropagation();
+    if (!mediaId) return;
+
+    // Edge Function endpoint that outputs dynamic Open Graph meta tags
+    const shareUrl = `https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/hyper-endpoint?id=${mediaId}`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch((err) => console.error("Copy error:", err));
     }
   };
 
@@ -214,9 +227,7 @@ export default function VIPVideoPlayer({
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
 
-      {/* 🎬 ACTUAL VIDEO FRAME
-          This wrapper shrink-wraps the rendered video, so overlays stay
-          inside the real landscape/portrait video area instead of black bars. */}
+      {/* 🎬 ACTUAL VIDEO FRAME */}
       <div className="relative inline-block max-w-full max-h-[65vh]">
 
         <video
@@ -237,7 +248,7 @@ export default function VIPVideoPlayer({
           }
         />
 
-        {/* 🏷️ JB LOGO WATERMARK - always anchored to the actual video frame */}
+        {/* 🏷️ JB LOGO WATERMARK */}
         {showWatermark && (
           <img
             src="/jb-logo.png"
@@ -248,21 +259,33 @@ export default function VIPVideoPlayer({
           />
         )}
 
-        {/* 📥 DOWNLOAD BUTTON (VIP/ADMIN ONLY) */}
-        {effectiveIsAdFree && (
-          <div className="absolute top-3 left-3 z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        {/* 🔘 ACTION BUTTONS (SHARE & DOWNLOAD) */}
+        <div className="absolute top-3 left-3 z-40 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          {/* Share Button (Generates dynamic Open Graph link) */}
+          {mediaId && (
+            <button
+              onClick={handleShare}
+              className="bg-sky-600 hover:bg-sky-500 text-white font-extrabold px-3 py-2 rounded-xl text-xs shadow-lg shadow-sky-600/30 flex items-center gap-1.5 transition-transform hover:scale-105 cursor-pointer"
+              title="Copy link with Facebook/Messenger preview card"
+            >
+              <span className="text-sm">🔗</span>
+              <span>{copied ? "Copied!" : "Share"}</span>
+            </button>
+          )}
+
+          {/* Download Button (VIP/Admin only) */}
+          {effectiveIsAdFree && (
             <button
               onClick={handleVipDownload}
               className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
             >
               <span className="text-base">📥</span>
-              <span className="hidden sm:inline">Download Video</span>
+              <span className="hidden sm:inline">Download</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* ▶️ CUSTOM INITIAL PLAY OVERLAY
-            Also bound to the actual video frame for portrait + landscape. */}
+        {/* ▶️ INITIAL PLAY OVERLAY */}
         {!isPlaying && (
           <div
             onClick={handlePlayOverlayClick}
