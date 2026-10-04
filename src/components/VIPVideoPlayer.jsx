@@ -193,13 +193,13 @@ export default function VIPVideoPlayer({
     }
   };
 
-  // 🔗 SHARE LINK GENERATOR WITH META PREVIEW CARD
+  // 🔗 SHARE LINK GENERATOR WITH CUSTOM DOMAIN
   const handleShare = (e) => {
     if (e) e.stopPropagation();
     if (!mediaId) return;
 
-    // Edge Function endpoint that outputs dynamic Open Graph meta tags
-    const shareUrl = `https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/hyper-endpoint?id=${mediaId}`;
+    // Direct custom domain rewrite URL
+    const shareUrl = `https://www.jb-premium-hub.vip/v/${mediaId}`;
 
     if (navigator.clipboard) {
       navigator.clipboard.writeText(shareUrl).then(() => {

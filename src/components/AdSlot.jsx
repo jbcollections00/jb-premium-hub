@@ -9,7 +9,7 @@ const NATIVE_CONTAINER_ID =
 const SLOT_STYLES = {
   top: {
     wrapper:
-      "w-full flex flex-col items-center justify-center mb-6 p-3 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
+      "w-full max-w-[280px] mx-auto flex flex-col items-center justify-center mb-4 p-2 bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
     label: "Advertisement",
     labelClass:
       "text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
@@ -17,7 +17,7 @@ const SLOT_STYLES = {
 
   middle: {
     wrapper:
-      "w-full flex flex-col items-center justify-center my-8 p-3 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
+      "w-full max-w-[280px] mx-auto flex flex-col items-center justify-center my-6 p-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
     label: "Advertisement",
     labelClass:
       "text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
@@ -25,7 +25,7 @@ const SLOT_STYLES = {
 
   modal: {
     wrapper:
-      "w-full flex flex-col items-center justify-center my-4 p-3 bg-slate-950/80 border border-slate-700 rounded-xl overflow-hidden shadow-md",
+      "w-full max-w-[240px] mx-auto flex flex-col items-center justify-center my-2 p-2 bg-slate-950/80 border border-slate-700 rounded-xl overflow-hidden shadow-md",
     label: "Sponsored",
     labelClass:
       "text-[9px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
@@ -33,7 +33,7 @@ const SLOT_STYLES = {
 
   footer: {
     wrapper:
-      "w-full flex flex-col items-center justify-center mt-10 p-3 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
+      "w-full max-w-[280px] mx-auto flex flex-col items-center justify-center mt-6 p-2 bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg",
     label: "Advertisement",
     labelClass:
       "text-[10px] text-slate-500 font-semibold mb-1 uppercase tracking-widest",
@@ -41,8 +41,8 @@ const SLOT_STYLES = {
 };
 
 export default function AdSlot({ position = "top", enabled = true }) {
-  // Set initial default height to 220px to balance load time with zero initial clipping
-  const [adHeight, setAdHeight] = useState(220);
+  // Set initial default height to 160px for compact load
+  const [adHeight, setAdHeight] = useState(160);
   const iframeRef = useRef(null);
   const style = SLOT_STYLES[position] || SLOT_STYLES.top;
 
@@ -90,7 +90,7 @@ export default function AdSlot({ position = "top", enabled = true }) {
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            padding-bottom: 12px;
+            padding-bottom: 4px;
           }
           #${NATIVE_CONTAINER_ID} {
             width: 100%;
@@ -118,7 +118,7 @@ export default function AdSlot({ position = "top", enabled = true }) {
               html.clientHeight, html.scrollHeight, html.offsetHeight
             );
             if (contentHeight > 0) {
-              window.parent.postMessage({ type: 'AD_RESIZE', height: contentHeight + 20 }, '*');
+              window.parent.postMessage({ type: 'AD_RESIZE', height: contentHeight + 10 }, '*');
             }
           }
 
