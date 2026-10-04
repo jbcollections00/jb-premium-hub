@@ -193,19 +193,39 @@ export default function VIPVideoPlayer({
     }
   };
 
-  // 🔗 SHARE LINK GENERATOR WITH CUSTOM DOMAIN
-  const handleShare = (e) => {
+  // 🔗 SMART SHARE FUNCTION (Native Mobile Share Sheet + Clipboard Fallback)
+  const handleShare = async (e) => {
     if (e) e.stopPropagation();
     if (!mediaId) return;
 
-    // Direct custom domain rewrite URL
     const shareUrl = `https://www.jb-premium-hub.vip/v/${mediaId}`;
+    const shareData = {
+      title: 'JB Premium Hub',
+      text: 'Watch this video on JB Premium Hub Vault!',
+      url: shareUrl,
+    };
 
+    // Use native share sheet if available (Mobile phones: Messenger, Facebook, Telegram, WhatsApp)
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Error sharing:', err);
+        }
+      }
+    }
+
+    // Fallback: Copy link directly to clipboard
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(shareUrl).then(() => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      }).catch((err) => console.error("Copy error:", err));
+      } catch (err) {
+        console.error("Copy error:", err);
+      }
     }
   };
 
@@ -225,87 +245,90 @@ export default function VIPVideoPlayer({
   };
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-2xl group border border-slate-800/80 select-none">
+    <div className="flex flex-col w-full bg-slate-950 rounded-xl overflow-hidden shadow-2xl border border-slate-800/80">
+      
+      {/* 🎬 MAIN PLAYER CONTAINER */}
+      <div className="relative w-full h-full flex items-center justify-center bg-black group select-none">
+        <div className="relative inline-block max-w-full max-h-[65vh]">
 
-      {/* 🎬 ACTUAL VIDEO FRAME */}
-      <div className="relative inline-block max-w-full max-h-[65vh]">
-
-        <video
-          ref={mainVideoRef}
-          src={videoSrc}
-          controls={isPlaying}
-          playsInline
-          onLoadedMetadata={handleLoadedMetadata}
-          onPlay={handleVideoPlay}
-          className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
-          onError={(e) =>
-            console.error(
-              "Error loading video:",
-              e.target.error,
-              "URL Attempted:",
-              videoSrc
-            )
-          }
-        />
-
-        {/* 🏷️ JB LOGO WATERMARK */}
-        {showWatermark && (
-          <img
-            src="/jb-logo.png"
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className={`absolute ${watermarkClass} z-30 w-12 sm:w-14 md:w-16 h-auto opacity-55 pointer-events-none select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)]`}
+          <video
+            ref={mainVideoRef}
+            src={videoSrc}
+            controls={isPlaying}
+            playsInline
+            onLoadedMetadata={handleLoadedMetadata}
+            onPlay={handleVideoPlay}
+            className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
+            onError={(e) =>
+              console.error(
+                "Error loading video:",
+                e.target.error,
+                "URL Attempted:",
+                videoSrc
+              )
+            }
           />
-        )}
 
-        {/* 🔘 ACTION BUTTONS (SHARE & DOWNLOAD) */}
-        <div className="absolute top-3 left-3 z-40 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          {/* Share Button (Generates dynamic Open Graph link) */}
-          {mediaId && (
-            <button
-              onClick={handleShare}
-              className="bg-sky-600 hover:bg-sky-500 text-white font-extrabold px-3 py-2 rounded-xl text-xs shadow-lg shadow-sky-600/30 flex items-center gap-1.5 transition-transform hover:scale-105 cursor-pointer"
-              title="Copy link with Facebook/Messenger preview card"
-            >
-              <span className="text-sm">🔗</span>
-              <span>{copied ? "Copied!" : "Share"}</span>
-            </button>
+          {/* 🏷️ JB LOGO WATERMARK */}
+          {showWatermark && (
+            <img
+              src="/jb-logo.png"
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className={`absolute ${watermarkClass} z-30 w-12 sm:w-14 md:w-16 h-auto opacity-55 pointer-events-none select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.75)]`}
+            />
           )}
 
-          {/* Download Button (VIP/Admin only) */}
-          {effectiveIsAdFree && (
-            <button
-              onClick={handleVipDownload}
-              className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 rounded-xl text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
+          {/* ▶️ INITIAL PLAY OVERLAY */}
+          {!isPlaying && (
+            <div
+              onClick={handlePlayOverlayClick}
+              className="absolute inset-0 bg-black/60 hover:bg-black/40 transition-all flex flex-col items-center justify-center cursor-pointer z-20 group"
             >
-              <span className="text-base">📥</span>
-              <span className="hidden sm:inline">Download</span>
-            </button>
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-600 group-hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-300 border border-red-400/30">
+                <svg
+                  className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+
+              <span className="mt-4 text-[10px] sm:text-xs font-bold text-white tracking-widest uppercase bg-slate-900/90 border border-slate-700/80 px-3 sm:px-4 py-2 rounded-xl shadow-lg">
+                Click to Play Video
+              </span>
+            </div>
           )}
         </div>
+      </div>
 
-        {/* ▶️ INITIAL PLAY OVERLAY */}
-        {!isPlaying && (
-          <div
-            onClick={handlePlayOverlayClick}
-            className="absolute inset-0 bg-black/60 hover:bg-black/40 transition-all flex flex-col items-center justify-center cursor-pointer z-20 group"
+      {/* 🔘 DEDICATED ACTION BAR BELOW VIDEO (Mobile & Desktop Friendly) */}
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-t border-slate-800/80 gap-3">
+        {/* Share Button */}
+        {mediaId ? (
+          <button
+            onClick={handleShare}
+            className="flex-1 sm:flex-none bg-sky-600 hover:bg-sky-500 text-white font-bold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center justify-center gap-2 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
+            title="Share with Facebook, Messenger, or Copy Link"
           >
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-600 group-hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-300 border border-red-400/30">
-              <svg
-                className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1"
-                viewBox="0 0 24 24"
-              >
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </div>
+            <span className="text-base">📤</span>
+            <span>{copied ? "Link Copied!" : "Share Video"}</span>
+          </button>
+        ) : <div />}
 
-            <span className="mt-4 text-[10px] sm:text-xs font-bold text-white tracking-widest uppercase bg-slate-900/90 border border-slate-700/80 px-3 sm:px-4 py-2 rounded-xl shadow-lg">
-              Click to Play Video
-            </span>
-          </div>
+        {/* VIP/Admin Download Button */}
+        {effectiveIsAdFree && (
+          <button
+            onClick={handleVipDownload}
+            className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-2 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
+          >
+            <span className="text-base">📥</span>
+            <span>Download</span>
+          </button>
         )}
       </div>
+
     </div>
   );
 }
