@@ -302,45 +302,7 @@ export default function VIPVideoPlayer({
         </div>
       </div>
 
-      {/* 💬 COMMENTS & ACTION BAR (In-Line: Comments on Left, Share & Download on Right) */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-t border-slate-800/80 gap-3">
-        
-        {/* KALIWA: Comments Title */}
-        <div className="flex items-center gap-2 select-none">
-          <span className="text-lg sm:text-xl">💭</span>
-          <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
-            Comments <span className="text-xs sm:text-sm font-normal text-slate-400">({commentsCount})</span>
-          </h3>
-        </div>
 
-        {/* KANAN: Action Buttons */}
-        <div className="flex items-center gap-2">
-          {/* Share Button (Lalabas para sa Lahat ng Users) */}
-          {mediaId && (
-            <button
-              onClick={handleShare}
-              className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
-              title="Share with Facebook, Messenger, or Copy Link"
-            >
-              <span className="text-sm sm:text-base">📤</span>
-              <span>{copied ? "Copied!" : "Share"}</span>
-            </button>
-          )}
-
-          {/* Download Button (Lalabas LAMANG para sa VIP at Admin Users) */}
-          {effectiveIsAdFree && (
-            <button
-              onClick={handleVipDownload}
-              className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-transform active:scale-95 hover:scale-105 cursor-pointer"
-              title="VIP / Admin Video Download"
-            >
-              <span className="text-sm sm:text-base">📥</span>
-              <span>Download</span>
-            </button>
-          )}
-        </div>
-
-      </div>
 
     </div>
   );
