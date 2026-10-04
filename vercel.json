@@ -2,11 +2,7 @@
   "rewrites": [
     {
       "source": "/v/:id",
-      "destination": "https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/hyper-endpoint?id=:id"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/api/v?id=:id"
     }
   ]
 }
