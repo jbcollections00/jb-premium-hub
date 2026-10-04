@@ -39,6 +39,14 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
 
+  // AutoPlay state para sa Step 2 Play Trigger
+  const [autoPlay, setAutoPlay] = useState(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("autoplay") === "true";
+    }
+    return false;
+  });
+
   // States para sa Most Watched Videos
   const [mostWatched, setMostWatched] = useState([]);
   const [mostWatchedLoading, setMostWatchedLoading] = useState(true);
@@ -167,9 +175,14 @@ export default function Home() {
     if (mediaList.length > 0 && !selectedMedia) {
       const params = new URLSearchParams(window.location.search);
       const videoId = params.get("v");
+      const isAuto = params.get("autoplay") === "true";
+
       if (videoId) {
-        const found = mediaList.find((m) => String(m.id) === String(videoId)) || mostWatched.find((m) => String(m.id) === String(videoId));
+        const found =
+          mediaList.find((m) => String(m.id) === String(videoId)) ||
+          mostWatched.find((m) => String(m.id) === String(videoId));
         if (found) {
+          if (isAuto) setAutoPlay(true);
           setSelectedMedia(found);
           setTimeout(() => {
             const el = document.getElementById(`video-${videoId}`);
@@ -283,11 +296,15 @@ export default function Home() {
     let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
 
     if (category === "pinay_asian") {
-      query = query.or("category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%");
+      query = query.or(
+        "category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%"
+      );
     }
 
     try {
-      const { data, count, error } = await query.order("created_at", { ascending: false }).range(from, to);
+      const { data, count, error } = await query
+        .order("created_at", { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
 
@@ -352,7 +369,7 @@ export default function Home() {
     } catch (err) {
       console.error("Viewers log fetch error:", err.message || err);
       setViewersList([]);
-    } finally {
+    } fontally {
       setViewersLoading(false);
     }
   };
@@ -383,12 +400,10 @@ export default function Home() {
     }));
 
     try {
-      const { error } = await supabase
-        .from("media_views")
-        .insert({
-          media_id: mediaId,
-          user_id: userProfile.id,
-        });
+      const { error } = await supabase.from("media_views").insert({
+        media_id: mediaId,
+        user_id: userProfile.id,
+      });
 
       if (error) throw error;
     } catch (err) {
@@ -646,29 +661,29 @@ export default function Home() {
     }
   };
 
-  // Video Selection Handler with Popunder Smartlink Trigger
+  // STEP 1: Video Selection Handler with Smartlink Popunder Trigger
   const handleSelectMedia = (e, item) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
 
-    // 1. Para sa Standard Users: Subukang magbukas ng Smartlink sa bagong tab
+    // Standard Users: Open video in a NEW tab (Tab 2), while current tab (Tab 1) redirects to Smartlink
     if (!isAdFree) {
-      try {
-        const pop = window.open(SMARTLINK_URL, "_blank", "noopener,noreferrer");
-        if (pop) {
-          // Ibalik ang focus sa kasalukuyang window para manatiling background tab ang ad
-          pop.blur();
-          window.focus();
-        }
-      } catch (err) {
-        console.warn("Smartlink popup was blocked or failed:", err);
-      }
+      const videoTabUrl = new URL(window.location.href);
+      videoTabUrl.searchParams.set("v", item.id);
+      videoTabUrl.searchParams.set("step", "2");
+      videoTabUrl.searchParams.delete("autoplay");
+
+      // Open new tab for the video modal
+      window.open(videoTabUrl.toString(), "_blank");
+
+      // Redirect current tab to Smartlink
+      window.location.href = SMARTLINK_URL;
+      return;
     }
 
-    // 2. Para sa Lahat ng User (kasama ang Standard users kahit ma-block ang popup):
-    // Direktang bubukas ang video modal sa kasalukuyang tab
+    // VIP / Admin Users: Open modal directly in current tab
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
     setSelectedMedia(item);
 
@@ -677,7 +692,32 @@ export default function Home() {
     url.searchParams.set("page", currentPage);
     url.searchParams.set("cat", activeCategory);
     url.searchParams.delete("step");
+    url.searchParams.delete("autoplay");
     window.history.replaceState({}, "", url);
+  };
+
+  // STEP 2: Modal Play Click Handler with Smartlink Popunder Trigger
+  const handleStartPlayback = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (!isAdFree && !autoPlay) {
+      const playTabUrl = new URL(window.location.href);
+      playTabUrl.searchParams.set("v", selectedMedia.id);
+      playTabUrl.searchParams.set("autoplay", "true");
+      playTabUrl.searchParams.delete("step");
+
+      // Open new tab (Tab 3) where video auto-plays
+      window.open(playTabUrl.toString(), "_blank");
+
+      // Redirect current tab (Tab 2) to Smartlink
+      window.location.href = SMARTLINK_URL;
+      return;
+    }
+
+    setAutoPlay(true);
   };
 
   const handleCloseMedia = (e) => {
@@ -688,12 +728,14 @@ export default function Home() {
 
     const targetY = scrollPosRef.current;
     setSelectedMedia(null);
+    setAutoPlay(false);
     setHasRecordedCurrentView(false);
     viewRecordedRef.current = false;
 
     const url = new URL(window.location.href);
     url.searchParams.delete("v");
     url.searchParams.delete("step");
+    url.searchParams.delete("autoplay");
     window.history.replaceState({}, "", url);
 
     setTimeout(() => {
@@ -776,7 +818,11 @@ export default function Home() {
               {userProfile && (
                 <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 px-3 py-2 rounded-xl text-xs">
                   <span className="text-slate-500 font-semibold">Account:</span>
-                  <span className={`font-black uppercase text-[11px] ${isAdmin ? 'text-purple-400' : isVIP ? 'text-amber-400' : 'text-blue-400'}`}>
+                  <span
+                    className={`font-black uppercase text-[11px] ${
+                      isAdmin ? "text-purple-400" : isVIP ? "text-amber-400" : "text-blue-400"
+                    }`}
+                  >
                     {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : "👤 Standard"}
                   </span>
                 </div>
@@ -858,14 +904,15 @@ export default function Home() {
                       </div>
 
                       <div className="p-3">
-                        {/* Pinalitan ang line-clamp-1 ng break-words para ipakita ang buong title */}
                         <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
                           {item.title}
                         </h4>
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900">
                           <span
                             onClick={(e) => isAdmin && handleOpenViewers(e, item)}
-                            className={`text-[11px] font-bold text-amber-400/90 flex items-center gap-1 ${isAdmin ? 'hover:underline cursor-pointer' : ''}`}
+                            className={`text-[11px] font-bold text-amber-400/90 flex items-center gap-1 ${
+                              isAdmin ? "hover:underline cursor-pointer" : ""
+                            }`}
                             title={isAdmin ? "Click to view watch logs (Admin)" : ""}
                           >
                             👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
@@ -899,13 +946,21 @@ export default function Home() {
         <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
           <button
             onClick={() => handleCategoryChange("all")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "all" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeCategory === "all"
+                ? "bg-red-600 text-white"
+                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+            }`}
           >
             <span>🔥</span> All Videos
           </button>
           <button
             onClick={() => handleCategoryChange("pinay_asian")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeCategory === "pinay_asian" ? "bg-red-600 text-white" : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"}`}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeCategory === "pinay_asian"
+                ? "bg-red-600 text-white"
+                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
+            }`}
           >
             <span>🇵🇭</span> Pinay / Asian
           </button>
@@ -955,7 +1010,9 @@ export default function Home() {
                     )}
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                        <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
                       </div>
                     </div>
                   </div>
@@ -966,14 +1023,17 @@ export default function Home() {
                       </span>
                       <span
                         onClick={(e) => isAdmin && handleOpenViewers(e, item)}
-                        className={`text-[11px] text-slate-400 font-medium flex items-center gap-1 ${isAdmin ? 'hover:text-red-400 cursor-pointer underline decoration-dotted underline-offset-2' : ''}`}
+                        className={`text-[11px] text-slate-400 font-medium flex items-center gap-1 ${
+                          isAdmin ? "hover:text-red-400 cursor-pointer underline decoration-dotted underline-offset-2" : ""
+                        }`}
                         title={isAdmin ? "Click to view watch logs (Admin)" : ""}
                       >
                         👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
-                    {/* Pinalitan ang line-clamp-1 ng break-words para maipakita ang buong pamagat */}
-                    <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">{item.title}</h3>
+                    <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">
+                      {item.title}
+                    </h3>
                   </div>
                 </div>
 
@@ -1050,7 +1110,9 @@ export default function Home() {
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-slate-400 font-semibold">of <strong className="text-white">{totalPages}</strong></span>
+              <span className="text-xs text-slate-400 font-semibold">
+                of <strong className="text-white">{totalPages}</strong>
+              </span>
             </div>
 
             <button
@@ -1068,20 +1130,54 @@ export default function Home() {
 
       {/* VIDEO PLAYER MODAL */}
       {selectedMedia && (
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-2 md:p-6" onClick={handleCloseMedia}>
-          <div className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
-
+        <div
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-2 md:p-6"
+          onClick={handleCloseMedia}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 md:px-6 md:py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900 shrink-0">
               <div className="flex flex-col pr-4">
-                <span className="text-[10px] md:text-xs font-black text-red-500 uppercase tracking-widest">Video Vault</span>
-                <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">{selectedMedia.title}</h2>
+                <span className="text-[10px] md:text-xs font-black text-red-500 uppercase tracking-widest">
+                  Video Vault
+                </span>
+                <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">
+                  {selectedMedia.title}
+                </h2>
               </div>
-              <button onClick={handleCloseMedia} className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50">✕</button>
+              <button
+                onClick={handleCloseMedia}
+                className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50"
+              >
+                ✕
+              </button>
             </div>
 
             <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
+              <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px] relative">
+                
+                {/* STEP 2 CLICK-TO-PLAY OVERLAY FOR AD-SUPPORTED USERS */}
+                {!isAdFree && !autoPlay && (
+                  <div
+                    onClick={handleStartPlayback}
+                    className="absolute inset-0 z-30 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center cursor-pointer group transition-all p-4 text-center"
+                  >
+                    <div className="w-20 h-20 bg-red-600 group-hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-all duration-300 border-2 border-white/20">
+                      <svg className="w-10 h-10 fill-current ml-1" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                    <p className="mt-4 text-white font-black text-base md:text-xl tracking-wide drop-shadow-md">
+                      Click to Play Video
+                    </p>
+                    <span className="mt-2 text-xs text-slate-300 font-medium bg-slate-900/80 px-4 py-1.5 rounded-full border border-slate-700/80 shadow-md">
+                      ▶ Tap button to start video playback
+                    </span>
+                  </div>
+                )}
 
-              <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px]">
                 <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
                   <VIPVideoPlayer
                     key={selectedMedia.id}
@@ -1094,6 +1190,7 @@ export default function Home() {
                     userProfile={userProfile}
                     onPlay={handleVideoPlay}
                     onDurationUpdate={handleDurationUpdate}
+                    autoPlay={autoPlay}
                   />
                 </div>
               </div>
@@ -1102,7 +1199,9 @@ export default function Home() {
                 <div className="flex items-center gap-3">
                   <span
                     onClick={(e) => isAdmin && handleOpenViewers(e, selectedMedia)}
-                    className={`text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${isAdmin ? 'hover:text-red-400 hover:border-red-500/50 cursor-pointer' : ''}`}
+                    className={`text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
+                      isAdmin ? "hover:text-red-400 hover:border-red-500/50 cursor-pointer" : ""
+                    }`}
                     title={isAdmin ? "Click to view user watch logs (Admin)" : ""}
                   >
                     👁️ {viewCounts[selectedMedia.id] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0} Total Views {isAdmin && "🔍 (Log)"}
@@ -1166,7 +1265,7 @@ export default function Home() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
                         <span className="text-xs text-amber-400 font-bold">
-                          🛡️️ Security: {captchaNum1} + {captchaNum2} =
+                          🛡 Security: {captchaNum1} + {captchaNum2} =
                         </span>
                         <input
                           type="number"
@@ -1213,7 +1312,6 @@ export default function Home() {
                   )}
                 </div>
               </div>
-
             </div>
           </div>
         </div>
