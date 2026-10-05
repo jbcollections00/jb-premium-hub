@@ -8,6 +8,11 @@ const SMARTLINK_URL =
   import.meta.env.VITE_SMARTLINK_URL ||
   "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
 
+const POPUNDER_SCRIPT_URL =
+  "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
+const POPUNDER_EVERY_N_VIDEOS = 5;
+const POPUNDER_COUNTER_KEY = "jb_standard_video_play_count";
+
 // Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
 const USE_CUSTOM_CDN = true;
 
@@ -375,6 +380,36 @@ export default function Home() {
     }
   };
 
+  // Standard users only: trigger the Popunder script after every 5 actual video plays.
+  // localStorage keeps the counter across the Smartlink-created tabs.
+  const triggerPopunderEveryFiveVideos = () => {
+    if (isAdFree || typeof window === "undefined") return;
+
+    try {
+      const currentCount = parseInt(window.localStorage.getItem(POPUNDER_COUNTER_KEY) || "0", 10) || 0;
+      const nextCount = currentCount + 1;
+
+      if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
+        window.localStorage.setItem(POPUNDER_COUNTER_KEY, String(nextCount));
+        return;
+      }
+
+      // Reset first so refreshes/re-renders cannot repeatedly fire the same threshold.
+      window.localStorage.setItem(POPUNDER_COUNTER_KEY, "0");
+
+      const existing = document.querySelector('script[data-jb-popunder="true"]');
+      if (existing) existing.remove();
+
+      const script = document.createElement("script");
+      script.src = POPUNDER_SCRIPT_URL;
+      script.async = true;
+      script.dataset.jbPopunder = "true";
+      document.body.appendChild(script);
+    } catch (err) {
+      console.error("Popunder trigger error:", err);
+    }
+  };
+
   const handleVideoPlay = async () => {
     if (
       !selectedMedia?.id ||
@@ -387,6 +422,9 @@ export default function Home() {
 
     viewRecordedRef.current = true;
     setHasRecordedCurrentView(true);
+
+    // Count only a real, first play of this opened video.
+    triggerPopunderEveryFiveVideos();
 
     const mediaId = selectedMedia.id;
     const currentVal =
@@ -840,8 +878,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
       <div className="max-w-7xl mx-auto">
-        <AdSlot position="top" enabled={!isAdFree} />
-
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="mb-10 bg-slate-900/80 border border-slate-800 rounded-3xl p-4 md:p-6 shadow-2xl backdrop-blur-md relative overflow-hidden">
           <div className="absolute -top-20 -left-20 w-60 h-60 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -1178,7 +1214,6 @@ export default function Home() {
           </div>
         )}
 
-        <AdSlot position="footer" enabled={!isAdFree} />
       </div>
 
       {/* VIDEO PLAYER MODAL */}
@@ -1293,10 +1328,6 @@ export default function Home() {
                     </span>
                   </button>
                 </div>
-              </div>
-
-              <div className="px-4 md:px-6">
-                <AdSlot position="modal" enabled={!isAdFree} />
               </div>
 
               <div className="px-4 py-5 md:px-6 bg-slate-900/90">
