@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -10,16 +11,23 @@ import MessageList from "./MessageList";
 import MessageComposer from "./MessageComposer";
 import GroupInfoModal from "./GroupInfoModal";
 import ChannelInfoModal from "./ChannelInfoModal";
+import CommunityInfoModal from "./CommunityInfoModal";
+import SharedMediaModal from "./SharedMediaModal";
+import MessageSearchModal from "./MessageSearchModal";
 import PinnedMessageBar from "./PinnedMessageBar";
+import ChatPreferencesPanel from "./ChatPreferencesPanel";
 
 import {
   canSendChatMessage,
+  canSendCommunityMessage,
+  getChatPreferences,
   deleteChatMessage,
+  deleteSystemEvent,
   getConversationMembers,
   getConversationMentions,
   getMessageById,
-  getMessageReadCount,
-  getMessages,
+  getMessageReadCounts,
+  getMessagesPage,
   getPinnedMessages,
   getSystemEventById,
   getSystemEvents,
@@ -105,6 +113,7 @@ export default function ChatWindow({
   currentUser,
   onBack,
   onOpenDirectChat,
+  onOpenConversation,
   onConversationLeft,
 }) {
   const [
@@ -131,6 +140,21 @@ export default function ChatWindow({
     loading,
     setLoading,
   ] = useState(false);
+
+  const [
+    hasOlderMessages,
+    setHasOlderMessages,
+  ] = useState(false);
+
+  const [
+    loadingOlderMessages,
+    setLoadingOlderMessages,
+  ] = useState(false);
+
+  const [
+    oldestMessageCursor,
+    setOldestMessageCursor,
+  ] = useState(null);
 
   const [
     replyingTo,
@@ -161,11 +185,64 @@ export default function ChatWindow({
   ] = useState(false);
 
   const [
+    showCommunityInfo,
+    setShowCommunityInfo,
+  ] = useState(false);
+
+  const [
+    showSharedMedia,
+    setShowSharedMedia,
+  ] = useState(false);
+
+  const [
+    showMessageSearch,
+    setShowMessageSearch,
+  ] = useState(false);
+
+  const [
+    showChatPreferences,
+    setShowChatPreferences,
+  ] = useState(false);
+
+  const [
+    chatPreferences,
+    setChatPreferences,
+  ] = useState({
+    chat_density: "comfortable",
+    enter_to_send: true,
+    show_read_receipts: true,
+    show_typing_indicator: true,
+    reduce_motion: false,
+    message_font_size: "medium",
+    message_line_spacing: "normal",
+    show_message_timestamps: true,
+    bubble_color: "blue",
+    bubble_shape: "rounded",
+    show_sender_names: true,
+    show_date_separators: true,
+    show_reaction_counts: true,
+    show_reaction_badges: true,
+    show_pinned_indicators: true,
+    show_sender_avatars: true,
+    show_edited_labels: true,
+    show_reply_previews: true,
+    show_attachment_previews: true,
+    show_attachment_file_sizes: true,
+    highlight_mentions: true,
+    message_time_format: "system",
+  });
+
+  const [
     localConversation,
     setLocalConversation,
   ] = useState(
     conversation
   );
+
+  const [
+    parentCommunity,
+    setParentCommunity,
+  ] = useState(null);
 
   const [
     groupMemberCount,
@@ -192,23 +269,350 @@ export default function ChatWindow({
     setCheckingPostPermission,
   ] = useState(false);
 
+  const [
+    isOnline,
+    setIsOnline,
+  ] = useState(
+    typeof navigator !==
+      "undefined"
+      ? navigator.onLine
+      : true
+  );
+
+  const [
+    reconnectGeneration,
+    setReconnectGeneration,
+  ] = useState(0);
+
+  const [
+    showReconnected,
+    setShowReconnected,
+  ] = useState(false);
+
   const typingChannelRef =
     useRef(null);
 
   const typingClearTimerRef =
     useRef(null);
 
-  /*
-    Cursor used by fallback polling.
-  */
   const systemEventCursorRef =
     useRef(null);
 
-  /*
-    Prevent overlapping polling requests.
-  */
   const systemEventPollingRef =
     useRef(false);
+
+  const messagesRef =
+    useRef([]);
+
+  const readCountRefreshTimerRef =
+    useRef(null);
+
+  const readCountRefreshRunningRef =
+    useRef(false);
+
+  const permissionRefreshRunningRef =
+    useRef(false);
+
+  const reconnectNoticeTimerRef =
+    useRef(null);
+
+  const recoveryTimerRef =
+    useRef(null);
+
+  const lastRecoveryAtRef =
+    useRef(0);
+
+  const hiddenAtRef =
+    useRef(null);
+
+  const pendingMessageRefreshIdsRef =
+    useRef(
+      new Set()
+    );
+
+  const messageRefreshTimersRef =
+    useRef(
+      new Map()
+    );
+
+  const memberSnapshotRef =
+    useRef({
+      conversationId:
+        null,
+      fetchedAt:
+        0,
+      data:
+        null,
+      promise:
+        null,
+    });
+
+  /* =========================================================
+     ONLINE / OFFLINE + RECONNECT RECOVERY
+  ========================================================= */
+
+  const scheduleReconnectRecovery =
+    (
+      delay = 250
+    ) => {
+      if (
+        typeof navigator !==
+          "undefined" &&
+        !navigator.onLine
+      ) {
+        return;
+      }
+
+      if (
+        recoveryTimerRef.current
+      ) {
+        clearTimeout(
+          recoveryTimerRef.current
+        );
+      }
+
+      recoveryTimerRef.current =
+        setTimeout(
+          () => {
+            recoveryTimerRef.current =
+              null;
+
+            const now =
+              Date.now();
+
+            if (
+              now -
+                lastRecoveryAtRef.current <
+              1200
+            ) {
+              return;
+            }
+
+            lastRecoveryAtRef.current =
+              now;
+
+            setReconnectGeneration(
+              (
+                current
+              ) =>
+                current +
+                1
+            );
+          },
+          delay
+        );
+    };
+
+  useEffect(() => {
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+      return;
+    }
+
+    const handleOffline =
+      () => {
+        setIsOnline(
+          false
+        );
+
+        setShowReconnected(
+          false
+        );
+
+        if (
+          recoveryTimerRef.current
+        ) {
+          clearTimeout(
+            recoveryTimerRef.current
+          );
+
+          recoveryTimerRef.current =
+            null;
+        }
+      };
+
+    const handleOnline =
+      () => {
+        setIsOnline(
+          true
+        );
+
+        setShowReconnected(
+          true
+        );
+
+        scheduleReconnectRecovery(
+          200
+        );
+
+        if (
+          reconnectNoticeTimerRef.current
+        ) {
+          clearTimeout(
+            reconnectNoticeTimerRef.current
+          );
+        }
+
+        reconnectNoticeTimerRef.current =
+          setTimeout(
+            () => {
+              setShowReconnected(
+                false
+              );
+
+              reconnectNoticeTimerRef.current =
+                null;
+            },
+            2500
+          );
+      };
+
+    const handleVisibilityChange =
+      () => {
+        if (
+          document.hidden
+        ) {
+          hiddenAtRef.current =
+            Date.now();
+
+          return;
+        }
+
+        const hiddenFor =
+          hiddenAtRef.current
+            ? Date.now() -
+              hiddenAtRef.current
+            : 0;
+
+        hiddenAtRef.current =
+          null;
+
+        if (
+          navigator.onLine &&
+          hiddenFor >=
+            10000
+        ) {
+          scheduleReconnectRecovery(
+            150
+          );
+        }
+      };
+
+    const handleFocus =
+      () => {
+        if (
+          navigator.onLine &&
+          Date.now() -
+            lastRecoveryAtRef.current >=
+            30000
+        ) {
+          scheduleReconnectRecovery(
+            150
+          );
+        }
+      };
+
+    const handlePageShow =
+      (
+        event
+      ) => {
+        if (
+          event.persisted &&
+          navigator.onLine
+        ) {
+          scheduleReconnectRecovery(
+            100
+          );
+        }
+      };
+
+    setIsOnline(
+      navigator.onLine
+    );
+
+    window.addEventListener(
+      "offline",
+      handleOffline
+    );
+
+    window.addEventListener(
+      "online",
+      handleOnline
+    );
+
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
+    window.addEventListener(
+      "pageshow",
+      handlePageShow
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        "offline",
+        handleOffline
+      );
+
+      window.removeEventListener(
+        "online",
+        handleOnline
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleFocus
+      );
+
+      window.removeEventListener(
+        "pageshow",
+        handlePageShow
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+
+      if (
+        recoveryTimerRef.current
+      ) {
+        clearTimeout(
+          recoveryTimerRef.current
+        );
+
+        recoveryTimerRef.current =
+          null;
+      }
+
+      if (
+        reconnectNoticeTimerRef.current
+      ) {
+        clearTimeout(
+          reconnectNoticeTimerRef.current
+        );
+
+        reconnectNoticeTimerRef.current =
+          null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    messagesRef.current =
+      messages;
+  }, [
+    messages,
+  ]);
 
   const activeConversation =
     hasLeftConversation
@@ -257,6 +661,20 @@ export default function ChatWindow({
       currentMemberRole
     );
 
+  const canDeleteSystemEvents = !isDirect && ["owner", "admin"].includes(currentMemberRole);
+
+  const handleDeleteSystemEvent = async (event) => {
+    if (!canDeleteSystemEvents || !event?.id) return;
+    if (!window.confirm("Delete this system message for everyone? This will not undo the membership or role change.")) return;
+    try {
+      await deleteSystemEvent(event.id);
+      setSystemEvents((current) => current.filter((item) => String(item.id) !== String(event.id)));
+    } catch (error) {
+      console.error("Delete system event failed:", error);
+      window.alert(error?.message || "Unable to delete system message.");
+    }
+  };
+
   /* =========================================================
      SYNC CONVERSATION
   ========================================================= */
@@ -274,7 +692,23 @@ export default function ChatWindow({
       false
     );
 
+    setShowCommunityInfo(
+      false
+    );
+
+    setShowSharedMedia(
+      false
+    );
+
+    setShowMessageSearch(
+      false
+    );
+
     setCurrentMemberRole(
+      null
+    );
+
+    setParentCommunity(
       null
     );
 
@@ -290,6 +724,18 @@ export default function ChatWindow({
       []
     );
 
+    setHasOlderMessages(
+      false
+    );
+
+    setLoadingOlderMessages(
+      false
+    );
+
+    setOldestMessageCursor(
+      null
+    );
+
     setSystemEvents(
       []
     );
@@ -303,12 +749,324 @@ export default function ChatWindow({
 
     systemEventPollingRef.current =
       false;
+
+    permissionRefreshRunningRef.current =
+      false;
+
+    memberSnapshotRef.current = {
+      conversationId:
+        conversation?.id ||
+        null,
+      fetchedAt:
+        0,
+      data:
+        null,
+      promise:
+        null,
+    };
+
+    pendingMessageRefreshIdsRef.current.clear();
+
+    for (
+      const timer of
+      messageRefreshTimersRef.current.values()
+    ) {
+      clearTimeout(
+        timer
+      );
+    }
+
+    messageRefreshTimersRef.current.clear();
+
+    if (
+      readCountRefreshTimerRef.current
+    ) {
+      clearTimeout(
+        readCountRefreshTimerRef.current
+      );
+
+      readCountRefreshTimerRef.current =
+        null;
+    }
   }, [
     conversation?.id,
   ]);
 
   /* =========================================================
-     CHANNEL POST PERMISSION
+     MEMBER SNAPSHOT CACHE
+  ========================================================= */
+
+  const getMemberSnapshot =
+    async ({
+      force = false,
+    } = {}) => {
+      const conversationId =
+        activeConversation?.id;
+
+      if (!conversationId) {
+        return [];
+      }
+
+      const now =
+        Date.now();
+
+      const cached =
+        memberSnapshotRef.current;
+
+      if (
+        !force &&
+        cached.conversationId ===
+          conversationId &&
+        Array.isArray(
+          cached.data
+        ) &&
+        now -
+          cached.fetchedAt <
+          5000
+      ) {
+        return cached.data;
+      }
+
+      if (
+        cached.conversationId ===
+          conversationId &&
+        cached.promise
+      ) {
+        return cached.promise;
+      }
+
+      const promise =
+        getConversationMembers(
+          conversationId
+        )
+          .then(
+            (
+              rows
+            ) => {
+              const data =
+                rows ||
+                [];
+
+              memberSnapshotRef.current = {
+                conversationId,
+                fetchedAt:
+                  Date.now(),
+                data,
+                promise:
+                  null,
+              };
+
+              return data;
+            }
+          )
+          .catch(
+            (
+              error
+            ) => {
+              memberSnapshotRef.current = {
+                conversationId,
+                fetchedAt:
+                  0,
+                data:
+                  null,
+                promise:
+                  null,
+              };
+
+              throw error;
+            }
+          );
+
+      memberSnapshotRef.current = {
+        conversationId,
+        fetchedAt:
+          cached.fetchedAt ||
+          0,
+        data:
+          cached.data,
+        promise,
+      };
+
+      return promise;
+    };
+
+  /* =========================================================
+     PARENT COMMUNITY CONTEXT
+  ========================================================= */
+
+  useEffect(() => {
+    if (
+      !activeConversation?.id ||
+      !currentUser?.id ||
+      (
+        activeConversation.type !==
+          "group" &&
+        activeConversation.type !==
+          "channel"
+      )
+    ) {
+      setParentCommunity(
+        null
+      );
+
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    const loadParentCommunity =
+      async () => {
+        try {
+          const {
+            data: linkRow,
+            error: linkError,
+          } =
+            await supabase
+              .from(
+                "community_conversations"
+              )
+              .select(
+                "community_id"
+              )
+              .eq(
+                "conversation_id",
+                activeConversation.id
+              )
+              .limit(1)
+              .maybeSingle();
+
+          if (linkError) {
+            throw linkError;
+          }
+
+          if (
+            !linkRow?.community_id
+          ) {
+            if (!cancelled) {
+              setParentCommunity(
+                null
+              );
+            }
+
+            return;
+          }
+
+          const {
+            data: membershipRow,
+            error: membershipError,
+          } =
+            await supabase
+              .from(
+                "chat_members"
+              )
+              .select(
+                "role"
+              )
+              .eq(
+                "conversation_id",
+                linkRow.community_id
+              )
+              .eq(
+                "user_id",
+                currentUser.id
+              )
+              .maybeSingle();
+
+          if (membershipError) {
+            throw membershipError;
+          }
+
+          if (!membershipRow) {
+            if (!cancelled) {
+              setParentCommunity(
+                null
+              );
+            }
+
+            return;
+          }
+
+          const {
+            data: communityRow,
+            error: communityError,
+          } =
+            await supabase
+              .from(
+                "chat_conversations"
+              )
+              .select(`
+                id,
+                type,
+                title,
+                description,
+                avatar_url,
+                created_by,
+                is_private,
+                slug,
+                created_at,
+                updated_at
+              `)
+              .eq(
+                "id",
+                linkRow.community_id
+              )
+              .eq(
+                "type",
+                "community"
+              )
+              .maybeSingle();
+
+          if (communityError) {
+            throw communityError;
+          }
+
+          if (
+            cancelled ||
+            !communityRow
+          ) {
+            return;
+          }
+
+          setParentCommunity({
+            ...communityRow,
+
+            displayName:
+              communityRow.title ||
+              "Community",
+
+            currentMemberRole:
+              membershipRow.role ||
+              "member",
+          });
+        } catch (error) {
+          console.error(
+            "Load parent community context error:",
+            error
+          );
+
+          if (!cancelled) {
+            setParentCommunity(
+              null
+            );
+          }
+        }
+      };
+
+    loadParentCommunity();
+
+    return () => {
+      cancelled =
+        true;
+    };
+  }, [
+    activeConversation?.id,
+    activeConversation?.type,
+    currentUser?.id,
+  ]);
+
+  /* =========================================================
+     POST PERMISSION
   ========================================================= */
 
   useEffect(() => {
@@ -327,7 +1085,10 @@ export default function ChatWindow({
 
     const checkPermission =
       async () => {
-        if (!isChannel) {
+        if (
+          !isChannel &&
+          !isCommunity
+        ) {
           if (!cancelled) {
             setCanPost(
               true
@@ -346,10 +1107,26 @@ export default function ChatWindow({
             true
           );
 
-          const allowed =
-            await canSendChatMessage(
-              activeConversation.id
-            );
+          let allowed =
+            true;
+
+          if (
+            isChannel
+          ) {
+            allowed =
+              await canSendChatMessage(
+                activeConversation.id
+              );
+          }
+
+          if (
+            isCommunity
+          ) {
+            allowed =
+              await canSendCommunityMessage(
+                activeConversation.id
+              );
+          }
 
           if (!cancelled) {
             setCanPost(
@@ -360,7 +1137,7 @@ export default function ChatWindow({
           }
         } catch (error) {
           console.error(
-            "Check channel posting permission error:",
+            "Check posting permission error:",
             error
           );
 
@@ -387,6 +1164,138 @@ export default function ChatWindow({
   }, [
     activeConversation?.id,
     isChannel,
+    isCommunity,
+    currentMemberRole,
+  ]);
+
+  /* =========================================================
+     COMMUNITY MODERATION PERMISSION WATCH
+  ========================================================= */
+
+  useEffect(() => {
+    if (
+      !activeConversation?.id ||
+      !currentUser?.id ||
+      !isCommunity
+    ) {
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    const refreshCommunityPostPermission =
+      async () => {
+        if (
+          permissionRefreshRunningRef.current
+        ) {
+          return;
+        }
+
+        permissionRefreshRunningRef.current =
+          true;
+
+        try {
+          const allowed =
+            await canSendCommunityMessage(
+              activeConversation.id
+            );
+
+          if (!cancelled) {
+            setCanPost(
+              Boolean(
+                allowed
+              )
+            );
+          }
+        } catch (error) {
+          console.error(
+            "Refresh community post permission error:",
+            error
+          );
+
+          if (!cancelled) {
+            setCanPost(
+              false
+            );
+          }
+        } finally {
+          permissionRefreshRunningRef.current =
+            false;
+        }
+      };
+
+    const permissionChannel =
+      supabase
+        .channel(
+          `community-post-permission-${activeConversation.id}-${currentUser.id}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event:
+              "*",
+
+            schema:
+              "public",
+
+            table:
+              "community_mutes",
+          },
+          () => {
+            refreshCommunityPostPermission();
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event:
+              "*",
+
+            schema:
+              "public",
+
+            table:
+              "community_bans",
+          },
+          () => {
+            refreshCommunityPostPermission();
+          }
+        )
+        .subscribe();
+
+    const permissionRefresh =
+      setInterval(
+        () => {
+          if (
+            typeof document !==
+              "undefined" &&
+            document.hidden
+          ) {
+            return;
+          }
+
+          refreshCommunityPostPermission();
+        },
+        60000
+      );
+
+    return () => {
+      cancelled =
+        true;
+
+      clearInterval(
+        permissionRefresh
+      );
+
+      supabase.removeChannel(
+        permissionChannel
+      );
+    };
+  }, [
+    activeConversation?.id,
+    currentUser?.id,
+    isCommunity,
   ]);
 
   /* =========================================================
@@ -397,37 +1306,82 @@ export default function ChatWindow({
     async (
       messageList
     ) => {
-      return Promise.all(
-        (
-          messageList || []
-        ).map(
-          async (
+      const rows =
+        messageList ||
+        [];
+
+      const myMessageIds =
+        rows
+          .filter(
+            (
+              message
+            ) =>
+              message.sender_id ===
+                currentUser?.id &&
+              message.id
+          )
+          .map(
+            (
+              message
+            ) =>
+              message.id
+          );
+
+      if (
+        myMessageIds.length ===
+        0
+      ) {
+        return rows.map(
+          (
             message
-          ) => {
-            if (
-              message.sender_id !==
-              currentUser?.id
-            ) {
-              return {
-                ...message,
-                read_count:
-                  0,
-              };
-            }
+          ) => ({
+            ...message,
 
-            const readCount =
-              await getMessageReadCount(
-                message.id
-              );
+            read_count:
+              message.sender_id ===
+                currentUser?.id
+                ? Number(
+                    message.read_count ||
+                      0
+                  )
+                : 0,
+          })
+        );
+      }
 
+      const readCounts =
+        await getMessageReadCounts(
+          myMessageIds
+        );
+
+      return rows.map(
+        (
+          message
+        ) => {
+          if (
+            message.sender_id !==
+            currentUser?.id
+          ) {
             return {
               ...message,
 
               read_count:
-                readCount,
+                0,
             };
           }
-        )
+
+          return {
+            ...message,
+
+            read_count:
+              Number(
+                readCounts.get(
+                  message.id
+                ) ||
+                0
+              ),
+          };
+        }
       );
     };
 
@@ -470,6 +1424,27 @@ export default function ChatWindow({
                     }
                   : item
             );
+          }
+
+          const lastMessage =
+            previous[
+              previous.length -
+              1
+            ];
+
+          if (
+            !lastMessage ||
+            new Date(
+              newMessage.created_at
+            ).getTime() >=
+              new Date(
+                lastMessage.created_at
+              ).getTime()
+          ) {
+            return [
+              ...previous,
+              newMessage,
+            ];
           }
 
           return [
@@ -522,6 +1497,27 @@ export default function ChatWindow({
                     }
                   : item
             );
+          }
+
+          const lastEvent =
+            previous[
+              previous.length -
+              1
+            ];
+
+          if (
+            !lastEvent ||
+            new Date(
+              newEvent.created_at
+            ).getTime() >=
+              new Date(
+                lastEvent.created_at
+              ).getTime()
+          ) {
+            return [
+              ...previous,
+              newEvent,
+            ];
           }
 
           return [
@@ -586,6 +1582,416 @@ export default function ChatWindow({
           );
         },
         1400
+      );
+    };
+
+  /* =========================================================
+     SEARCH RESULT NAVIGATION
+  ========================================================= */
+
+  const scrollToSearchResultWithRetry =
+    (
+      messageId,
+      attempt = 0
+    ) => {
+      if (
+        !messageId
+      ) {
+        return;
+      }
+
+      const element =
+        document.getElementById(
+          `message-${messageId}`
+        );
+
+      if (
+        element
+      ) {
+        scrollToMessage(
+          messageId
+        );
+
+        return;
+      }
+
+      if (
+        attempt >=
+        5
+      ) {
+        return;
+      }
+
+      setTimeout(
+        () => {
+          scrollToSearchResultWithRetry(
+            messageId,
+            attempt +
+              1
+          );
+        },
+        120
+      );
+    };
+
+  const loadAndJumpToMessage =
+    async (
+      messageId
+    ) => {
+      if (
+        !messageId
+      ) {
+        return;
+      }
+
+      const existingElement =
+        document.getElementById(
+          `message-${messageId}`
+        );
+
+      if (
+        existingElement
+      ) {
+        scrollToMessage(
+          messageId
+        );
+
+        return;
+      }
+
+      try {
+        const foundMessage =
+          await getMessageById(
+            messageId
+          );
+
+        if (
+          !foundMessage ||
+          foundMessage.conversation_id !==
+            activeConversation?.id
+        ) {
+          return;
+        }
+
+        upsertLocalMessage(
+          foundMessage
+        );
+
+        scrollToSearchResultWithRetry(
+          messageId
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          "Search result jump error:",
+          error
+        );
+      }
+    };
+
+  const handleSearchResultOpen =
+    async (
+      result
+    ) => {
+      if (
+        !result?.id ||
+        !result?.conversation_id
+      ) {
+        return;
+      }
+
+      setShowMessageSearch(
+        false
+      );
+
+      if (
+        result.conversation_id ===
+        activeConversation?.id
+      ) {
+        await loadAndJumpToMessage(
+          result.id
+        );
+
+        return;
+      }
+
+      try {
+        sessionStorage.setItem(
+          "chatPendingMessageJump",
+          JSON.stringify({
+            conversationId:
+              result.conversation_id,
+
+            messageId:
+              result.id,
+
+            createdAt:
+              Date.now(),
+          })
+        );
+      } catch (
+        error
+      ) {
+        console.warn(
+          "Unable to save pending search jump:",
+          error
+        );
+      }
+
+      const targetConversation =
+        result.conversation
+          ? {
+              ...result.conversation,
+
+              displayName:
+                result.conversation
+                  .title ||
+                "Chat",
+            }
+          : {
+              id:
+                result.conversation_id,
+
+              displayName:
+                "Chat",
+            };
+
+      onOpenConversation?.(
+        targetConversation
+      );
+    };
+
+  useEffect(() => {
+    if (
+      !activeConversation?.id
+    ) {
+      return;
+    }
+
+    let pending =
+      null;
+
+    try {
+      const raw =
+        sessionStorage.getItem(
+          "chatPendingMessageJump"
+        );
+
+      if (
+        raw
+      ) {
+        pending =
+          JSON.parse(
+            raw
+          );
+      }
+    } catch (
+      error
+    ) {
+      console.warn(
+        "Read pending search jump error:",
+        error
+      );
+    }
+
+    const pendingAge =
+      pending?.createdAt
+        ? Date.now() -
+          Number(
+            pending.createdAt
+          )
+        : 0;
+
+    if (
+      !pending?.messageId ||
+      pending.conversationId !==
+        activeConversation.id ||
+      (
+        pendingAge >
+        2 * 60 * 1000
+      )
+    ) {
+      if (
+        pendingAge >
+        2 * 60 * 1000
+      ) {
+        try {
+          sessionStorage.removeItem(
+            "chatPendingMessageJump"
+          );
+        } catch {
+          // Ignore storage cleanup failure.
+        }
+      }
+
+      return;
+    }
+
+    try {
+      sessionStorage.removeItem(
+        "chatPendingMessageJump"
+      );
+    } catch {
+      // Ignore storage cleanup failure.
+    }
+
+    const timer =
+      setTimeout(
+        () => {
+          loadAndJumpToMessage(
+            pending.messageId
+          );
+        },
+        220
+      );
+
+    return () =>
+      clearTimeout(
+        timer
+      );
+  }, [
+    activeConversation?.id,
+  ]);
+
+  /* =========================================================
+     READ COUNT REFRESH SCHEDULER
+  ========================================================= */
+
+  const scheduleReadCountRefresh =
+    (
+      delay = 220
+    ) => {
+      if (
+        readCountRefreshTimerRef.current
+      ) {
+        clearTimeout(
+          readCountRefreshTimerRef.current
+        );
+      }
+
+      readCountRefreshTimerRef.current =
+        setTimeout(
+          async () => {
+            readCountRefreshTimerRef.current =
+              null;
+
+            if (
+              readCountRefreshRunningRef.current
+            ) {
+              scheduleReadCountRefresh(
+                250
+              );
+
+              return;
+            }
+
+            const snapshot =
+              messagesRef.current;
+
+            if (
+              !snapshot?.length
+            ) {
+              return;
+            }
+
+            readCountRefreshRunningRef.current =
+              true;
+
+            try {
+              const refreshed =
+                await hydrateReadCounts(
+                  snapshot
+                );
+
+              setMessages(
+                refreshed
+              );
+            } catch (error) {
+              console.error(
+                "Refresh read counts error:",
+                error
+              );
+            } finally {
+              readCountRefreshRunningRef.current =
+                false;
+            }
+          },
+          delay
+        );
+    };
+
+  const scheduleMessageRefresh =
+    (
+      messageId,
+      delay = 120
+    ) => {
+      if (!messageId) {
+        return;
+      }
+
+      pendingMessageRefreshIdsRef.current.add(
+        messageId
+      );
+
+      const existingTimer =
+        messageRefreshTimersRef.current.get(
+          messageId
+        );
+
+      if (existingTimer) {
+        clearTimeout(
+          existingTimer
+        );
+      }
+
+      const timer =
+        setTimeout(
+          async () => {
+            messageRefreshTimersRef.current.delete(
+              messageId
+            );
+
+            if (
+              !pendingMessageRefreshIdsRef.current.has(
+                messageId
+              )
+            ) {
+              return;
+            }
+
+            pendingMessageRefreshIdsRef.current.delete(
+              messageId
+            );
+
+            try {
+              const refreshed =
+                await getMessageById(
+                  messageId
+                );
+
+              if (
+                refreshed
+                  ?.conversation_id ===
+                activeConversation?.id
+              ) {
+                upsertLocalMessage(
+                  refreshed
+                );
+              }
+            } catch (error) {
+              console.error(
+                "Message refresh error:",
+                error
+              );
+            }
+          },
+          delay
+        );
+
+      messageRefreshTimersRef.current.set(
+        messageId,
+        timer
       );
     };
 
@@ -723,6 +2129,63 @@ export default function ChatWindow({
     };
 
   /* =========================================================
+     CHAT PREFERENCES
+  ========================================================= */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPreferences = async () => {
+      // Reset immediately so settings from the previous account are not shown.
+      setChatPreferences({
+        chat_density: "comfortable",
+        enter_to_send: true,
+        show_read_receipts: true,
+        show_typing_indicator: true,
+        reduce_motion: false,
+    message_font_size: "medium",
+    message_line_spacing: "normal",
+    show_message_timestamps: true,
+    bubble_color: "blue",
+    bubble_shape: "rounded",
+    show_sender_names: true,
+    show_date_separators: true,
+    show_reaction_counts: true,
+    show_reaction_badges: true,
+    show_pinned_indicators: true,
+    show_sender_avatars: true,
+    show_edited_labels: true,
+    show_reply_previews: true,
+    show_attachment_previews: true,
+    show_attachment_file_sizes: true,
+    highlight_mentions: true,
+    message_time_format: "system",
+      });
+      setShowChatPreferences(false);
+      if (!currentUser?.id) return;
+
+      try {
+        const preferences = await getChatPreferences();
+
+        if (!cancelled && preferences) {
+          setChatPreferences((current) => ({
+            ...current,
+            ...preferences,
+          }));
+        }
+      } catch (error) {
+        console.error("Load chat preferences error:", error);
+      }
+    };
+
+    loadPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
+
+  /* =========================================================
      MARK READ
   ========================================================= */
 
@@ -757,7 +2220,10 @@ export default function ChatWindow({
   ========================================================= */
 
   useEffect(() => {
-    if (!currentUser?.id) {
+    if (
+      !currentUser?.id ||
+      !isOnline
+    ) {
       return;
     }
 
@@ -766,7 +2232,11 @@ export default function ChatWindow({
     const heartbeat =
       setInterval(
         () => {
-          updateMyLastSeen();
+          if (
+            navigator.onLine
+          ) {
+            updateMyLastSeen();
+          }
         },
         60000
       );
@@ -778,6 +2248,8 @@ export default function ChatWindow({
     };
   }, [
     currentUser?.id,
+    isOnline,
+    reconnectGeneration,
   ]);
 
   /* =========================================================
@@ -803,7 +2275,8 @@ export default function ChatWindow({
   useEffect(() => {
     if (
       !activeConversation?.id ||
-      !currentUser?.id
+      !currentUser?.id ||
+      !isOnline
     ) {
       setConversationMentions(
         []
@@ -859,6 +2332,8 @@ export default function ChatWindow({
   }, [
     activeConversation?.id,
     currentUser?.id,
+    isOnline,
+    reconnectGeneration,
   ]);
 
   /* =========================================================
@@ -880,9 +2355,7 @@ export default function ChatWindow({
       async () => {
         try {
           const members =
-            await getConversationMembers(
-              activeConversation.id
-            );
+            await getMemberSnapshot();
 
           if (cancelled) {
             return;
@@ -917,6 +2390,18 @@ export default function ChatWindow({
             );
 
             setShowChannelInfo(
+              false
+            );
+
+            setShowCommunityInfo(
+              false
+            );
+
+            setShowSharedMedia(
+              false
+            );
+
+            setShowMessageSearch(
               false
             );
 
@@ -989,8 +2474,18 @@ export default function ChatWindow({
 
     const interval =
       setInterval(
-        refreshMembers,
-        30000
+        () => {
+          if (
+            typeof document !==
+              "undefined" &&
+            document.hidden
+          ) {
+            return;
+          }
+
+          refreshMembers();
+        },
+        60000
       );
 
     return () => {
@@ -1017,7 +2512,8 @@ export default function ChatWindow({
   useEffect(() => {
     if (
       !activeConversation?.id ||
-      !currentUser?.id
+      !currentUser?.id ||
+      !isOnline
     ) {
       return;
     }
@@ -1037,9 +2533,10 @@ export default function ChatWindow({
       async () => {
         try {
           const members =
-            await getConversationMembers(
-              activeConversation.id
-            );
+            await getMemberSnapshot({
+              force:
+                true,
+            });
 
           if (cancelled) {
             return;
@@ -1062,6 +2559,18 @@ export default function ChatWindow({
             );
 
             setShowChannelInfo(
+              false
+            );
+
+            setShowCommunityInfo(
+              false
+            );
+
+            setShowSharedMedia(
+              false
+            );
+
+            setShowMessageSearch(
               false
             );
 
@@ -1129,10 +2638,6 @@ export default function ChatWindow({
           async () => {
             await refreshMembership();
 
-            /*
-              Backup only.
-              Polling + direct system realtime are primary.
-            */
             await refreshSystemEvents();
           }
         )
@@ -1195,6 +2700,8 @@ export default function ChatWindow({
     isGroup,
     isChannel,
     isCommunity,
+    isOnline,
+    reconnectGeneration,
   ]);
 
   /* =========================================================
@@ -1204,15 +2711,27 @@ export default function ChatWindow({
   useEffect(() => {
     if (
       !activeConversation?.id ||
-      !currentUser?.id
+      !currentUser?.id ||
+      !isOnline ||
+      !chatPreferences.show_typing_indicator
     ) {
+      typingChannelRef.current =
+        null;
+
+      setOtherIsTyping(
+        false
+      );
+
       return;
     }
 
     if (
       isSelfChat ||
       (
-        isChannel &&
+        (
+          isChannel ||
+          isCommunity
+        ) &&
         !canPost
       )
     ) {
@@ -1290,7 +2809,11 @@ export default function ChatWindow({
     currentUser?.id,
     isSelfChat,
     isChannel,
+    isCommunity,
     canPost,
+    isOnline,
+    reconnectGeneration,
+    chatPreferences.show_typing_indicator,
   ]);
 
   /* =========================================================
@@ -1299,7 +2822,8 @@ export default function ChatWindow({
 
   useEffect(() => {
     if (
-      !activeConversation?.id
+      !activeConversation?.id ||
+      !isOnline
     ) {
       return;
     }
@@ -1333,6 +2857,8 @@ export default function ChatWindow({
     };
   }, [
     activeConversation?.id,
+    isOnline,
+    reconnectGeneration,
   ]);
 
   /* =========================================================
@@ -1350,6 +2876,16 @@ export default function ChatWindow({
 
       setSystemEvents(
         []
+      );
+
+      return;
+    }
+
+    if (
+      !isOnline
+    ) {
+      setLoading(
+        false
       );
 
       return;
@@ -1379,10 +2915,6 @@ export default function ChatWindow({
           true
         );
 
-        /* -------------------------------------------------
-           MESSAGE REALTIME
-        ------------------------------------------------- */
-
         messageChannel =
           subscribeToMessages(
             activeConversation.id,
@@ -1395,25 +2927,19 @@ export default function ChatWindow({
                 return;
               }
 
-              let prepared =
-                newMessage;
-
-              if (
+              const prepared =
                 newMessage.sender_id ===
-                currentUser.id
-              ) {
-                const readCount =
-                  await getMessageReadCount(
-                    newMessage.id
-                  );
+                  currentUser.id
+                  ? {
+                      ...newMessage,
 
-                prepared = {
-                  ...newMessage,
-
-                  read_count:
-                    readCount,
-                };
-              }
+                      read_count:
+                        Number(
+                          newMessage.read_count ||
+                            0
+                        ),
+                    }
+                  : newMessage;
 
               if (cancelled) {
                 return;
@@ -1455,10 +2981,6 @@ export default function ChatWindow({
             }
           );
 
-        /* -------------------------------------------------
-           READ RECEIPTS
-        ------------------------------------------------- */
-
         readChannel =
           subscribeToReadReceipts(
             activeConversation.id,
@@ -1468,35 +2990,9 @@ export default function ChatWindow({
                 return;
               }
 
-              setMessages(
-                (
-                  currentMessages
-                ) => {
-                  hydrateReadCounts(
-                    currentMessages
-                  ).then(
-                    (
-                      refreshed
-                    ) => {
-                      if (
-                        !cancelled
-                      ) {
-                        setMessages(
-                          refreshed
-                        );
-                      }
-                    }
-                  );
-
-                  return currentMessages;
-                }
-              );
+              scheduleReadCountRefresh();
             }
           );
-
-        /* -------------------------------------------------
-           ATTACHMENTS
-        ------------------------------------------------- */
 
         attachmentChannel =
           subscribeToAttachments(
@@ -1511,33 +3007,12 @@ export default function ChatWindow({
                 return;
               }
 
-              try {
-                const refreshed =
-                  await getMessageById(
-                    attachment.message_id
-                  );
-
-                if (
-                  refreshed
-                    ?.conversation_id ===
-                  activeConversation.id
-                ) {
-                  upsertLocalMessage(
-                    refreshed
-                  );
-                }
-              } catch (error) {
-                console.error(
-                  "Attachment refresh error:",
-                  error
-                );
-              }
+              scheduleMessageRefresh(
+                attachment.message_id,
+                80
+              );
             }
           );
-
-        /* -------------------------------------------------
-           REACTIONS
-        ------------------------------------------------- */
 
         reactionChannel =
           subscribeToReactions(
@@ -1558,35 +3033,12 @@ export default function ChatWindow({
                 return;
               }
 
-              try {
-                const refreshed =
-                  await getMessageById(
-                    messageId
-                  );
-
-                if (
-                  refreshed
-                    ?.conversation_id ===
-                  activeConversation.id
-                ) {
-                  upsertLocalMessage(
-                    refreshed
-                  );
-                }
-              } catch (error) {
-                console.error(
-                  "Reaction refresh error:",
-                  error
-                );
-              }
+              scheduleMessageRefresh(
+                messageId,
+                100
+              );
             }
           );
-
-        /* -------------------------------------------------
-           SYSTEM EVENT REALTIME
-
-           If realtime is quick, event appears immediately.
-        ------------------------------------------------- */
 
         systemEventChannel =
           subscribeToSystemEvents(
@@ -1599,6 +3051,15 @@ export default function ChatWindow({
                 return;
               }
 
+              if (payload?.eventType === "DELETE") {
+                const deletedId = payload?.old?.id;
+                if (deletedId) {
+                  setSystemEvents((rows) => rows.filter((item) => String(item.id) !== String(deletedId)));
+                } else {
+                  refreshSystemEvents();
+                }
+                return;
+              }
               const eventId =
                 payload?.new
                   ?.id;
@@ -1650,32 +3111,83 @@ export default function ChatWindow({
             }
           );
 
-        /* -------------------------------------------------
-           INITIAL LOAD
-        ------------------------------------------------- */
-
         const [
           events,
-          result,
+          messagePage,
         ] =
           await Promise.all([
             getSystemEvents(
               activeConversation.id
             ),
 
-            getMessages(
-              activeConversation.id
-            ),
+            getMessagesPage({
+              conversationId:
+                activeConversation.id,
+
+              limit:
+                50,
+            }),
           ]);
 
         const hydrated =
           await hydrateReadCounts(
-            result || []
+            messagePage.messages ||
+            []
           );
 
         if (!cancelled) {
           setMessages(
-            hydrated
+            (
+              previous
+            ) => {
+              const combined =
+                [
+                  ...hydrated,
+                  ...previous,
+                ];
+
+              const byId =
+                new Map();
+
+              for (
+                const item of combined
+              ) {
+                if (
+                  item?.id
+                ) {
+                  byId.set(
+                    item.id,
+                    item
+                  );
+                }
+              }
+
+              return [
+                ...byId.values(),
+              ].sort(
+                (
+                  a,
+                  b
+                ) =>
+                  new Date(
+                    a.created_at
+                  ).getTime() -
+                  new Date(
+                    b.created_at
+                  ).getTime()
+              );
+            }
+          );
+
+          setHasOlderMessages(
+            Boolean(
+              messagePage.hasMore
+            )
+          );
+
+          setOldestMessageCursor(
+            messagePage.nextCursor ||
+            null
           );
 
           setSystemEvents(
@@ -1694,10 +3206,6 @@ export default function ChatWindow({
                   ).getTime()
               )[0];
 
-          /*
-            If no system event exists yet,
-            start a little behind current time.
-          */
           systemEventCursorRef.current =
             newestSystemEvent?.created_at ||
             new Date(
@@ -1737,6 +3245,29 @@ export default function ChatWindow({
       cancelled =
         true;
 
+      if (
+        readCountRefreshTimerRef.current
+      ) {
+        clearTimeout(
+          readCountRefreshTimerRef.current
+        );
+
+        readCountRefreshTimerRef.current =
+          null;
+      }
+
+      for (
+        const timer of
+        messageRefreshTimersRef.current.values()
+      ) {
+        clearTimeout(
+          timer
+        );
+      }
+
+      messageRefreshTimersRef.current.clear();
+      pendingMessageRefreshIdsRef.current.clear();
+
       [
         messageChannel,
         readChannel,
@@ -1756,19 +3287,19 @@ export default function ChatWindow({
   }, [
     activeConversation?.id,
     currentUser?.id,
+    isOnline,
+    reconnectGeneration,
   ]);
 
   /* =========================================================
      SYSTEM EVENT 1-SECOND FALLBACK POLLING
-
-     Realtime = primary.
-     Polling = backup when Supabase postgres_changes is slow.
   ========================================================= */
 
   useEffect(() => {
     if (
       !activeConversation?.id ||
-      !currentUser?.id
+      !currentUser?.id ||
+      !isOnline
     ) {
       systemEventCursorRef.current =
         null;
@@ -1794,15 +3325,16 @@ export default function ChatWindow({
       async () => {
         if (
           cancelled ||
-          systemEventPollingRef.current
+          systemEventPollingRef.current ||
+          (
+            typeof document !==
+              "undefined" &&
+            document.hidden
+          )
         ) {
           return;
         }
 
-        /*
-          Initial load normally sets this.
-          This fallback protects the tiny startup window.
-        */
         if (
           !systemEventCursorRef.current
         ) {
@@ -1867,15 +3399,12 @@ export default function ChatWindow({
         }
       };
 
-    /*
-      Don't wait one second for first backup check.
-    */
     poll();
 
     const interval =
       setInterval(
         poll,
-        1000
+        10000
       );
 
     return () => {
@@ -1895,6 +3424,8 @@ export default function ChatWindow({
     isGroup,
     isChannel,
     isCommunity,
+    isOnline,
+    reconnectGeneration,
   ]);
 
   /* =========================================================
@@ -1906,10 +3437,15 @@ export default function ChatWindow({
       isTyping
     ) => {
       if (
+        !chatPreferences.show_typing_indicator ||
+        !isOnline ||
         isSelfChat ||
         !currentUser?.id ||
         (
-          isChannel &&
+          (
+            isChannel ||
+            isCommunity
+          ) &&
           !canPost
         )
       ) {
@@ -1930,7 +3466,8 @@ export default function ChatWindow({
   const handleSend =
     async (
       text,
-      file
+      file,
+      clientRequestId = null
     ) => {
       if (
         !activeConversation?.id ||
@@ -1945,6 +3482,17 @@ export default function ChatWindow({
       ) {
         window.alert(
           "Only channel administrators can post."
+        );
+
+        return;
+      }
+
+      if (
+        isCommunity &&
+        !canPost
+      ) {
+        window.alert(
+          "You cannot post in this community right now."
         );
 
         return;
@@ -1980,6 +3528,10 @@ export default function ChatWindow({
             replyTo:
               replyingTo?.id ||
               null,
+
+            clientRequestId:
+              clientRequestId ||
+              null,
           });
       } else {
         sentMessage =
@@ -1996,6 +3548,10 @@ export default function ChatWindow({
             replyTo:
               replyingTo?.id ||
               null,
+
+            clientRequestId:
+              clientRequestId ||
+              null,
           });
       }
 
@@ -2009,6 +3565,119 @@ export default function ChatWindow({
 
         setReplyingTo(
           null
+        );
+      }
+    };
+
+  /* =========================================================
+     LOAD OLDER MESSAGES
+  ========================================================= */
+
+  const handleLoadOlderMessages =
+    async () => {
+      if (
+        !activeConversation?.id ||
+        !hasOlderMessages ||
+        loadingOlderMessages
+      ) {
+        return;
+      }
+
+      const before =
+        oldestMessageCursor ||
+        messagesRef.current?.[0]
+          ?.created_at ||
+        null;
+
+      if (!before) {
+        setHasOlderMessages(
+          false
+        );
+
+        return;
+      }
+
+      try {
+        setLoadingOlderMessages(
+          true
+        );
+
+        const page =
+          await getMessagesPage({
+            conversationId:
+              activeConversation.id,
+
+            before,
+
+            limit:
+              50,
+          });
+
+        const older =
+          await hydrateReadCounts(
+            page.messages ||
+            []
+          );
+
+        if (
+          older.length >
+          0
+        ) {
+          setMessages(
+            (
+              previous
+            ) => {
+              const existingIds =
+                new Set(
+                  previous.map(
+                    (
+                      item
+                    ) =>
+                      item.id
+                  )
+                );
+
+              const uniqueOlder =
+                older.filter(
+                  (
+                    item
+                  ) =>
+                    !existingIds.has(
+                      item.id
+                    )
+                );
+
+              return [
+                ...uniqueOlder,
+                ...previous,
+              ];
+            }
+          );
+        }
+
+        setHasOlderMessages(
+          Boolean(
+            page.hasMore
+          )
+        );
+
+        setOldestMessageCursor(
+          page.nextCursor ||
+          null
+        );
+      } catch (error) {
+        console.error(
+          "Load older messages error:",
+          error
+        );
+
+        window.alert(
+          error?.message ||
+            "Unable to load older messages."
+        );
+      } finally {
+        setLoadingOlderMessages(
+          false
         );
       }
     };
@@ -2276,28 +3945,83 @@ export default function ChatWindow({
     };
 
   /* =========================================================
-     EMPTY STATE
+     COMMUNITY LEFT
   ========================================================= */
 
-  if (!activeConversation) {
-    return (
-      <main className="flex flex-1 items-center justify-center bg-gray-50">
+  const handleCommunityLeft =
+    (
+      conversationId
+    ) => {
+      const leftId =
+        conversationId ||
+        activeConversation?.id;
 
-        <div className="text-center text-gray-400">
+      setHasLeftConversation(
+        true
+      );
 
-          <div className="text-5xl">
-            💬
-          </div>
+      setShowCommunityInfo(
+        false
+      );
 
-          <div className="mt-2">
-            Select a chat
-          </div>
+      setLocalConversation(
+        null
+      );
 
-        </div>
+      setMessages(
+        []
+      );
 
-      </main>
-    );
-  }
+      setSystemEvents(
+        []
+      );
+
+      setPinnedMessages(
+        []
+      );
+
+      setConversationMentions(
+        []
+      );
+
+      setReplyingTo(
+        null
+      );
+
+      systemEventCursorRef.current =
+        null;
+
+      onConversationLeft?.(
+        leftId
+      );
+
+      onBack?.();
+    };
+
+  /* =========================================================
+     OPEN PARENT COMMUNITY
+  ========================================================= */
+
+  const handleOpenParentCommunity =
+    () => {
+      if (
+        !parentCommunity
+      ) {
+        return;
+      }
+
+      setShowGroupInfo(
+        false
+      );
+
+      setShowChannelInfo(
+        false
+      );
+
+      onOpenConversation?.(
+        parentCommunity
+      );
+    };
 
   /* =========================================================
      DISPLAY
@@ -2348,25 +4072,38 @@ export default function ChatWindow({
         );
 
   const pinnedMessageIds =
-    new Set(
-      pinnedMessages.map(
-        (pin) =>
-          pin.message_id
-      )
+    useMemo(
+      () =>
+        new Set(
+          pinnedMessages.map(
+            (pin) =>
+              pin.message_id
+          )
+        ),
+      [
+        pinnedMessages,
+      ]
     );
 
   const mentionedMessageIds =
-    new Set(
-      conversationMentions
-        .filter(
-          (mention) =>
-            mention.mentioned_user_id ===
-            currentUser.id
-        )
-        .map(
-          (mention) =>
-            mention.message_id
-        )
+    useMemo(
+      () =>
+        new Set(
+          conversationMentions
+            .filter(
+              (mention) =>
+                mention.mentioned_user_id ===
+                currentUser?.id
+            )
+            .map(
+              (mention) =>
+                mention.message_id
+            )
+        ),
+      [
+        conversationMentions,
+        currentUser?.id,
+      ]
     );
 
   /* =========================================================
@@ -2374,33 +4111,93 @@ export default function ChatWindow({
   ========================================================= */
 
   const timelineItems =
-    [
-      ...(messages || []).map(
-        (message) => ({
-          ...message,
+    useMemo(
+      () => {
+        const oldestLoadedMessageAt =
+          messages?.[0]
+            ?.created_at ||
+          null;
 
-          timeline_type:
-            "message",
-        })
-      ),
+        const visibleSystemEvents =
+          hasOlderMessages &&
+          oldestLoadedMessageAt
+            ? (
+                systemEvents ||
+                []
+              ).filter(
+                (
+                  event
+                ) =>
+                  new Date(
+                    event.created_at
+                  ).getTime() >=
+                  new Date(
+                    oldestLoadedMessageAt
+                  ).getTime()
+              )
+            : (
+                systemEvents ||
+                []
+              );
 
-      ...(systemEvents || []).map(
-        (event) => ({
-          ...event,
+        return [
+          ...(messages || []).map(
+            (message) => ({
+              ...message,
 
-          timeline_type:
-            "system",
-        })
-      ),
-    ].sort(
-      (a, b) =>
-        new Date(
-          a.created_at
-        ).getTime() -
-        new Date(
-          b.created_at
-        ).getTime()
+              timeline_type:
+                "message",
+            })
+          ),
+
+          ...visibleSystemEvents.map(
+            (event) => ({
+              ...event,
+
+              timeline_type:
+                "system",
+            })
+          ),
+        ].sort(
+          (a, b) =>
+            new Date(
+              a.created_at
+            ).getTime() -
+            new Date(
+              b.created_at
+            ).getTime()
+        );
+      },
+      [
+        messages,
+        systemEvents,
+        hasOlderMessages,
+      ]
     );
+
+  /* =========================================================
+     EMPTY STATE
+  ========================================================= */
+
+  if (!activeConversation) {
+    return (
+      <main className="flex flex-1 items-center justify-center bg-gray-50">
+
+        <div className="text-center text-gray-400">
+
+          <div className="text-5xl">
+            💬
+          </div>
+
+          <div className="mt-2">
+            Select a chat
+          </div>
+
+        </div>
+
+      </main>
+    );
+  }
 
   /* =========================================================
      UI
@@ -2443,8 +4240,9 @@ export default function ChatWindow({
 
                 {isChannel
                   ? "📢"
-                  : isGroup ||
-                    isCommunity
+                  : isCommunity
+                  ? "🌐"
+                  : isGroup
                   ? "👥"
                   : "👤"}
 
@@ -2479,12 +4277,22 @@ export default function ChatWindow({
               </span>
             )}
 
+            {isCommunity && (
+              <span
+                className="flex-shrink-0 text-xs text-purple-500"
+                title="Community"
+              >
+                🌐
+              </span>
+            )}
+
           </div>
 
           <div className="truncate text-xs text-gray-400">
 
             {!isSelfChat &&
             !isChannel &&
+            chatPreferences.show_typing_indicator &&
             otherIsTyping
 
               ? isGroup ||
@@ -2497,6 +4305,48 @@ export default function ChatWindow({
           </div>
 
         </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowChatPreferences(
+              true
+            )
+          }
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg text-blue-600 hover:bg-blue-50"
+          aria-label="Chat preferences"
+          title="Chat preferences"
+        >
+          ⚙️
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowMessageSearch(
+              true
+            )
+          }
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg text-blue-600 hover:bg-blue-50"
+          aria-label="Search messages"
+          title="Search messages"
+        >
+          🔎
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowSharedMedia(
+              true
+            )
+          }
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg text-blue-600 hover:bg-blue-50"
+          aria-label="Shared media and files"
+          title="Shared media and files"
+        >
+          🖼️
+        </button>
 
         {isGroup && (
           <button
@@ -2528,7 +4378,100 @@ export default function ChatWindow({
           </button>
         )}
 
+        {isCommunity && (
+          <button
+            type="button"
+            onClick={() =>
+              setShowCommunityInfo(
+                true
+              )
+            }
+            className="flex h-10 w-10 items-center justify-center rounded-full text-xl text-purple-600 hover:bg-purple-50"
+            aria-label="Community info"
+          >
+            ⓘ
+          </button>
+        )}
+
       </header>
+
+      {!isOnline && (
+        <div className="flex flex-shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+          <span>
+            ⚠
+          </span>
+
+          <span>
+            You’re offline. Messages cannot be sent until your connection returns.
+          </span>
+        </div>
+      )}
+
+      {isOnline &&
+        showReconnected && (
+          <div className="flex flex-shrink-0 items-center justify-center gap-2 border-b border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700">
+            <span>
+              ✓
+            </span>
+
+            <span>
+              Back online. Chat has been refreshed.
+            </span>
+          </div>
+        )}
+
+      {parentCommunity && (
+        <div className="flex flex-shrink-0 items-center gap-2 border-b border-purple-100 bg-purple-50/70 px-3 py-2">
+
+          <button
+            type="button"
+            onClick={
+              handleOpenParentCommunity
+            }
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-purple-100"
+            title="Open parent community"
+          >
+
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100">
+
+              {parentCommunity.avatar_url ? (
+                <img
+                  src={
+                    parentCommunity.avatar_url
+                  }
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-sm">
+                  🌐
+                </span>
+              )}
+
+            </div>
+
+            <div className="min-w-0 flex-1">
+
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-purple-500">
+                Inside Community
+              </div>
+
+              <div className="truncate text-xs font-semibold text-purple-800">
+                {parentCommunity.displayName ||
+                  parentCommunity.title ||
+                  "Community"}
+              </div>
+
+            </div>
+
+            <span className="flex-shrink-0 text-sm text-purple-500">
+              ›
+            </span>
+
+          </button>
+
+        </div>
+      )}
 
       {/* PINNED */}
 
@@ -2573,8 +4516,23 @@ export default function ChatWindow({
             canPin
           }
 
+          hasOlderMessages={
+            hasOlderMessages
+          }
+
+          loadingOlderMessages={
+            loadingOlderMessages
+          }
+
+          onLoadOlderMessages={
+            handleLoadOlderMessages
+          }
+
           onReply={
-            isChannel &&
+            (
+              isChannel ||
+              isCommunity
+            ) &&
             !canPost
               ? undefined
               : setReplyingTo
@@ -2587,6 +4545,8 @@ export default function ChatWindow({
           onDelete={
             handleDelete
           }
+          canDeleteSystemEvents={canDeleteSystemEvents}
+          onDeleteSystemEvent={handleDeleteSystemEvent}
 
           onReact={
             handleReaction
@@ -2599,16 +4559,62 @@ export default function ChatWindow({
           onOpenDirectChat={
             onOpenDirectChat
           }
+
+          density={
+            chatPreferences.chat_density
+          }
+
+          reduceMotion={
+            chatPreferences.reduce_motion
+          }
+
+          showReadReceipts={
+            chatPreferences.show_read_receipts
+          }
+          messageFontSize={chatPreferences.message_font_size}
+          messageLineSpacing={chatPreferences.message_line_spacing}
+          showMessageTimestamps={chatPreferences.show_message_timestamps}
+          bubbleColor={chatPreferences.bubble_color}
+          bubbleShape={chatPreferences.bubble_shape}
+          showSenderNames={chatPreferences.show_sender_names}
+          showDateSeparators={chatPreferences.show_date_separators}
+          showReactionCounts={chatPreferences.show_reaction_counts}
+          showReactionBadges={chatPreferences.show_reaction_badges}
+          showPinnedIndicators={chatPreferences.show_pinned_indicators}
+          showSenderAvatars={chatPreferences.show_sender_avatars}
+          showEditedLabels={chatPreferences.show_edited_labels}
+          showReplyPreviews={chatPreferences.show_reply_previews}
+          showAttachmentPreviews={chatPreferences.show_attachment_previews}
+          showAttachmentFileSizes={chatPreferences.show_attachment_file_sizes}
+          highlightMentions={chatPreferences.highlight_mentions}
+          messageTimeFormat={chatPreferences.message_time_format}
         />
       )}
 
       {/* COMPOSER */}
 
-      {checkingPostPermission &&
-      isChannel ? (
+      {!isOnline ? (
+
+        <div className="flex flex-shrink-0 items-center justify-center border-t bg-gray-50 px-4 py-4">
+          <div className="text-center">
+            <div className="text-sm font-medium text-gray-600">
+              📡 Waiting for connection...
+            </div>
+
+            <div className="mt-0.5 text-xs text-gray-400">
+              Sending is temporarily disabled while offline.
+            </div>
+          </div>
+        </div>
+
+      ) : checkingPostPermission &&
+      (
+        isChannel ||
+        isCommunity
+      ) ? (
 
         <div className="flex flex-shrink-0 items-center justify-center border-t bg-white px-4 py-4 text-sm text-gray-400">
-          Checking channel permissions...
+          Checking posting permissions...
         </div>
 
       ) : isChannel &&
@@ -2624,6 +4630,25 @@ export default function ChatWindow({
 
             <div className="mt-0.5 text-xs text-gray-400">
               Only administrators can post.
+            </div>
+
+          </div>
+
+        </div>
+
+      ) : isCommunity &&
+        !canPost ? (
+
+        <div className="flex flex-shrink-0 items-center justify-center border-t bg-gray-50 px-4 py-4">
+
+          <div className="text-center">
+
+            <div className="text-sm font-medium text-gray-600">
+              🔇 You cannot post right now
+            </div>
+
+            <div className="mt-0.5 text-xs text-gray-400">
+              You may be muted in this community.
             </div>
 
           </div>
@@ -2658,9 +4683,78 @@ export default function ChatWindow({
               null
             )
           }
+
+          enterToSend={
+            chatPreferences.enter_to_send
+          }
         />
 
       )}
+
+      <ChatPreferencesPanel
+        isOpen={showChatPreferences}
+        onClose={() => setShowChatPreferences(false)}
+        preferences={chatPreferences}
+        onPreferencesChange={setChatPreferences}
+      />
+
+      {/* MESSAGE SEARCH */}
+
+      {showMessageSearch &&
+        activeConversation?.id && (
+          <MessageSearchModal
+            isOpen={
+              showMessageSearch
+            }
+
+            onClose={() =>
+              setShowMessageSearch(
+                false
+              )
+            }
+
+            conversationId={
+              activeConversation.id
+            }
+
+            conversationTitle={
+              displayName ||
+              activeConversation.title ||
+              "Chat"
+            }
+
+            onOpenResult={
+              handleSearchResultOpen
+            }
+          />
+        )}
+
+      {/* SHARED MEDIA / FILES */}
+
+      {showSharedMedia &&
+        activeConversation?.id && (
+          <SharedMediaModal
+            isOpen={
+              showSharedMedia
+            }
+
+            onClose={() =>
+              setShowSharedMedia(
+                false
+              )
+            }
+
+            conversationId={
+              activeConversation.id
+            }
+
+            conversationTitle={
+              displayName ||
+              activeConversation.title ||
+              "Chat"
+            }
+          />
+        )}
 
       {/* GROUP INFO */}
 
@@ -2757,6 +4851,69 @@ export default function ChatWindow({
 
             onLeftChannel={
               handleChannelLeft
+            }
+          />
+        )}
+
+      {/* COMMUNITY INFO */}
+
+      {isCommunity &&
+        showCommunityInfo && (
+          <CommunityInfoModal
+            conversation={
+              activeConversation
+            }
+
+            currentUser={
+              currentUser
+            }
+
+            onClose={() =>
+              setShowCommunityInfo(
+                false
+              )
+            }
+
+            onUpdated={(
+              updated
+            ) => {
+              setLocalConversation(
+                (
+                  previous
+                ) => ({
+                  ...previous,
+                  ...updated,
+                })
+              );
+
+              if (
+                updated?.memberCount !==
+                undefined
+              ) {
+                setGroupMemberCount(
+                  updated.memberCount
+                );
+              }
+
+              if (
+                updated?.currentMemberRole
+              ) {
+                setCurrentMemberRole(
+                  updated.currentMemberRole
+                );
+
+                setCheckingPostPermission(
+                  true
+                );
+              }
+            }}
+
+            onOpenConversation={
+              onOpenConversation
+            }
+
+            onLeft={
+              handleCommunityLeft
             }
           />
         )}

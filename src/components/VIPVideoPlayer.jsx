@@ -3,6 +3,7 @@ import { supabase } from '../services/supabaseClient';
 
 export default function VIPVideoPlayer({
   mainVideoUrl,
+  autoPlay = false,
   userProfile,
   accountType,
   vipUntil,
@@ -13,14 +14,21 @@ export default function VIPVideoPlayer({
   currentDuration,
   showWatermark = true,
   watermarkPosition = "top-right",
-  commentsCount = 0,
 }) {
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
   const mainVideoRef = useRef(null);
+
+  // Tracking refs
   const hasLoggedWatchRef = useRef(false);
+  const hasNotifiedPlayRef = useRef(false);
   const hasSavedDurationRef = useRef(false);
+  const isLoggingWatchRef = useRef(false);
+
+  // Active video tracking refs para sa stale request protection
+  const currentMediaIdRef = useRef(mediaId);
+  const currentVideoUrlRef = useRef(mainVideoUrl);
 
   const CDN_DOMAIN = "https://cdn.jb-premium-hub.vip";
 
@@ -59,11 +67,30 @@ export default function VIPVideoPlayer({
 
   const effectiveIsAdFree = isAdFreeProp || isAdFreeUser;
 
+  // 🔄 1. Reset tracking refs, playback state, at active video reference kapag nagpalit ng video
   useEffect(() => {
     hasLoggedWatchRef.current = false;
+    hasNotifiedPlayRef.current = false;
     hasSavedDurationRef.current = false;
+    isLoggingWatchRef.current = false;
+
+    currentMediaIdRef.current = mediaId;
+    currentVideoUrlRef.current = mainVideoUrl;
+
     setIsPlaying(false);
+    setHasStarted(false);
   }, [mainVideoUrl, mediaId]);
+
+  // 🎬 2. Programmatic Autoplay execution
+  useEffect(() => {
+    if (autoPlay && mainVideoRef.current) {
+      mainVideoRef.current
+        .play()
+        .catch((err) => {
+          console.log("Autoplay was prevented by browser policy:", err);
+        });
+    }
+  }, [mainVideoUrl, mediaId, autoPlay]);
 
   useEffect(() => {
     let isMounted = true;
@@ -127,18 +154,21 @@ export default function VIPVideoPlayer({
   };
 
   const startVideoPlay = () => {
-    setIsPlaying(true);
-
     if (mainVideoRef.current) {
       mainVideoRef.current
         .play()
-        .catch((err) => console.error("Play error:", err));
+        .catch((err) => {
+          console.error("Play error:", err);
+        });
     }
   };
 
   const handleLoadedMetadata = async (e) => {
     const durationInSeconds = Math.round(e.target.duration);
     const storedDuration = Number(currentDuration || 0);
+
+    const targetMediaId = mediaId;
+    const targetVideoUrl = mainVideoUrl;
 
     if (
       !mediaId ||
@@ -162,85 +192,75 @@ export default function VIPVideoPlayer({
 
       if (error) throw error;
 
-      hasSavedDurationRef.current = true;
+      if (
+        currentMediaIdRef.current === targetMediaId &&
+        currentVideoUrlRef.current === targetVideoUrl
+      ) {
+        hasSavedDurationRef.current = true;
 
-      if (data === true && typeof onDurationUpdate === "function") {
-        onDurationUpdate(mediaId, durationInSeconds);
+        if (data === true && typeof onDurationUpdate === "function") {
+          onDurationUpdate(mediaId, durationInSeconds);
+        }
       }
     } catch (err) {
-      hasSavedDurationRef.current = false;
+      if (
+        currentMediaIdRef.current === targetMediaId &&
+        currentVideoUrlRef.current === targetVideoUrl
+      ) {
+        hasSavedDurationRef.current = false;
+      }
       console.error("Auto-update video duration error:", err);
     }
   };
 
   const handleVideoPlay = async () => {
     setIsPlaying(true);
+    setHasStarted(true);
 
-    if (typeof onPlay === "function") {
-      onPlay();
+    if (!hasNotifiedPlayRef.current) {
+      hasNotifiedPlayRef.current = true;
+
+      if (typeof onPlay === "function") {
+        onPlay();
+      }
     }
 
-    if (hasLoggedWatchRef.current) return;
+    const targetMediaId = mediaId;
+    const targetVideoUrl = mainVideoUrl;
+
+    if (hasLoggedWatchRef.current || isLoggingWatchRef.current) return;
+
+    isLoggingWatchRef.current = true;
 
     try {
       const { error } = await supabase.rpc('log_user_video_watch');
 
       if (error) throw error;
 
-      hasLoggedWatchRef.current = true;
+      if (
+        currentMediaIdRef.current === targetMediaId &&
+        currentVideoUrlRef.current === targetVideoUrl
+      ) {
+        hasLoggedWatchRef.current = true;
+      }
     } catch (err) {
-      hasLoggedWatchRef.current = false;
       console.error("Error logging video watch:", err);
-    }
-  };
-
-  // 🔗 SMART SHARE FUNCTION (Native Mobile Share Sheet + Clipboard Fallback)
-  const handleShare = async (e) => {
-    if (e) e.stopPropagation();
-    if (!mediaId) return;
-
-    const shareUrl = `https://www.jb-premium-hub.vip/v/${mediaId}`;
-    const shareData = {
-      title: 'JB Premium Hub',
-      text: 'Watch this video on JB Premium Hub Vault!',
-      url: shareUrl,
-    };
-
-    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Error sharing:', err);
-        }
-      }
-    }
-
-    if (navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (err) {
-        console.error("Copy error:", err);
+    } finally {
+      if (
+        currentMediaIdRef.current === targetMediaId &&
+        currentVideoUrlRef.current === targetVideoUrl
+      ) {
+        isLoggingWatchRef.current = false;
       }
     }
   };
 
-  const handleVipDownload = (e) => {
-    if (e) e.stopPropagation();
-    if (!videoSrc) return;
+  const handleVideoPause = () => {
+    setIsPlaying(false);
+  };
 
-    const link = document.createElement("a");
-    link.href = videoSrc;
-    link.setAttribute("download", `Vault-Video-${Date.now()}.mp4`);
-    link.setAttribute("target", "_blank");
-    link.setAttribute("rel", "noopener noreferrer");
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleVideoEnded = () => {
+    setIsPlaying(false);
   };
 
   return (
@@ -253,7 +273,7 @@ export default function VIPVideoPlayer({
           <video
             ref={mainVideoRef}
             src={videoSrc}
-            controls={isPlaying}
+            controls={hasStarted}
             controlsList={!effectiveIsAdFree ? "nodownload" : undefined}
             onContextMenu={(e) => {
               if (!effectiveIsAdFree) e.preventDefault();
@@ -261,6 +281,8 @@ export default function VIPVideoPlayer({
             playsInline
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={handleVideoPlay}
+            onPause={handleVideoPause}
+            onEnded={handleVideoEnded}
             className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
             onError={(e) =>
               console.error(
@@ -283,8 +305,8 @@ export default function VIPVideoPlayer({
             />
           )}
 
-          {/* ▶️ INITIAL PLAY OVERLAY */}
-          {!isPlaying && (
+          {/* ▶️ INITIAL PLAY OVERLAY (Lumalabas lamang BAGO magsimulang mag-play ang video) */}
+          {!hasStarted && (
             <div
               onClick={handlePlayOverlayClick}
               className="absolute inset-0 bg-black/60 hover:bg-black/40 transition-all flex flex-col items-center justify-center cursor-pointer z-20 group"
@@ -305,8 +327,6 @@ export default function VIPVideoPlayer({
           )}
         </div>
       </div>
-
-
 
     </div>
   );
