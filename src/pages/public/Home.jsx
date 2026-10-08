@@ -4,10 +4,6 @@ import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 
 const ITEMS_PER_PAGE = 50;
-const SMARTLINK_URL =
-  import.meta.env.VITE_SMARTLINK_URL ||
-  "https://deeprootedpressure.com/vja5sy3m?key=fc8ea4a621cb34f209a9fa31d4b85bea";
-
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
 const POPUNDER_EVERY_N_VIDEOS = 5;
@@ -380,8 +376,8 @@ export default function Home() {
     }
   };
 
-  // Standard users only: trigger the Popunder script after every 5 actual video plays.
-  // localStorage keeps the counter across the Smartlink-created tabs.
+  // Standard users only: count actual video plays for the existing Popunder frequency.
+  // Keep frequency at 5 pending confirmation from the ad network.
   const triggerPopunderEveryFiveVideos = () => {
     if (isAdFree || typeof window === "undefined") return;
 
@@ -700,30 +696,15 @@ export default function Home() {
     }
   };
 
-  // STEP 1: Video Selection Handler with Smartlink Popunder Trigger
+  // Open the selected video in the current tab without ad redirects.
   const handleSelectMedia = (e, item) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
 
-    // Standard Users: Open video in a NEW tab (Tab 2), while current tab (Tab 1) redirects to Smartlink
-    if (!isAdFree) {
-      const videoTabUrl = new URL(window.location.href);
-      videoTabUrl.searchParams.set("v", item.id);
-      videoTabUrl.searchParams.set("step", "2");
-      videoTabUrl.searchParams.delete("autoplay");
-
-      // Open new tab for the video modal
-      window.open(videoTabUrl.toString(), "_blank");
-
-      // Redirect current tab to Smartlink
-      window.location.href = SMARTLINK_URL;
-      return;
-    }
-
-    // VIP / Admin Users: Open modal directly in current tab
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
+    setAutoPlay(false);
     setSelectedMedia(item);
 
     const url = new URL(window.location.href);
@@ -735,27 +716,12 @@ export default function Home() {
     window.history.replaceState({}, "", url);
   };
 
-  // STEP 2: Modal Play Click Handler with Smartlink Popunder Trigger
+  // Start playback in the existing modal; never redirect to a Smartlink.
   const handleStartPlayback = (e) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-
-    if (!isAdFree && !autoPlay) {
-      const playTabUrl = new URL(window.location.href);
-      playTabUrl.searchParams.set("v", selectedMedia.id);
-      playTabUrl.searchParams.set("autoplay", "true");
-      playTabUrl.searchParams.delete("step");
-
-      // Open new tab (Tab 3) where video auto-plays
-      window.open(playTabUrl.toString(), "_blank");
-
-      // Redirect current tab (Tab 2) to Smartlink
-      window.location.href = SMARTLINK_URL;
-      return;
-    }
-
     setAutoPlay(true);
   };
 
