@@ -409,7 +409,7 @@ export default function Signup() {
           */
 
           navigate(
-            "/home",
+            "/profile",
             {
               replace:
                 true,

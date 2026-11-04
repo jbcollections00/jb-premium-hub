@@ -46,7 +46,7 @@ export default function Login() {
     }
 
     setLoading(false);
-    navigate('/home');
+    navigate('/profile', { replace: true });
   };
 
   const handleResendConfirmation = async () => {

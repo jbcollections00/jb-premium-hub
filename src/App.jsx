@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 import MainLayout from './components/layout/MainLayout';
 import EventPopup from './components/EventPopup';
@@ -8,7 +8,6 @@ import Login from './pages/public/Login';
 import Signup from './pages/public/Signup';
 import ResetPassword from './pages/public/ResetPassword';
 import Home from './pages/public/Home';
-import ForYou from './pages/public/ForYou';
 import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
@@ -19,6 +18,8 @@ import LeaderboardPage from './pages/public/LeaderboardPage';
 import ChatMessages from './pages/ChatMessages';
 
 import ProtectedRoute from './components/layout/ProtectedRoute';
+import SubscriptionRoute from './components/layout/SubscriptionRoute';
+import SubscriptionPlans from './pages/public/SubscriptionPlans';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
 
@@ -49,22 +50,22 @@ function App() {
           <Route path="/dmca" element={<DmcaPage />} />
           <Route path="/support" element={<SupportPage />} />
 
-          {/* Protected User Routes */}
+          {/* Accessible to signed-in users, including Free accounts */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/home" element={<Home />} />
-            <Route path="/for-you" element={<ForYou />} />
-            <Route path="/activate" element={<ActivateCode />} />
             <Route path="/profile" element={<Profile />} />
-
-            {/* Existing admin-announcement messages */}
+            <Route path="/subscribe" element={<SubscriptionPlans />} />
+            <Route path="/buy-vip" element={<SubscriptionPlans />} />
             <Route path="/messages" element={<Messages />} />
+            <Route path="/for-you" element={<Navigate to="/profile" replace />} />
 
-            {/* New user-to-user chat */}
-            <Route path="/chat" element={<ChatMessages />} />
-
-            <Route path="/buy-vip" element={<BuyVip />} />
-            <Route path="/contest" element={<Contest />} />
-            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            {/* Paid member pages: verified live billing grant required. */}
+            <Route element={<SubscriptionRoute />}>
+              <Route path="/home" element={<Home />} />
+              <Route path="/activate" element={<ActivateCode />} />
+              <Route path="/chat" element={<ChatMessages />} />
+              <Route path="/contest" element={<Contest />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
+            </Route>
           </Route>
         </Route>
 
