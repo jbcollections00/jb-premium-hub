@@ -21,6 +21,7 @@ import AdminMediaTab from './AdminMediaTab';
 import ChatReports from './ChatReports';
 import ChatAnalytics from './ChatAnalytics';
 import AdminEventControl from '../../components/admin/AdminEventControl';
+import AdminBillingTab from './AdminBillingTab';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -248,6 +249,7 @@ export default function AdminDashboard() {
     { id: 'messages', icon: '💬', label: 'Send Messages' },
     { id: 'chat-reports', icon: '🚩', label: 'Chat Reports' },
     { id: 'chat-analytics', icon: '📈', label: 'Chat Analytics' },
+    { id: 'billing', icon: '💳', label: 'Billing & Payments' },
     { id: 'codes', icon: '🔑', label: 'Access Codes' },
     { id: 'upload', icon: '📤', label: 'Bulk Upload & Media' },
   ];
@@ -441,6 +443,7 @@ export default function AdminDashboard() {
         {activeTab === 'messages' && <AdminMessagesTab users={users} />}
         {activeTab === 'chat-reports' && <ChatReports />}
         {activeTab === 'chat-analytics' && <ChatAnalytics />}
+        {activeTab === 'billing' && <AdminBillingTab />}
         {activeTab === 'codes' && <AccessCodesTab />}
         {activeTab === 'upload' && <AdminMediaTab />}
       </main>
