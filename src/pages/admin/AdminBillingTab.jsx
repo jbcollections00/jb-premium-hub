@@ -36,6 +36,51 @@ function Table({ headers, rows, empty }) {
 }
 const cell = 'p-3 text-slate-300';
 
+
+// Local CSV export, using a separate admin-protected, paginated RPC.
+// Max 10,000 records per request; exports larger than this fail visibly (never truncate silently).
+const EXPORT_BATCH_SIZE = 200;
+const EXPORT_MAX_ROWS = 10000;
+const CSV_FIELDS = {
+  orders: [
+    ['id','order_id'], ['user_id','user_id'], ['plan_code','plan'],
+    ['billing_mode','billing_mode'], ['provider_environment','environment'],
+    ['amount_centavos','amount_centavos'], ['currency','currency'],
+    ['status','status'], ['paymongo_checkout_session_id','checkout_session_id'],
+    ['paymongo_payment_id','payment_id'], ['paymongo_invoice_id','invoice_id'],
+    ['subscription_id','subscription_id'], ['has_checkout_url','has_checkout_url'],
+    ['created_at','created_at_utc'], ['updated_at','updated_at_utc'], ['paid_at','paid_at_utc'],
+  ],
+  webhooks: [
+    ['id','id'], ['provider_environment','environment'],
+    ['provider_event_id','event_id'], ['event_type','event_type'],
+    ['provider_object_id','object_id'], ['processing_status','processing_status'],
+    ['processing_error','processing_error'], ['received_at','received_at_utc'],
+    ['processed_at','processed_at_utc'],
+  ],
+  diagnostics: [
+    ['id','order_id'], ['user_id','user_id'], ['amount_centavos','amount_centavos'],
+    ['currency','currency'], ['provider_environment','environment'],
+    ['checkout_session_id','checkout_session_id'], ['has_checkout_url','has_checkout_url'],
+    ['status','status'], ['checkout_attempt_state','recovery_state'],
+    ['checkout_attempted_at','attempted_at_utc'], ['created_at','created_at_utc'],
+    ['paid_at','paid_at_utc'],
+  ],
+};
+const escapeCSV = (value) => {
+  let text = value == null ? '' : String(value);
+  // Defend against CSV / spreadsheet formula injection, including leading whitespace.
+  if (/^[\s\u0000-\u001f]*[=+@-]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+};
+const makeCSV = (dataset, rows) => {
+  const columns = CSV_FIELDS[dataset];
+  return '\uFEFF' + [
+    columns.map(([, name]) => escapeCSV(name)).join(','),
+    ...rows.map((record) => columns.map(([key]) => escapeCSV(record[key])).join(',')),
+  ].join('\r\n') + '\r\n';
+};
+
 export default function AdminBillingTab() {
   const [environment, setEnvironment] = useState('test');
   const [status, setStatus] = useState('all');
@@ -47,6 +92,9 @@ export default function AdminBillingTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const [exporting, setExporting] = useState('');
+  const [exportError, setExportError] = useState('');
+  const [exportSuccess, setExportSuccess] = useState('');
 
   const fetchBilling = useCallback(async (signal) => {
     setLoading(true);
@@ -109,6 +157,72 @@ export default function AdminBillingTab() {
     setPage(0);
     setPayload(null);
   };
+  const downloadCSV = async (dataset) => {
+    if (exporting || loading) return;
+    setExporting(dataset);
+    setExportError('');
+    setExportSuccess('');
+    const selectedEnvironment = environment;
+    const selectedStatus = status === 'all' ? null : status;
+    const selectedSearch = search || null;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error('Sign in to your approved admin account again.');
+      const records = [];
+      let total = null;
+      for (let offset = 0; offset < EXPORT_MAX_ROWS; offset += EXPORT_BATCH_SIZE) {
+        const { data, error: rpcError } = await supabase.rpc('jb_admin_billing_export_v1', {
+          p_dataset: dataset,
+          p_environment: selectedEnvironment,
+          p_limit: EXPORT_BATCH_SIZE,
+          p_offset: offset,
+          p_status: dataset === 'orders' ? selectedStatus : null,
+          p_search: dataset === 'orders' ? selectedSearch : null,
+        });
+        if (rpcError) throw rpcError;
+        if (!data || data.dataset !== dataset || data.environment !== selectedEnvironment ||
+            !Array.isArray(data.rows) || !Number.isSafeInteger(Number(data.total_count)) ||
+            Number(data.total_count) < 0 || data.rows.length > EXPORT_BATCH_SIZE) {
+          throw new Error('Export service returned an unexpected response.');
+        }
+        const pageTotal = Number(data.total_count);
+        if (total === null) {
+          total = pageTotal;
+          if (total > EXPORT_MAX_ROWS) {
+            throw new Error(`Report contains ${total} records. Export is limited to ${EXPORT_MAX_ROWS}; narrow the order filters first.`);
+          }
+        } else if (pageTotal !== total) {
+          throw new Error('Records changed during export. Refresh and try again.');
+        }
+        records.push(...data.rows);
+        if (records.length >= total) break;
+        if (data.rows.length !== EXPORT_BATCH_SIZE) {
+          throw new Error('Incomplete export response. No partial CSV was downloaded.');
+        }
+      }
+      if (records.length !== total) {
+        throw new Error('Export did not retrieve all records. No partial CSV was downloaded.');
+      }
+      const csv = makeCSV(dataset, records);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      const filtered = dataset === 'orders' && (selectedStatus || selectedSearch) ? '-filtered' : '';
+      anchor.href = url;
+      anchor.download = `jb-billing-${dataset}-${selectedEnvironment}${filtered}-${date}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      // Release the temporary browser object URL after the click is initiated.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportSuccess(`Exported ${records.length} ${dataset} record${records.length === 1 ? '' : 's'} from ${selectedEnvironment.toUpperCase()}. Keep the CSV private.`);
+    } catch (e) {
+      setExportError(e?.message || 'Unable to export billing records.');
+    } finally {
+      setExporting('');
+    }
+  };
   const metrics = [
     ['Total orders', summary.total_orders],
     ['Paid orders', summary.paid_orders],
@@ -148,6 +262,25 @@ export default function AdminBillingTab() {
         className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-200 disabled:opacity-50">Clear</button>
       <p className="w-full text-xs text-slate-500">Server-side search across all membership orders in the selected environment. {search && <>Applied: <strong className="text-slate-300">{search}</strong></>}</p>
     </form>
+    <Section title="Export billing reports" subtitle="Read-only CSV downloads for authorized administrators. Order export respects the currently applied Search, Status, and Environment filters; other reports use the selected Environment.">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={!!exporting || loading || !payload} onClick={() => downloadCSV('orders')}
+          className="rounded-lg border border-indigo-700 bg-indigo-700/20 px-4 py-2 text-sm font-medium text-indigo-100 hover:bg-indigo-800/40 disabled:opacity-40">
+          {exporting === 'orders' ? 'Exporting orders…' : 'Export membership orders CSV'}
+        </button>
+        <button type="button" disabled={!!exporting || loading || !payload} onClick={() => downloadCSV('webhooks')}
+          className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-40">
+          {exporting === 'webhooks' ? 'Exporting webhooks…' : 'Export webhook events CSV'}
+        </button>
+        {environment === 'test' && <button type="button" disabled={!!exporting || loading || !payload} onClick={() => downloadCSV('diagnostics')}
+          className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-40">
+          {exporting === 'diagnostics' ? 'Exporting diagnostic orders…' : 'Export ₱1 diagnostic orders CSV'}
+        </button>}
+      </div>
+      <p className="text-xs text-slate-400">All matching records up to {EXPORT_MAX_ROWS.toLocaleString('en-PH')} per report, not just the visible page. Files include billing identifiers; store securely and do not share publicly. Download is generated locally in your browser.</p>
+      {exportError && <p role="alert" className="text-sm text-rose-300">Export failed: {exportError}</p>}
+      {exportSuccess && <p role="status" className="text-sm text-emerald-300">{exportSuccess}</p>}
+    </Section>
     {error && <div role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-4 text-sm text-red-200">
       <strong>Billing data unavailable.</strong> {error} <span className="block mt-1">If this is an authorization error, use your approved admin account. Do not bypass the RPC.</span>
     </div>}
