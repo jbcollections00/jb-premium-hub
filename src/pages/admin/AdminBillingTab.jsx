@@ -12,9 +12,9 @@ const formatDate = (value) => {
 const shortId = (value) => value ? `${String(value).slice(0, 12)}…` : '—';
 const badgeColor = (status) => {
   const s = String(status || '').toLowerCase();
-  if (['paid', 'active', 'processed', 'completed'].includes(s)) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
+  if (['paid', 'verified', 'active', 'processed', 'completed'].includes(s)) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
   if (['pending', 'received', 'review_required', 'active_pending'].includes(s)) return 'bg-amber-950 text-amber-300 border-amber-800';
-  if (['failed', 'error', 'cancelled', 'expired', 'refunded'].includes(s)) return 'bg-rose-950 text-rose-300 border-rose-800';
+  if (['failed', 'rejected', 'error', 'cancelled', 'expired', 'refunded'].includes(s)) return 'bg-rose-950 text-rose-300 border-rose-800';
   return 'bg-slate-800 text-slate-300 border-slate-700';
 };
 function Status({ value }) {
@@ -98,6 +98,14 @@ export default function AdminBillingTab() {
   const [monitor, setMonitor] = useState(null);
   const [monitorError, setMonitorError] = useState('');
   const [monitorLoading, setMonitorLoading] = useState(false);
+  // Phase 121: TEST-only, admin-protected reconciliation audit history.
+  const [verificationStatus, setVerificationStatus] = useState('all');
+  const [verificationPage, setVerificationPage] = useState(0);
+  const [verificationPayload, setVerificationPayload] = useState(null);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [selectedVerificationId, setSelectedVerificationId] = useState(null);
+
 
   const fetchBilling = useCallback(async (signal) => {
     setLoading(true);
@@ -160,6 +168,48 @@ export default function AdminBillingTab() {
     load();
     return () => { cancelled = true; };
   }, [environment, refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (environment !== 'test') {
+      setVerificationPayload(null);
+      setVerificationError('');
+      setVerificationLoading(false);
+      return () => { cancelled = true; };
+    }
+    setVerificationLoading(true);
+    setVerificationError('');
+    setVerificationPayload(null);
+    const loadVerifications = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) throw new Error('Please sign in with an approved admin account.');
+        const { data, error: rpcError } = await supabase.rpc('jb_admin_billing_verifications_v1', {
+          p_environment: 'test',
+          p_status: verificationStatus === 'all' ? null : verificationStatus,
+          p_limit: PAGE_SIZE,
+          p_offset: verificationPage * PAGE_SIZE,
+        });
+        if (rpcError) throw rpcError;
+        if (!data || data.environment !== 'test' || !data.summary ||
+            !Array.isArray(data.records) ||
+            !Number.isSafeInteger(Number(data.filtered_total)) ||
+            Number(data.filtered_total) < 0 || data.records.length > PAGE_SIZE ||
+            !['total', 'verified', 'pending', 'rejected', 'errors'].every(
+              (key) => Number.isSafeInteger(Number(data.summary[key])) && Number(data.summary[key]) >= 0
+            )) {
+          throw new Error('Payment verification service returned an invalid response.');
+        }
+        if (!cancelled) setVerificationPayload(data);
+      } catch (e) {
+        if (!cancelled) setVerificationError(e?.message || 'Unable to load verification history.');
+      } finally {
+        if (!cancelled) setVerificationLoading(false);
+      }
+    };
+    loadVerifications();
+    return () => { cancelled = true; };
+  }, [environment, verificationStatus, verificationPage, refresh]);
 
   const summary = payload?.summary || {};
   const orders = Array.isArray(payload?.orders) ? payload.orders : [];
@@ -376,6 +426,111 @@ export default function AdminBillingTab() {
         <p className="text-xs text-slate-500">Only persisted database records are monitored. Edge Function HTTP 401/422/502 errors that were not stored in these tables will not appear. No automated remediation or payment status changes.</p>
       </>}
     </Section>
+    {environment === 'test' && <Section
+      title="Payment verification history"
+      subtitle="Independent PayMongo TEST reconciliation audit · Read-only · No order status or membership changes"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <label className="space-y-1 text-xs text-slate-300">
+          <span className="block">Verification status</span>
+          <select
+            value={verificationStatus}
+            onChange={(event) => {
+              setVerificationStatus(event.target.value);
+              setVerificationPage(0);
+              setSelectedVerificationId(null);
+            }}
+            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+          >
+            <option value="all">All statuses</option>
+            {['pending', 'verified', 'rejected', 'error'].map((s) =>
+              <option key={s} value={s}>{s}</option>
+            )}
+          </select>
+        </label>
+        <p className="text-xs text-slate-400">Latest records first · Times shown in Philippine Time (PHT)</p>
+      </div>
+      {verificationLoading && <p role="status" className="text-sm text-slate-400">Loading payment verification audit…</p>}
+      {verificationError && <p role="alert" className="rounded-lg border border-rose-800 bg-rose-950/30 p-3 text-sm text-rose-200">
+        Verification history unavailable: {verificationError}
+      </p>}
+      {verificationPayload && <>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          {[
+            ['Total audited', verificationPayload.summary.total],
+            ['Pending', verificationPayload.summary.pending],
+            ['Verified paid', verificationPayload.summary.verified],
+            ['Rejected', verificationPayload.summary.rejected],
+            ['Errors', verificationPayload.summary.errors],
+          ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-700 bg-slate-950 p-3">
+            <p className="text-xs text-slate-400">{label}</p>
+            <p className="mt-2 text-xl font-bold text-white">{Number(value)}</p>
+          </div>)}
+        </div>
+        <p className="text-xs text-slate-500">Summary totals cover all TEST audit records, regardless of the selected status filter.</p>
+        <Table
+          headers={['Recorded (PHT)', 'Order ID', 'Checkout session', 'Status', 'Reason', 'Expected', 'Verified', 'Details']}
+          empty="No matching TEST verification records."
+          rows={verificationPayload.records.map((record) => <tr key={record.id}>
+            <td className={cell}>{formatDate(record.created_at)}</td>
+            <td className={cell} title={record.order_id || ''}>{shortId(record.order_id)}</td>
+            <td className={cell} title={record.provider_checkout_session_id || ''}>{shortId(record.provider_checkout_session_id)}</td>
+            <td className={cell}><Status value={record.verification_status} /></td>
+            <td className={cell}>{record.verification_reason || '—'}</td>
+            <td className={cell}>{record.expected_amount_centavos == null ? '—' : formatMoney(record.expected_amount_centavos)}</td>
+            <td className={cell}>{record.verified_amount_centavos == null ? '—' : formatMoney(record.verified_amount_centavos)}</td>
+            <td className={cell}><button
+              type="button"
+              onClick={() => setSelectedVerificationId((current) => current === record.id ? null : record.id)}
+              aria-expanded={selectedVerificationId === record.id}
+              className="rounded-lg border border-indigo-700 px-3 py-1.5 text-indigo-200 hover:bg-indigo-950"
+            >{selectedVerificationId === record.id ? 'Hide' : 'View'}</button></td>
+          </tr>)}
+        />
+        {verificationPayload.records.filter((record) => record.id === selectedVerificationId).map((record) =>
+          <div key={record.id} className="rounded-xl border border-indigo-800 bg-slate-950 p-4" aria-label="Payment verification details">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="font-bold text-white">Verification audit details</h3>
+              <button type="button" onClick={() => setSelectedVerificationId(null)} className="text-xs text-slate-300 hover:text-white">Close</button>
+            </div>
+            <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ['Audit ID', record.id],
+                ['Order ID', record.order_id],
+                ['Environment', record.provider_environment],
+                ['Event ID', record.provider_event_id],
+                ['Checkout session ID', record.provider_checkout_session_id],
+                ['Payment ID', record.provider_payment_id],
+                ['Status', record.verification_status],
+                ['Reason', record.verification_reason],
+                ['Expected amount', record.expected_amount_centavos == null ? '—' : formatMoney(record.expected_amount_centavos)],
+                ['Verified amount', record.verified_amount_centavos == null ? '—' : formatMoney(record.verified_amount_centavos)],
+                ['Currency', record.currency],
+                ['Verified (PHT)', formatDate(record.verified_at)],
+                ['Recorded (PHT)', formatDate(record.created_at)],
+              ].map(([label, value]) => <div key={label} className="min-w-0">
+                <dt className="mb-1 font-medium text-slate-400">{label}</dt>
+                <dd className="break-all text-slate-100 select-text">{value == null || value === '' ? '—' : String(value)}</dd>
+              </div>)}
+            </dl>
+            <p className="mt-3 text-xs text-amber-300">An audit entry is not proof of settled funds. This panel cannot mark orders paid or grant access.</p>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+          <span>Showing {Number(verificationPayload.filtered_total) === 0 ? 0 : verificationPage * PAGE_SIZE + 1}–{Math.min((verificationPage + 1) * PAGE_SIZE, Number(verificationPayload.filtered_total))} of {Number(verificationPayload.filtered_total)} matching audits</span>
+          <div className="flex gap-2">
+            <button type="button" disabled={verificationPage === 0 || verificationLoading}
+              onClick={() => { setVerificationPage((value) => Math.max(0, value - 1)); setSelectedVerificationId(null); }}
+              className="rounded-lg bg-slate-800 px-3 py-2 disabled:opacity-40">Previous</button>
+            <button type="button"
+              disabled={verificationLoading || (verificationPage + 1) * PAGE_SIZE >= Number(verificationPayload.filtered_total)}
+              onClick={() => { setVerificationPage((value) => value + 1); setSelectedVerificationId(null); }}
+              className="rounded-lg bg-slate-800 px-3 py-2 disabled:opacity-40">Next</button>
+          </div>
+        </div>
+      </>}
+      <p className="text-xs text-slate-500">Source: <code>jb_admin_billing_verifications_v1</code>. TEST-only reconciliation history, independently loaded from the billing orders. No automatic refresh; use Refresh data above.</p>
+    </Section>}
     {error && <div role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-4 text-sm text-red-200">
       <strong>Billing data unavailable.</strong> {error} <span className="block mt-1">If this is an authorization error, use your approved admin account. Do not bypass the RPC.</span>
     </div>}
