@@ -95,6 +95,9 @@ export default function AdminBillingTab() {
   const [exporting, setExporting] = useState('');
   const [exportError, setExportError] = useState('');
   const [exportSuccess, setExportSuccess] = useState('');
+  const [monitor, setMonitor] = useState(null);
+  const [monitorError, setMonitorError] = useState('');
+  const [monitorLoading, setMonitorLoading] = useState(false);
 
   const fetchBilling = useCallback(async (signal) => {
     setLoading(true);
@@ -128,6 +131,35 @@ export default function AdminBillingTab() {
     fetchBilling(signal);
     return () => { signal.cancelled = true; };
   }, [fetchBilling, refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMonitorLoading(true);
+    setMonitor(null);
+    setMonitorError('');
+    const load = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) throw new Error('Please sign in as an approved admin.');
+        const { data, error: rpcError } = await supabase.rpc('jb_admin_billing_error_monitor_v1', {
+          p_environment: environment,
+        });
+        if (rpcError) throw rpcError;
+        if (!data || data.environment !== environment || !data.counts ||
+            !Array.isArray(data.failed_orders) || !Array.isArray(data.pending_without_session) ||
+            !Array.isArray(data.webhook_errors) || !Array.isArray(data.diagnostic_reviews)) {
+          throw new Error('Error monitor returned an invalid response.');
+        }
+        if (!cancelled) setMonitor(data);
+      } catch (e) {
+        if (!cancelled) setMonitorError(e?.message || 'Unable to load error monitoring.');
+      } finally {
+        if (!cancelled) setMonitorLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [environment, refresh]);
 
   const summary = payload?.summary || {};
   const orders = Array.isArray(payload?.orders) ? payload.orders : [];
@@ -280,6 +312,69 @@ export default function AdminBillingTab() {
       <p className="text-xs text-slate-400">All matching records up to {EXPORT_MAX_ROWS.toLocaleString('en-PH')} per report, not just the visible page. Files include billing identifiers; store securely and do not share publicly. Download is generated locally in your browser.</p>
       {exportError && <p role="alert" className="text-sm text-rose-300">Export failed: {exportError}</p>}
       {exportSuccess && <p role="status" className="text-sm text-emerald-300">{exportSuccess}</p>}
+    </Section>
+    <Section title="Checkout & webhook error monitor" subtitle="Read-only database monitoring · Most recent 20 rows per category · Refresh data to re-check">
+      {monitorLoading && <p role="status" className="text-sm text-slate-400">Loading error monitoring…</p>}
+      {monitorError && <p role="alert" className="text-sm text-rose-300">Error monitor unavailable: {monitorError}</p>}
+      {monitor && <>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            ['Failed orders', monitor.counts.failed_orders],
+            ['Pending without session', monitor.counts.pending_without_session],
+            ['Webhook errors', monitor.counts.webhook_errors],
+            ['Diagnostic reviews', monitor.counts.diagnostic_reviews],
+          ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-700 bg-slate-950 p-3">
+            <p className="text-xs text-slate-400">{label}</p>
+            <p className="mt-2 text-xl font-bold text-white">{Number(value || 0)}</p>
+          </div>)}
+        </div>
+        {Number(monitor.counts.stale_pending_without_session || 0) > 0 &&
+          <p className="rounded-lg border border-amber-700 bg-amber-950/30 p-3 text-xs text-amber-200">
+            {monitor.counts.stale_pending_without_session} pending order(s) have no checkout session after 15 minutes.
+            This is a review signal, not proof of a payment or gateway failure.
+          </p>}
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-white">Pending membership orders without checkout session</h3>
+          <Table headers={['Created (PHT)', 'Order ID', 'Plan', 'Amount', 'Status']} empty="No matching pending orders." rows={monitor.pending_without_session.map((o) => <tr key={o.id}>
+            <td className={cell}>{formatDate(o.created_at)}</td>
+            <td className={cell} title={o.id}>{shortId(o.id)}</td>
+            <td className={cell}>{o.plan_code}</td>
+            <td className={cell}>{formatMoney(o.amount_centavos)}</td>
+            <td className={cell}><Status value={o.status}/></td>
+          </tr>)} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-white">Failed membership orders</h3>
+          <Table headers={['Created (PHT)', 'Order ID', 'Plan', 'Amount', 'Status']} empty="No failed orders recorded." rows={monitor.failed_orders.map((o) => <tr key={o.id}>
+            <td className={cell}>{formatDate(o.created_at)}</td>
+            <td className={cell} title={o.id}>{shortId(o.id)}</td>
+            <td className={cell}>{o.plan_code}</td>
+            <td className={cell}>{formatMoney(o.amount_centavos)}</td>
+            <td className={cell}><Status value={o.status}/></td>
+          </tr>)} />
+        </div>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-white">Webhook processing errors</h3>
+          <Table headers={['Received (PHT)', 'Event ID', 'Type', 'Status', 'Error']} empty="No recorded webhook processing errors." rows={monitor.webhook_errors.map((w) => <tr key={w.id}>
+            <td className={cell}>{formatDate(w.received_at)}</td>
+            <td className={cell} title={w.provider_event_id}>{shortId(w.provider_event_id)}</td>
+            <td className={cell}>{w.event_type}</td>
+            <td className={cell}><Status value={w.processing_status}/></td>
+            <td className="p-3 max-w-sm break-words text-rose-300">{w.processing_error || '—'}</td>
+          </tr>)} />
+        </div>
+        {environment === 'test' && <div>
+          <h3 className="mb-2 text-sm font-semibold text-white">₱1 diagnostic cases needing review</h3>
+          <Table headers={['Created (PHT)', 'Order ID', 'Amount', 'Order status', 'Recovery']} empty="No diagnostic cases requiring review." rows={monitor.diagnostic_reviews.map((q) => <tr key={q.id}>
+            <td className={cell}>{formatDate(q.created_at)}</td>
+            <td className={cell} title={q.id}>{shortId(q.id)}</td>
+            <td className={cell}>{formatMoney(q.amount_centavos)}</td>
+            <td className={cell}><Status value={q.status}/></td>
+            <td className={cell}><Status value={q.checkout_attempt_state}/></td>
+          </tr>)} />
+        </div>}
+        <p className="text-xs text-slate-500">Only persisted database records are monitored. Edge Function HTTP 401/422/502 errors that were not stored in these tables will not appear. No automated remediation or payment status changes.</p>
+      </>}
     </Section>
     {error && <div role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-4 text-sm text-red-200">
       <strong>Billing data unavailable.</strong> {error} <span className="block mt-1">If this is an authorization error, use your approved admin account. Do not bypass the RPC.</span>
