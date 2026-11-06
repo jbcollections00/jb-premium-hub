@@ -1,24 +1,21 @@
 
-# ==========================================================
-# JB PREMIUM HUB
-# PHASE 123J-56F
-# GITHUB SCHEDULER DIAGNOSTIC
+# ======================================================
+# JB PREMIUM HUB — PHASE 123J-60
+# GITHUB SCHEDULER REGISTRATION DIAGNOSTIC
 #
 # SAFE:
 # - No PayMongo API calls
 # - No Supabase requests
 # - No secrets
 # - No payment processing
-# - No repository modifications
-# ==========================================================
+# ======================================================
 
 name: JB Scheduler Diagnostic
 
 on:
   schedule:
-    # UTC; scheduled executions may be delayed or dropped.
-    # Run at minute 7, 17, 27, 37, 47, and 57.
-    - cron: '7-57/10 * * * *'
+    # UTC; every 10 minutes, away from minute 0.
+    - cron: '11-51/10 * * * *'
 
   workflow_dispatch:
 
@@ -44,6 +41,7 @@ jobs:
           WORKFLOW_NAME: ${{ github.workflow }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          SCHEDULE: ${{ github.event.schedule }}
         run: |
           set -euo pipefail
 
@@ -53,30 +51,21 @@ jobs:
 
           echo "Workflow: $WORKFLOW_NAME"
           echo "Event: $EVENT_NAME"
-          echo "Branch ref: $GIT_REF"
+          echo "Branch: $GIT_REF"
           echo "Run ID: $RUN_ID"
           echo "Attempt: $RUN_ATTEMPT"
+          echo "Schedule: ${SCHEDULE:-manual}"
 
           echo "UTC time:"
           date -u '+%Y-%m-%d %H:%M:%S UTC'
 
-          echo ""
-          echo "SAFETY CONFIRMATION:"
-          echo "No billing operation performed."
-          echo "No payment processor invoked."
-          echo "No Supabase request sent."
-          echo "No secrets accessed."
-
-          if [[ "$EVENT_NAME" == "schedule" ]]; then
-            echo "PASS: Automatic schedule event received."
-          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            echo "PASS: Manual diagnostic completed."
-            echo "Automatic scheduling remains unverified."
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            echo "RESULT: AUTOMATIC_SCHEDULER_TRIGGERED"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "RESULT: MANUAL_DIAGNOSTIC_TRIGGERED"
           else
-            echo "Unexpected trigger: $EVENT_NAME"
+            echo "RESULT: UNEXPECTED_EVENT"
             exit 1
           fi
 
-          echo "======================================"
-          echo "DIAGNOSTIC COMPLETED"
-          echo "======================================"
+          echo "No payment operations performed."
