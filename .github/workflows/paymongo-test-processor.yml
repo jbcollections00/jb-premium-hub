@@ -15,6 +15,11 @@ on:
           - dry-run
           - health-check
           - process
+      confirm_test_processing:
+        description: 'For process mode only: type PROCESS_ONE_TEST_WEBHOOK'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -79,7 +84,13 @@ jobs:
 
   process-one-test-webhook:
     name: Invoke private TEST processor
-    if: ${{ vars.JB_TEST_SCHEDULER_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'process')) }}
+    if: >-
+      ${{
+        (github.event_name == 'schedule' && vars.JB_TEST_SCHEDULER_ENABLED == 'true') ||
+        (github.event_name == 'workflow_dispatch' &&
+         inputs.mode == 'process' &&
+         inputs.confirm_test_processing == 'PROCESS_ONE_TEST_WEBHOOK')
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     env:
