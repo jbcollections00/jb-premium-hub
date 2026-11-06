@@ -7,12 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'dry-run checks GitHub Actions only; process invokes the TEST processor'
+        description: 'dry-run checks Actions; health-check tests separate private endpoint; process may settle TEST payment'
         required: true
         default: dry-run
         type: choice
         options:
           - dry-run
+          - health-check
           - process
 
 permissions:
@@ -36,6 +37,45 @@ jobs:
           echo 'PASS: Manual dry-run executed.'
           echo 'No token retrieved; no request sent to Supabase or PayMongo.'
           echo 'No payment or membership operations performed.'
+
+  manual-health-check:
+    name: Manual authenticated health-check (no billing operations)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'health-check' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      HEALTH_TOKEN: ${{ secrets.JB_TEST_HEALTHCHECK_TOKEN }}
+      HEALTH_URL: https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/jb-paymongo-auth-health-test
+    steps:
+      - name: Check health-check secret exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ${#HEALTH_TOKEN} -ne 64 ]]; then
+            echo 'Dedicated health-check secret missing or wrong length.' >&2
+            exit 1
+          fi
+      - name: Authenticated connection probe (no payment calls)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No xtrace. Avoid printing bearer token and response body.
+          status="$(curl --silent --show-error \
+            --connect-timeout 8 --max-time 35 \
+            --retry 0 \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer ${HEALTH_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data '{"confirm":"health-check-only"}' \
+            "${HEALTH_URL}")"
+          echo "Health-check HTTP status: ${status}"
+          if [[ "${status}" != '200' ]]; then
+            echo 'Health-check failed; inspect health-check function logs.' >&2
+            exit 1
+          fi
+          echo 'PASS: GitHub Actions authenticated to the health-only endpoint.'
 
   process-one-test-webhook:
     name: Invoke private TEST processor
