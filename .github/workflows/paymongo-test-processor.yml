@@ -1,0 +1,55 @@
+name: PayMongo TEST Webhook Processor
+
+on:
+  schedule:
+    # UTC; not guaranteed to execute exactly on schedule.
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jb-paymongo-test-webhook-processor
+  cancel-in-progress: false
+
+jobs:
+  process-one-test-webhook:
+    name: Invoke private TEST processor
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    # An absent variable is safely treated as disabled.
+    if: ${{ vars.JB_TEST_SCHEDULER_ENABLED == 'true' }}
+    env:
+      PROCESSOR_TOKEN: ${{ secrets.JB_TEST_WEBHOOK_PROCESSOR_TOKEN }}
+      PROCESSOR_URL: https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/jb-paymongo-webhook-processor-test
+    steps:
+      - name: Validate required secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ${#PROCESSOR_TOKEN} -lt 32 ]]; then
+            echo 'TEST worker secret missing or too short; refusing invocation.' >&2
+            exit 1
+          fi
+
+      - name: Invoke TEST processor (one event per run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Avoid xtrace and do not print the Authorization header or response body.
+          status="$(curl --silent --show-error \
+            --connect-timeout 8 --max-time 35 \
+            --retry 0 \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer ${PROCESSOR_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data '{"confirm":"process-one-test-webhook"}' \
+            "${PROCESSOR_URL}")"
+          echo "TEST processor HTTP status: ${status}"
+          if [[ "${status}" != '200' ]]; then
+            echo 'TEST processor did not confirm success; review Supabase Edge Function logs.' >&2
+            exit 1
+          fi
