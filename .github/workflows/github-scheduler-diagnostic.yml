@@ -1,0 +1,82 @@
+
+# ==========================================================
+# JB PREMIUM HUB
+# PHASE 123J-56F
+# GITHUB SCHEDULER DIAGNOSTIC
+#
+# SAFE:
+# - No PayMongo API calls
+# - No Supabase requests
+# - No secrets
+# - No payment processing
+# - No repository modifications
+# ==========================================================
+
+name: JB Scheduler Diagnostic
+
+on:
+  schedule:
+    # UTC; scheduled executions may be delayed or dropped.
+    # Run at minute 7, 17, 27, 37, 47, and 57.
+    - cron: '7-57/10 * * * *'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jb-scheduler-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  scheduler-diagnostic:
+    name: Verify GitHub Scheduler
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Print diagnostic information
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          echo "======================================"
+          echo "JB PREMIUM HUB - SCHEDULER DIAGNOSTIC"
+          echo "======================================"
+
+          echo "Workflow: $WORKFLOW_NAME"
+          echo "Event: $EVENT_NAME"
+          echo "Branch ref: $GIT_REF"
+          echo "Run ID: $RUN_ID"
+          echo "Attempt: $RUN_ATTEMPT"
+
+          echo "UTC time:"
+          date -u '+%Y-%m-%d %H:%M:%S UTC'
+
+          echo ""
+          echo "SAFETY CONFIRMATION:"
+          echo "No billing operation performed."
+          echo "No payment processor invoked."
+          echo "No Supabase request sent."
+          echo "No secrets accessed."
+
+          if [[ "$EVENT_NAME" == "schedule" ]]; then
+            echo "PASS: Automatic schedule event received."
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "PASS: Manual diagnostic completed."
+            echo "Automatic scheduling remains unverified."
+          else
+            echo "Unexpected trigger: $EVENT_NAME"
+            exit 1
+          fi
+
+          echo "======================================"
+          echo "DIAGNOSTIC COMPLETED"
+          echo "======================================"
