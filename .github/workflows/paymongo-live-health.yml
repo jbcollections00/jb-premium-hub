@@ -1,0 +1,90 @@
+
+name: JB Premium Hub - LIVE Billing Health
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jb-live-billing-health
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Check LIVE Billing Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate monitor configuration
+        env:
+          MONITOR_TOKEN: ${{ secrets.JB_LIVE_MONITOR_CALL_TOKEN }}
+        run: |
+          if [ -z "$MONITOR_TOKEN" ]; then
+            echo "::error::Monitoring token is missing"
+            exit 1
+          fi
+          echo "Monitoring credentials are configured."
+
+      - name: Call read-only health monitor
+        env:
+          MONITOR_TOKEN: ${{ secrets.JB_LIVE_MONITOR_CALL_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          URL="https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/jb-billing-live-health"
+
+          HTTP_CODE=$(curl \
+            --silent \
+            --show-error \
+            --max-time 30 \
+            --connect-timeout 10 \
+            --output response.json \
+            --write-out "%{http_code}" \
+            --request POST \
+            --header "Authorization: Bearer ${MONITOR_TOKEN}" \
+            --header "Content-Type: application/json" \
+            "$URL")
+
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::LIVE billing health monitor returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          python3 -c '
+          import json
+          import sys
+
+          try:
+              with open("response.json", encoding="utf-8") as f:
+                  data = json.load(f)
+
+              assert data.get("status") == "healthy"
+              assert data.get("environment") == "live"
+              assert data.get("read_only") is True
+
+              checks = data["checks"]
+
+              for key in (
+                  "stale_processing",
+                  "manual_review_required",
+                  "overdue_pending",
+              ):
+                  assert type(checks[key]) is int
+                  assert checks[key] == 0
+
+              print("LIVE billing health: HEALTHY")
+              print(json.dumps(checks, indent=2))
+
+          except (ValueError, KeyError, AssertionError, TypeError) as exc:
+              print("LIVE billing health: REVIEW REQUIRED")
+              print(type(exc).__name__)
+              sys.exit(1)
+          '
