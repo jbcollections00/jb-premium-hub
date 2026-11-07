@@ -4,7 +4,7 @@ name: JB Premium Hub - LIVE Billing Health
 on:
   workflow_dispatch:
   schedule:
-    - cron: "7,17,27,37,47,57 * * * *"
+    - cron: "4,14,24,34,44,54 * * * *"
 
 permissions:
   contents: read
@@ -38,7 +38,6 @@ jobs:
           set -euo pipefail
 
           URL="https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/jb-billing-live-health"
-
           HTTP_CODE=$(curl \
             --silent \
             --show-error \
@@ -52,7 +51,6 @@ jobs:
             "$URL")
 
           echo "HTTP status: $HTTP_CODE"
-
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::error::LIVE billing health monitor returned HTTP $HTTP_CODE"
             exit 1
@@ -69,7 +67,6 @@ jobs:
               assert data.get("status") == "healthy"
               assert data.get("environment") == "live"
               assert data.get("read_only") is True
-
               checks = data["checks"]
 
               for key in (
@@ -82,7 +79,6 @@ jobs:
 
               print("LIVE billing health: HEALTHY")
               print(json.dumps(checks, indent=2))
-
           except (ValueError, KeyError, AssertionError, TypeError) as exc:
               print("LIVE billing health: REVIEW REQUIRED")
               print(type(exc).__name__)
