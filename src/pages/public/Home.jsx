@@ -1,3 +1,4 @@
+import { getBillingAccess, FREE_ACCESS } from "../../services/billingAccess";
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
@@ -77,6 +78,8 @@ export default function Home() {
 
   const [totalCount, setTotalCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
+  const [billingAccess, setBillingAccess] = useState(FREE_ACCESS);
+  const [billingChecked, setBillingChecked] = useState(false);
 
   // States para sa Likes/Dislikes at Views
   const [userReactions, setUserReactions] = useState({});
@@ -109,8 +112,36 @@ export default function Home() {
     accountTypeUpper === "VIP" &&
     userProfile?.vip_until &&
     new Date(userProfile.vip_until) > new Date();
-  const isVIP = Boolean(hasActiveVip);
+  const isVIP = Boolean(hasActiveVip) || billingAccess.tier === "vip";
   const isAdFree = isAdmin || isVIP;
+  const canDownload = isAdmin || isVIP;
+  const canViewAlbums = isAdmin || Boolean(hasActiveVip) || billingAccess.can_view_albums;
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const access = await getBillingAccess();
+        if (active) setBillingAccess(access);
+      } catch (error) {
+        console.error("Billing access refresh failed:", error);
+        if (active) setBillingAccess(FREE_ACCESS);
+      } finally { if (active) setBillingChecked(true); }
+    };
+    refresh();
+    const onFocus = () => refresh();
+    const onVisibility = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    const interval = window.setInterval(refresh, 30000);
+    const {data:{subscription}} = supabase.auth.onAuthStateChange(() => {
+      if (active) { setBillingAccess(FREE_ACCESS); setBillingChecked(false); }
+      // Defer API calls outside the auth callback to avoid auth-client lock contention.
+      window.setTimeout(refresh, 0);
+    });
+    return () => { active = false; window.clearInterval(interval); window.removeEventListener("focus",onFocus);
+      document.removeEventListener("visibilitychange",onVisibility); subscription.unsubscribe(); };
+  }, []);
 
   // Body scroll management
   useEffect(() => {
@@ -828,7 +859,7 @@ export default function Home() {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (!isAdFree || !selectedMedia?.media_url) return;
+    if (!canDownload || !selectedMedia?.media_url) return;
 
     const videoUrl = getCdnUrl(selectedMedia.media_url);
     const link = document.createElement("a");
@@ -878,7 +909,7 @@ export default function Home() {
                       isAdmin ? "text-purple-400" : isVIP ? "text-amber-400" : "text-blue-400"
                     }`}
                   >
-                    {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : "👤 Standard"}
+                    {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : billingAccess.tier === "standard" ? "👤 Standard" : "👤 Free"}
                   </span>
                 </div>
               )}
@@ -1314,7 +1345,7 @@ export default function Home() {
                       <span>{copiedShareLink ? "Copied!" : "Share"}</span>
                     </button>
 
-                    {isAdFree && (
+                    {canDownload && (
                       <button
                         type="button"
                         onClick={handleDownloadSelectedMedia}

@@ -63,6 +63,7 @@ function App() {
             <Route path="/chat" element={<ChatMessages />} />
 
             <Route path="/buy-vip" element={<BuyVip />} />
+            <Route path="/subscribe" element={<BuyVip />} />
             <Route path="/contest" element={<Contest />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
           </Route>
