@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
@@ -907,13 +908,22 @@ export default function Home() {
                   </span>
                 </div>
               )}
-              {userProfile && !isAdFree && (
-                <button
-                  onClick={() => setShowRedeemModal(true)}
-                  className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5 border border-amber-400/30 active:scale-95"
-                >
-                  <span>🔑 Upgrade VIP</span>
-                </button>
+              {userProfile && !isAdmin && !isVIP && (
+                <>
+                  <Link
+                    to="/subscribe"
+                    className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5 border border-amber-400/30 active:scale-95"
+                  >
+                    💳 Upgrade Membership
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowRedeemModal(true)}
+                    className="text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 bg-slate-900/80 text-xs font-semibold px-3 py-2.5 rounded-xl transition-colors"
+                  >
+                    🔑 Redeem Code
+                  </button>
+                </>
               )}
             </div>
           </div>
