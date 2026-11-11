@@ -270,4 +270,3 @@ GRANT SELECT ON public.jb_billing_orders, public.jb_billing_subscriptions, publi
 GRANT SELECT ON public.jb_billing_plans TO anon;
 GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION ci.check_true(boolean, text) TO authenticated, service_role;
-
