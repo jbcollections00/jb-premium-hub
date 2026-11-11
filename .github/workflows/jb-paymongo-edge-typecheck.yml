@@ -1,0 +1,50 @@
+name: JB PayMongo LIVE Edge Typecheck (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/jb-paymongo-checkout-live/**'
+      - 'supabase/functions/jb-paymongo-webhook-live/**'
+      - 'supabase/functions/jb-paymongo-webhook-worker-live/**'
+      - 'supabase/functions/jb-paymongo-settle-live/**'
+      - '.github/workflows/jb-paymongo-edge-typecheck.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    name: Validate four LIVE Edge Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Validate all LIVE functions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for name in \
+            jb-paymongo-checkout-live \
+            jb-paymongo-webhook-live \
+            jb-paymongo-webhook-worker-live \
+            jb-paymongo-settle-live
+          do
+            file="supabase/functions/${name}/index.ts"
+            echo "Checking ${name}"
+            deno check --no-config "$file"
+          done
+
+          echo "PASS: ALL FOUR EDGE FUNCTIONS TYPECHECKED"
+          echo "No deployment or payment operations performed."

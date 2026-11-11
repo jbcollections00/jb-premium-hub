@@ -217,6 +217,49 @@ function isRecognizedPaidEvent(
   return false;
 }
 
+/**
+ * PayMongo account webhooks may receive checkout events created by
+ * another website on the same merchant account. Only an unambiguously
+ * identified foreign purpose can be acknowledged/ignored.
+ * Missing/ambiguous purpose still fails closed for investigation.
+ * This is checked ONLY after a valid LIVE HMAC signature.
+ */
+function isExplicitlyForeignPaidEvent(body: unknown): boolean {
+  if (!isObj(body) || !isObj(body.data)) return false;
+  const event = body.data;
+  if (event.type !== "event" || typeof event.id !== "string" ||
+      !EVENT_ID.test(event.id) || !isObj(event.attributes)) return false;
+  const a = event.attributes;
+  if (a.type !== PAID_EVENT || a.livemode !== true || !isObj(a.data)) return false;
+  const session = a.data;
+  if (session.type !== "checkout_session" ||
+      typeof session.id !== "string" || !SESSION_ID.test(session.id) ||
+      !isObj(session.attributes)) return false;
+  const details = session.attributes;
+  if (!isObj(details.metadata)) return false;
+  const purpose = details.metadata.purpose;
+  return typeof purpose === "string" && purpose.length > 0 && purpose !== PURPOSE;
+}
+
+/**
+ * A provider may display/send only the paid checkout_session resource.
+ * Without an evt_ identifier we CANNOT safely enqueue it; never silently
+ * acknowledge an otherwise recognizable LIVE JB membership payment.
+ * Keep the full event-envelope requirement and request manual review.
+ */
+function isBareLivePaidMembershipSession(body: unknown): boolean {
+  if (!isObj(body) || body.type !== "checkout_session" ||
+      typeof body.id !== "string" || !SESSION_ID.test(body.id) ||
+      !isObj(body.attributes)) return false;
+  const attrs = body.attributes;
+  if (attrs.livemode !== true || !isObj(attrs.metadata) ||
+      attrs.metadata.purpose !== PURPOSE ||
+      !Array.isArray(attrs.payments)) return false;
+  return attrs.payments.some((p: unknown) =>
+    isObj(p) && p.type === "payment" &&
+    isObj(p.attributes) && p.attributes.status === "paid");
+}
+
 function parseEvent(
   body: unknown,
 ): EventEvidence | null {
@@ -412,7 +455,17 @@ Deno.serve(
     const event = parseEvent(payload);
 
     if (!event) {
-      if (isRecognizedPaidEvent(payload)) {
+      // Explicitly unrelated checkout from another merchant project:
+      // acknowledge only AFTER valid signature, never queue or settle.
+      if (isExplicitlyForeignPaidEvent(payload)) {
+        return respond(200, {
+          received: true,
+          ignored: true,
+          reason: "foreign_purpose",
+        });
+      }
+      if (isRecognizedPaidEvent(payload) ||
+          isBareLivePaidMembershipSession(payload)) {
         // Never acknowledge a recognized LIVE
         // payment event that cannot be safely queued.
         return respond(503, {
