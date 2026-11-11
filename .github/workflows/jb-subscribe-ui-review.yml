@@ -84,6 +84,9 @@ jobs:
           const player = readFileSync('src/components/VIPVideoPlayer.jsx','utf8');
           assert.match(home,/getBillingAccess\(\)/);
           assert.match(home,/membership\.canDownload/);
+          assert.match(home,/to="\/subscribe"/);
+          assert.match(home,/onClick=\{\(\) => setShowRedeemModal\(true\)\}/);
+          assert.match(home,/Redeem Code/);
           assert.match(layout,/getBillingAccess\(\)/);
           assert.match(player,/typeof isAdFreeProp === "boolean"/);
           console.log('PASS: membership entitlement parsing and integration checks');
