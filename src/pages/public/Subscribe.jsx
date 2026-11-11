@@ -24,6 +24,24 @@ const checkoutUiEnabled = import.meta.env.PROD &&
   import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true' &&
   window.location.origin === 'https://www.jb-premium-hub.vip';
 
+function formatEntitlement(raw) {
+  const item = Array.isArray(raw) ? raw[0] : raw;
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+
+  const tier = typeof item.tier === 'string' ? item.tier.toLowerCase() : '';
+  if (!['free', 'standard', 'vip'].includes(tier)) return null;
+
+  const expires = item.access_expires_at == null ? null : new Date(item.access_expires_at);
+  const validExpiry = expires && !Number.isNaN(expires.getTime()) ? expires : null;
+  return {
+    tier: tier.toUpperCase(),
+    canViewAlbums: item.can_view_albums === true,
+    canDownload: item.can_download === true,
+    showAds: item.show_ads === true,
+    expiry: validExpiry ? validExpiry.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : null,
+  };
+}
+
 export default function Subscribe() {
   const [params] = useSearchParams();
   const [plan, setPlan] = useState('vip');
@@ -35,6 +53,7 @@ export default function Subscribe() {
   const [accessError, setAccessError] = useState('');
   const [attemptedOrder, setAttemptedOrder] = useState(null);
   const selected = PLANS.find((item) => item.code === plan);
+  const entitlement = formatEntitlement(access);
 
   const loadAccess = async () => {
     setAccessError('');
@@ -159,8 +178,27 @@ export default function Subscribe() {
         <h2 className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-5 w-5 text-emerald-400" /> Membership status</h2>
         <p className="mt-2 text-sm text-slate-400">The current entitlement is provided by the authenticated billing RPC. No access is granted by this page.</p>
         {accessError && <p className="mt-3 text-sm text-amber-300" role="alert">{accessError}</p>}
-        {access !== null && (
-          <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 text-xs text-slate-200">{JSON.stringify(access, null, 2)}</pre>
+        {access !== null && !entitlement && (
+          <p role="status" className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/20 p-3 text-sm text-amber-200">
+            Unable to interpret membership status. No access changes have been made. Please contact support.
+          </p>
+        )}
+        {entitlement && (
+          <div className="mt-4 rounded-xl bg-slate-950 p-4" aria-live="polite">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm text-slate-400">Your plan</span>
+              <span className="rounded-full border border-blue-600/40 bg-blue-950/50 px-3 py-1 text-sm font-bold text-blue-200">
+                {entitlement.tier}
+              </span>
+            </div>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
+              <div><dt className="text-slate-400">Album access</dt><dd className="font-semibold">{entitlement.canViewAlbums ? 'Available' : 'Not included'}</dd></div>
+              <div><dt className="text-slate-400">Downloads</dt><dd className="font-semibold">{entitlement.canDownload ? 'Enabled' : 'Disabled'}</dd></div>
+              <div><dt className="text-slate-400">Advertisements</dt><dd className="font-semibold">{entitlement.tier === 'FREE' ? 'Not applicable — no album access' : entitlement.showAds ? 'Included' : 'Ad-free'}</dd></div>
+              <div><dt className="text-slate-400">Access expiration</dt><dd className="font-semibold">{entitlement.expiry || 'No paid expiry available'}</dd></div>
+            </dl>
+            {entitlement.tier === 'FREE' && <p className="mt-4 text-xs text-slate-400">Your account currently has no paid membership. Choose a plan when checkout becomes available.</p>}
+          </div>
         )}
         <button type="button" onClick={loadAccess} disabled={!user || checking}
           className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-50">
