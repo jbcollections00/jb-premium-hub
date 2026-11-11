@@ -60,4 +60,5 @@ jobs:
         run: npm run build
 
       - name: Summary
-        run: echo "PASS: Frontend routing and build verified. No merge, production deploy or database access."
+        run: |
+          echo 'PASS: Frontend routing and build verified. No merge, production deploy or database access.'
