@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 
 import { supabase } from "../../services/supabaseClient";
+import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 
 import Header from "./Header";
 import Footer from "./Footer";
@@ -71,39 +72,15 @@ export default function MainLayout() {
             return;
           }
 
-          const accountType =
-            (
-              profile?.account_type ||
-              ""
-            ).toUpperCase();
-
-          const role =
-            (
-              profile?.role ||
-              ""
-            ).toUpperCase();
-
-          const isAdmin =
-            accountType ===
-              "ADMIN" ||
-            role ===
-              "ADMIN";
-
-          const isVIP =
-            accountType ===
-              "VIP" &&
-            profile?.vip_until &&
-            new Date(
-              profile.vip_until
-            ) >
-              new Date();
-
-          setShowSocialBar(
-            !(
-              isAdmin ||
-              isVIP
-            )
-          );
+          let billing = null;
+          try {
+            billing = await getBillingAccess();
+          } catch (billingError) {
+            console.error("Billing access unavailable in layout:", billingError);
+          }
+          if (!active) return;
+          const membership = resolveMemberPresentation(profile, billing);
+          setShowSocialBar(membership.showAds);
         } catch (error) {
           console.error(
             "MainLayout ad access check failed:",
