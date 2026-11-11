@@ -10,6 +10,8 @@ on:
       - 'src/components/VIPVideoPlayer.jsx'
       - 'src/services/billingAccess.js'
       - 'src/pages/public/Subscribe.jsx'
+      - 'src/pages/public/BuyVip.jsx'
+      - 'src/pages/public/Profile.jsx'
       - '.github/workflows/jb-subscribe-ui-review.yml'
   workflow_dispatch:
 
@@ -45,6 +47,20 @@ jobs:
           assert.match(page, /entitlement\.expiry/);
           assert.doesNotMatch(page, /JSON\.stringify\(access, null, 2\)/);
           assert.match(page, /jb-paymongo-checkout-live/);
+          // Ensure TEST checkout is opt-in and isolated from LIVE.
+          assert.match(page, /VITE_JB_TEST_CHECKOUT_UI_ENABLED === 'true'/);
+          assert.match(page, /jb-billing-checkout-test/);
+          assert.match(page, /if \(!testCheckoutUiEnabled \|\| busy \|\| !user\) return;/);
+          assert.match(page, /data\?\.environment !== 'test'/);
+          assert.match(page, /checkout === 'test-return'/);
+          assert.match(page, /checkout === 'test-cancel'/);
+          // The old manual payment page must no longer accept receipt uploads.
+          const legacy = readFileSync('src/pages/public/BuyVip.jsx', 'utf8');
+          const profile = readFileSync('src/pages/public/Profile.jsx', 'utf8');
+          assert.match(legacy, /<Navigate to=\{/);
+          assert.match(legacy, /\/subscribe/);
+          assert.doesNotMatch(legacy, /support_tickets|Ownbank_QR|handleSubmitPayment/);
+          assert.match(profile, /navigate\(\s*"\/subscribe"/);
           const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
           const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
           assert.match(guard, /state=\{\{ from: location\.pathname/);
