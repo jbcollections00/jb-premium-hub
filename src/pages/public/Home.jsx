@@ -110,7 +110,7 @@ export default function Home() {
   const isVIP = membership.tier === "vip";
   // The checkout entitlement is authoritative for new memberships.
   // Legacy VIP codes and admin status remain supported by the resolver.
-  const isAdFree = !billingReady || !membership.showAds;
+  const isAdFree = membership.isAdmin || membership.tier === "vip";
   const canDownload = billingReady && membership.canDownload;
 
   useEffect(() => {
