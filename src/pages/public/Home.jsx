@@ -75,7 +75,8 @@ export default function Home() {
     return 1;
   });
 
-  const [totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(null);
+  const [mediaLoadError, setMediaLoadError] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
 
   // States para sa Likes/Dislikes at Views
@@ -292,6 +293,7 @@ export default function Home() {
 
   const fetchMedia = async (page = 1, category = "all") => {
     setLoading(true);
+    setMediaLoadError(false);
     const from = (page - 1) * ITEMS_PER_PAGE;
     const to = from + ITEMS_PER_PAGE - 1;
 
@@ -311,9 +313,12 @@ export default function Home() {
       if (error) throw error;
 
       setMediaList(data || []);
-      if (count !== null) setTotalCount(count);
+      setTotalCount(typeof count === "number" ? count : null);
     } catch (err) {
       console.error("Fetch media error:", err);
+      setMediaList([]);
+      setTotalCount(null);
+      setMediaLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -993,7 +998,7 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-            Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
+            {loading ? "Loading videos..." : mediaLoadError ? "Unable to load videos" : totalCount === null ? `Showing ${mediaList.length} Videos` : <>Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos</>}
           </span>
         </div>
 
@@ -1027,6 +1032,11 @@ export default function Home() {
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+          </div>
+        ) : mediaLoadError ? (
+          <div role="alert" className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+            <p className="text-slate-300">Hindi ma-load ang videos. Pakisubukan muli.</p>
+            <button type="button" onClick={() => fetchMedia(currentPage, activeCategory)} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-500">Retry</button>
           </div>
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
