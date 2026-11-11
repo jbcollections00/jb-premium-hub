@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
+import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -77,6 +79,8 @@ export default function Home() {
 
   const [totalCount, setTotalCount] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
+  const [billingAccess, setBillingAccess] = useState(null);
+  const [billingReady, setBillingReady] = useState(false);
 
   // States para sa Likes/Dislikes at Views
   const [userReactions, setUserReactions] = useState({});
@@ -102,15 +106,37 @@ export default function Home() {
   const [accessCodeInput, setAccessCodeInput] = useState("");
   const [redeemLoading, setRedeemLoading] = useState(false);
 
-  const accountTypeUpper = (userProfile?.account_type || "").toUpperCase();
-  const roleUpper = (userProfile?.role || "").toUpperCase();
-  const isAdmin = accountTypeUpper === "ADMIN" || roleUpper === "ADMIN";
-  const hasActiveVip =
-    accountTypeUpper === "VIP" &&
-    userProfile?.vip_until &&
-    new Date(userProfile.vip_until) > new Date();
-  const isVIP = Boolean(hasActiveVip);
-  const isAdFree = isAdmin || isVIP;
+  const membership = resolveMemberPresentation(userProfile, billingAccess);
+  const isAdmin = membership.isAdmin;
+  const isVIP = membership.tier === "vip";
+  // The checkout entitlement is authoritative for new memberships.
+  // Legacy VIP codes and admin status remain supported by the resolver.
+  const isAdFree = membership.isAdmin || membership.tier === "vip";
+  const canDownload = billingReady && membership.canDownload;
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      setBillingReady(false);
+      setBillingAccess(null);
+      if (!userProfile?.id) {
+        setBillingReady(true);
+        return;
+      }
+      try {
+        const result = await getBillingAccess();
+        if (!cancelled) setBillingAccess(result);
+      } catch (error) {
+        console.error("Billing access unavailable:", error);
+      } finally {
+        if (!cancelled) setBillingReady(true);
+      }
+    };
+    refresh();
+    const onFocus = () => { if (!cancelled) refresh(); };
+    window.addEventListener("focus", onFocus);
+    return () => { cancelled = true; window.removeEventListener("focus", onFocus); };
+  }, [userProfile?.id]);
 
   // Body scroll management
   useEffect(() => {
@@ -828,7 +854,7 @@ export default function Home() {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (!isAdFree || !selectedMedia?.media_url) return;
+    if (!canDownload || !selectedMedia?.media_url) return;
 
     const videoUrl = getCdnUrl(selectedMedia.media_url);
     const link = document.createElement("a");
@@ -878,17 +904,26 @@ export default function Home() {
                       isAdmin ? "text-purple-400" : isVIP ? "text-amber-400" : "text-blue-400"
                     }`}
                   >
-                    {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : "👤 Standard"}
+                    {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : membership.tier === "standard" ? "👤 Standard" : "🔒 Free"}
                   </span>
                 </div>
               )}
-              {userProfile && !isAdFree && (
-                <button
-                  onClick={() => setShowRedeemModal(true)}
-                  className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5 border border-amber-400/30 active:scale-95"
-                >
-                  <span>🔑 Upgrade VIP</span>
-                </button>
+              {userProfile && !isAdmin && !isVIP && (
+                <>
+                  <Link
+                    to="/subscribe"
+                    className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5 border border-amber-400/30 active:scale-95"
+                  >
+                    💳 Upgrade Membership
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowRedeemModal(true)}
+                    className="text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 bg-slate-900/80 text-xs font-semibold px-3 py-2.5 rounded-xl transition-colors"
+                  >
+                    🔑 Redeem Code
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1021,7 +1056,7 @@ export default function Home() {
           </button>
         </div>
 
-        <AdSlot position="middle" enabled={!isAdFree} />
+        <AdSlot position="middle" enabled={billingReady && membership.showAds} />
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
@@ -1238,7 +1273,7 @@ export default function Home() {
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
                     mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
-                    isAdFree={isAdFree}
+                    isAdFree={billingReady ? !membership.showAds : false}
                     accountType={userProfile?.account_type}
                     vipUntil={userProfile?.vip_until}
                     userProfile={userProfile}
@@ -1314,7 +1349,7 @@ export default function Home() {
                       <span>{copiedShareLink ? "Copied!" : "Share"}</span>
                     </button>
 
-                    {isAdFree && (
+                    {canDownload && (
                       <button
                         type="button"
                         onClick={handleDownloadSelectedMedia}
