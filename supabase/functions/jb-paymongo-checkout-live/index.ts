@@ -180,7 +180,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // AFTER this point, all network failures require manual recovery; do not re-POST.
   try {
-    const createResponse = await fetch('https://api.paymongo.com/v2/checkout_sessions', {
+    const createResponse = await fetch('https://api.paymongo.com/v1/checkout_sessions', {
       method: 'POST',
       signal: AbortSignal.timeout(15000),
       headers: { ...pmHeaders, 'content-type': 'application/json' },
