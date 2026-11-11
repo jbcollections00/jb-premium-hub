@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
 export default function Login() {
@@ -12,6 +12,7 @@ export default function Login() {
   const [msg, setMsg] = useState({ type: '', text: '' });
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -46,7 +47,16 @@ export default function Login() {
     }
 
     setLoading(false);
-    navigate('/home');
+    const requestedPath = location.state?.from;
+    const safeDestination =
+      typeof requestedPath === 'string' &&
+      requestedPath.startsWith('/') &&
+      !requestedPath.startsWith('//') &&
+      !requestedPath.startsWith('/\\') &&
+      !requestedPath.startsWith('/login')
+        ? requestedPath
+        : '/home';
+    navigate(safeDestination, { replace: true });
   };
 
   const handleResendConfirmation = async () => {
