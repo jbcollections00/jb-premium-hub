@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'src/App.jsx'
+      - 'src/components/EventPopup.jsx'
       - 'src/pages/public/LandingPage.jsx'
       - 'package.json'
       - 'package-lock.json'
@@ -50,7 +51,14 @@ jobs:
           for (const p of ['/login', '/signup', '/reset-password', '/home', '/profile', '/chat', '/admin-vault-secret']) {
             assert.ok(app.includes('path="' + p + '"'), 'Route missing: ' + p);
           }
-          console.log('PASS: Landing removed, redirects and protected route declarations retained');
+          const popup = readFileSync('src/components/EventPopup.jsx', 'utf8');
+          assert.match(popup, /pathname !== '\/home'/,
+            'Event popup must be restricted to home');
+          assert.match(popup, /auth\.getSession\(\)/,
+            'Event popup must verify an authenticated session');
+          assert.match(popup, /event === 'SIGNED_OUT'/,
+            'Event popup must close on logout');
+          console.log('PASS: Landing removed, redirects retained, popup restricted to authenticated home');
           NODE
 
       - name: Install exact dependencies
