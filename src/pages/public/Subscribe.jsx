@@ -24,6 +24,12 @@ const checkoutUiEnabled = import.meta.env.PROD &&
   import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true' &&
   window.location.origin === 'https://www.jb-premium-hub.vip';
 
+// Isolated TEST checkout. Keep OFF unless explicitly enabled for a controlled QA run.
+// This does not enable LIVE checkout and TEST grants do not authorize LIVE access.
+const testCheckoutUiEnabled = import.meta.env.PROD &&
+  import.meta.env.VITE_JB_TEST_CHECKOUT_UI_ENABLED === 'true' &&
+  window.location.origin === 'https://www.jb-premium-hub.vip';
+
 function formatEntitlement(raw) {
   const item = Array.isArray(raw) ? raw[0] : raw;
   if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
@@ -116,6 +122,36 @@ export default function Subscribe() {
     }
   };
 
+  const beginTestCheckout = async () => {
+    if (!testCheckoutUiEnabled || busy || !user) return;
+    setBusy(true);
+    setMessage('');
+    setAttemptedOrder(null);
+    try {
+      const { data: identity, error: authError } = await supabase.auth.getUser();
+      if (authError || identity?.user?.id !== user.id || identity.user.is_anonymous) {
+        throw new Error('Please sign in again.');
+      }
+      const { data, error } = await supabase.functions.invoke('jb-billing-checkout-test', {
+        body: { plan_code: plan },
+      });
+      if (data?.order_id) setAttemptedOrder(data.order_id);
+      if (error) throw new Error('TEST checkout unavailable. No payment was confirmed.');
+      if (data?.environment !== 'test' || typeof data.checkout_url !== 'string') {
+        throw new Error('Unexpected TEST checkout response.');
+      }
+      const url = new URL(data.checkout_url);
+      if (url.protocol !== 'https:' || url.hostname !== 'checkout.paymongo.com') {
+        throw new Error('Unexpected TEST checkout destination.');
+      }
+      window.location.assign(url.href);
+    } catch (error) {
+      setMessage(error.message || 'TEST checkout unavailable. Please contact support.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const outcome = params.get('checkout');
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 text-slate-100">
@@ -128,6 +164,16 @@ export default function Subscribe() {
       {outcome === 'returned' && (
         <div role="status" className="mb-6 rounded-xl border border-amber-600/40 bg-amber-950/30 p-4 text-sm text-amber-200">
           Returned from checkout. This does not confirm payment. Please refresh your membership status below after processing.
+        </div>
+      )}
+      {outcome === 'test-return' && (
+        <div role="status" className="mb-6 rounded-xl border border-cyan-600/40 bg-cyan-950/30 p-4 text-sm text-cyan-200">
+          Returned from PayMongo TEST checkout. This is not proof of payment. TEST transactions do not activate production membership; verify the TEST order and entitlement in Supabase.
+        </div>
+      )}
+      {outcome === 'test-cancel' && (
+        <div role="status" className="mb-6 rounded-xl border border-slate-600 bg-slate-900 p-4 text-sm text-slate-300">
+          TEST checkout was cancelled. No membership is granted by a redirect.
         </div>
       )}
       {outcome === 'cancelled' && (
@@ -170,6 +216,16 @@ export default function Subscribe() {
           className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">
           {busy ? 'Opening secure checkout...' : checkoutUiEnabled ? `Pay ₱${selected.price} via PayMongo` : 'LIVE checkout disabled'}
         </button>
+        {testCheckoutUiEnabled && (
+          <div className="mt-5 rounded-xl border border-cyan-700/50 bg-cyan-950/20 p-4">
+            <p className="text-sm font-semibold text-cyan-200">QA ONLY — PayMongo TEST checkout</p>
+            <p className="mt-1 text-xs text-cyan-100/80">TEST transactions do not grant production access. Use only the PayMongo TEST flow; do not send real money.</p>
+            <button type="button" onClick={beginTestCheckout} disabled={!user || checking || busy}
+              className="mt-3 w-full rounded-lg border border-cyan-500 px-4 py-3 text-sm font-semibold text-cyan-100 hover:bg-cyan-900/40 disabled:opacity-50">
+              {busy ? 'Opening TEST checkout...' : `TEST ₱${selected.price} ${selected.label} checkout`}
+            </button>
+          </div>
+        )}
         {!user && !checking && <p className="mt-3 text-sm text-slate-400">Sign in to buy a membership. <Link className="text-blue-400 underline" to="/login">Log in</Link></p>}
         <p className="mt-4 flex items-center gap-2 text-xs text-slate-400"><LockKeyhole className="h-4 w-4" /> Membership activates only after server-side payment verification.</p>
       </section>
