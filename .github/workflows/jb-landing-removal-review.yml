@@ -5,6 +5,9 @@ on:
     paths:
       - 'src/App.jsx'
       - 'src/components/EventPopup.jsx'
+      - 'src/pages/public/Home.jsx'
+      - 'src/pages/legal/TermsPage.jsx'
+      - 'src/pages/legal/PrivacyPage.jsx'
       - 'src/pages/public/LandingPage.jsx'
       - 'package.json'
       - 'package-lock.json'
