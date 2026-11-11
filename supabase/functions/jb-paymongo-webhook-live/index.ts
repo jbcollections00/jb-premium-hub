@@ -241,6 +241,25 @@ function isExplicitlyForeignPaidEvent(body: unknown): boolean {
   return typeof purpose === "string" && purpose.length > 0 && purpose !== PURPOSE;
 }
 
+/**
+ * A provider may display/send only the paid checkout_session resource.
+ * Without an evt_ identifier we CANNOT safely enqueue it; never silently
+ * acknowledge an otherwise recognizable LIVE JB membership payment.
+ * Keep the full event-envelope requirement and request manual review.
+ */
+function isBareLivePaidMembershipSession(body: unknown): boolean {
+  if (!isObj(body) || body.type !== "checkout_session" ||
+      typeof body.id !== "string" || !SESSION_ID.test(body.id) ||
+      !isObj(body.attributes)) return false;
+  const attrs = body.attributes;
+  if (attrs.livemode !== true || !isObj(attrs.metadata) ||
+      attrs.metadata.purpose !== PURPOSE ||
+      !Array.isArray(attrs.payments)) return false;
+  return attrs.payments.some((p: unknown) =>
+    isObj(p) && p.type === "payment" &&
+    isObj(p.attributes) && p.attributes.status === "paid");
+}
+
 function parseEvent(
   body: unknown,
 ): EventEvidence | null {
@@ -445,7 +464,8 @@ Deno.serve(
           reason: "foreign_purpose",
         });
       }
-      if (isRecognizedPaidEvent(payload)) {
+      if (isRecognizedPaidEvent(payload) ||
+          isBareLivePaidMembershipSession(payload)) {
         // Never acknowledge a recognized LIVE
         // payment event that cannot be safely queued.
         return respond(503, {
