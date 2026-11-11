@@ -13,6 +13,7 @@ import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
 import BuyVip from './pages/public/BuyVip';
+import Subscribe from './pages/public/Subscribe';
 import Contest from './pages/public/Contest';
 import LeaderboardPage from './pages/public/LeaderboardPage';
 
@@ -63,6 +64,7 @@ function App() {
             <Route path="/chat" element={<ChatMessages />} />
 
             <Route path="/buy-vip" element={<BuyVip />} />
+            <Route path="/subscribe" element={<Subscribe />} />
             <Route path="/contest" element={<Contest />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
           </Route>
