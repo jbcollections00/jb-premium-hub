@@ -35,6 +35,20 @@ export default function BuyVip() {
   };
 
   useEffect(() => {
+    // Legacy TEST checkout sessions still return to /buy-vip.
+    // Route those callbacks to the new subscription status page, without
+    // treating a checkout redirect as proof of payment.
+    const search = new URLSearchParams(window.location.search);
+    const checkout = search.get("checkout");
+    if (checkout === "test-return" || checkout === "test-cancel") {
+      const orderId = search.get("order");
+      const target = new URLSearchParams({ checkout });
+      if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
+        target.set("order", orderId);
+      }
+      navigate(`/subscribe?${target.toString()}`, { replace: true });
+      return;
+    }
     fetchUser();
   }, []);
 
