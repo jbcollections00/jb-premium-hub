@@ -36,6 +36,10 @@ jobs:
           assert.match(page, /window.location.origin === 'https:\/\/www.jb-premium-hub.vip'/);
           assert.match(page, /disabled=\{!checkoutUiEnabled/);
           assert.match(page, /jb_billing_my_access/);
+          assert.match(page, /function formatEntitlement\(raw\)/);
+          assert.match(page, /entitlement\.canDownload/);
+          assert.match(page, /entitlement\.expiry/);
+          assert.doesNotMatch(page, /JSON\.stringify\(access, null, 2\)/);
           assert.match(page, /jb-paymongo-checkout-live/);
           const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
           const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
