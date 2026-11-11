@@ -217,6 +217,30 @@ function isRecognizedPaidEvent(
   return false;
 }
 
+/**
+ * PayMongo account webhooks may receive checkout events created by
+ * another website on the same merchant account. Only an unambiguously
+ * identified foreign purpose can be acknowledged/ignored.
+ * Missing/ambiguous purpose still fails closed for investigation.
+ * This is checked ONLY after a valid LIVE HMAC signature.
+ */
+function isExplicitlyForeignPaidEvent(body: unknown): boolean {
+  if (!isObj(body) || !isObj(body.data)) return false;
+  const event = body.data;
+  if (event.type !== "event" || typeof event.id !== "string" ||
+      !EVENT_ID.test(event.id) || !isObj(event.attributes)) return false;
+  const a = event.attributes;
+  if (a.type !== PAID_EVENT || a.livemode !== true || !isObj(a.data)) return false;
+  const session = a.data;
+  if (session.type !== "checkout_session" ||
+      typeof session.id !== "string" || !SESSION_ID.test(session.id) ||
+      !isObj(session.attributes)) return false;
+  const details = session.attributes;
+  if (!isObj(details.metadata)) return false;
+  const purpose = details.metadata.purpose;
+  return typeof purpose === "string" && purpose.length > 0 && purpose !== PURPOSE;
+}
+
 function parseEvent(
   body: unknown,
 ): EventEvidence | null {
@@ -412,6 +436,15 @@ Deno.serve(
     const event = parseEvent(payload);
 
     if (!event) {
+      // Explicitly unrelated checkout from another merchant project:
+      // acknowledge only AFTER valid signature, never queue or settle.
+      if (isExplicitlyForeignPaidEvent(payload)) {
+        return respond(200, {
+          received: true,
+          ignored: true,
+          reason: "foreign_purpose",
+        });
+      }
       if (isRecognizedPaidEvent(payload)) {
         // Never acknowledge a recognized LIVE
         // payment event that cannot be safely queued.
