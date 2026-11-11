@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
-import AdSlot from "../../components/AdSlot";
+// Native ads are withheld from the general-audience review preview until approved.
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -1026,7 +1026,7 @@ export default function Home() {
           </button>
         </div>
 
-        <AdSlot position="middle" enabled={!isAdFree} />
+        {/* General-audience review: external native ads disabled pending creative and network suitability checks. */}
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
