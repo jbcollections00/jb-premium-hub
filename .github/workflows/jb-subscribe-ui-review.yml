@@ -5,6 +5,10 @@ on:
       - 'src/App.jsx'
       - 'src/components/layout/ProtectedRoute.jsx'
       - 'src/pages/public/Login.jsx'
+      - 'src/pages/public/Home.jsx'
+      - 'src/components/layout/MainLayout.jsx'
+      - 'src/components/VIPVideoPlayer.jsx'
+      - 'src/services/billingAccess.js'
       - 'src/pages/public/Subscribe.jsx'
       - '.github/workflows/jb-subscribe-ui-review.yml'
   workflow_dispatch:
@@ -47,6 +51,42 @@ jobs:
           assert.match(login, /location\.state\?\.from/);
           assert.match(login, /navigate\(safeDestination, \{ replace: true \}\)/);
           console.log('Subscription route, fail-closed checkout, and return-after-login verified');
+          NODE
+      - name: Verify entitlement resolver behavior (NO NETWORK)
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const code = readFileSync('src/services/billingAccess.js','utf8');
+          const start = code.indexOf('export function normalizeBillingAccess');
+          const end = code.indexOf('export async function getBillingAccess');
+          const fragment = code.slice(start,end).replace('export function','function');
+          const second = code.slice(code.indexOf('export function getLegacyPrivileges')).replaceAll('export function','function');
+          const testModule = 'data:text/javascript,' + encodeURIComponent(fragment + second + '\nexport {normalizeBillingAccess, resolveMemberPresentation};');
+          const {normalizeBillingAccess, resolveMemberPresentation} = await import(testModule);
+          const future = new Date(Date.now()+86400000).toISOString();
+          const past = new Date(Date.now()-86400000).toISOString();
+          const free = normalizeBillingAccess([{tier:'free',can_view_albums:false,can_download:false,show_ads:false,access_expires_at:null}]);
+          const standard = normalizeBillingAccess([{tier:'standard',can_view_albums:true,can_download:false,show_ads:true,access_expires_at:future}]);
+          const vip = normalizeBillingAccess([{tier:'vip',can_view_albums:true,can_download:true,show_ads:false,access_expires_at:future}]);
+          assert.equal(free.canDownload,false);
+          assert.equal(standard.showAds,true);
+          assert.equal(vip.canDownload,true);
+          assert.equal(resolveMemberPresentation({role:'admin'},free).isAdmin,true);
+          assert.equal(resolveMemberPresentation({account_type:'vip',vip_until:future},free).canDownload,true);
+          assert.equal(resolveMemberPresentation({account_type:'standard'},standard).tier,'standard');
+          assert.equal(resolveMemberPresentation({account_type:'standard'},vip).tier,'vip');
+          assert.throws(()=>normalizeBillingAccess([{tier:'vip',can_view_albums:true,can_download:true,show_ads:false,access_expires_at:past}]));
+          assert.throws(()=>normalizeBillingAccess([{tier:'vip',can_view_albums:true,can_download:true,show_ads:true,access_expires_at:future}]));
+          assert.throws(()=>normalizeBillingAccess([]));
+          const home = readFileSync('src/pages/public/Home.jsx','utf8');
+          const layout = readFileSync('src/components/layout/MainLayout.jsx','utf8');
+          const player = readFileSync('src/components/VIPVideoPlayer.jsx','utf8');
+          assert.match(home,/getBillingAccess\(\)/);
+          assert.match(home,/membership\.canDownload/);
+          assert.match(layout,/getBillingAccess\(\)/);
+          assert.match(player,/typeof isAdFreeProp === "boolean"/);
+          console.log('PASS: membership entitlement parsing and integration checks');
           NODE
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
