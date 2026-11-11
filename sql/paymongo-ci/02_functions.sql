@@ -130,7 +130,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_claim_live_webhook_v1()
  RETURNS jsonb
@@ -221,7 +221,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_complete_live_webhook_v1(p_queue_id uuid, p_claim_token uuid, p_audit_id uuid)
  RETURNS jsonb
@@ -478,7 +478,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_create_live_order_v1(p_user_id uuid, p_plan_code text, p_request_id uuid)
  RETURNS jsonb
@@ -627,7 +627,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_finalize_live_webhook_failure_v1(p_queue_id uuid, p_claim_token uuid, p_outcome text, p_error_code text)
  RETURNS jsonb
@@ -768,7 +768,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_link_live_checkout_v1(p_order_id uuid, p_claim_token uuid, p_checkout_session_id text, p_checkout_url text)
  RETURNS jsonb
@@ -930,7 +930,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_my_access()
  RETURNS TABLE(tier text, can_view_albums boolean, can_download boolean, show_ads boolean, access_expires_at timestamp with time zone)
@@ -956,7 +956,7 @@ AS $function$
          coalesce(b.shows_ads,false),
          b.effective_until
   from (select 1) v left join best_grant b on true;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_quarantine_live_checkout_v1(p_order_id uuid)
  RETURNS jsonb
@@ -1046,7 +1046,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_record_enqueue_live_webhook_v1(p_event_id text, p_session_id text, p_order_id uuid)
  RETURNS jsonb
@@ -1145,7 +1145,7 @@ BEGIN
         'settlement_performed', false
     );
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_recover_stale_live_webhook_v1(p_queue_id uuid, p_expected_claim_token uuid)
  RETURNS jsonb
@@ -1260,7 +1260,7 @@ BEGIN
         'membership_activated_by_recovery', false
     );
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_requeue_settled_live_webhook_v1(p_queue_id uuid, p_audit_id uuid)
  RETURNS jsonb
@@ -1481,7 +1481,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.jb_billing_settle_verified_live_v1(p_audit_id uuid)
  RETURNS jsonb
@@ -1743,7 +1743,7 @@ BEGIN
     );
 
 END;
-$function$
+$function$;
 
 
 -- PostgreSQL grants: test model enforces service-only operations.
