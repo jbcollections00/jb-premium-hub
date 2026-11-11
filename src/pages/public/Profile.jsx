@@ -1611,16 +1611,16 @@ export default function Profile() {
                 </span>
               )}
 
-              {/* BUY VIP */}
+              {/* AUTOMATED MEMBERSHIP */}
               <button
                 onClick={() =>
                   navigate(
-                    "/buy-vip"
+                    "/subscribe"
                   )
                 }
                 className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 px-4 rounded-xl shadow-lg shadow-amber-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider"
               >
-                👑 Buy 30 Days VIP
+                👑 Choose STANDARD / VIP Plan
               </button>
 
               {/* VIP COUNTDOWN */}
