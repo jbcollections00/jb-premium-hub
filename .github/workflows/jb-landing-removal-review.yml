@@ -1,0 +1,75 @@
+name: JB Landing Removal — Route and Build Review
+
+on:
+  pull_request:
+    paths:
+      - 'src/App.jsx'
+      - 'src/components/EventPopup.jsx'
+      - 'src/pages/public/Home.jsx'
+      - 'src/pages/legal/TermsPage.jsx'
+      - 'src/pages/legal/PrivacyPage.jsx'
+      - 'src/pages/public/LandingPage.jsx'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/jb-landing-removal-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-routing:
+    name: Review landing removal (NO DEPLOY)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout PR source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Assert login routes and absence of landing component
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, existsSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+
+          const app = readFileSync('src/App.jsx', 'utf8');
+          assert.equal(existsSync('src/pages/public/LandingPage.jsx'), false,
+            'Legacy landing component must not be present');
+          assert.doesNotMatch(app, /import\s+LandingPage\s+from/,
+            'Legacy landing import remains');
+          assert.match(app, /<Route\s+path="\/"\s+element=\{<Navigate\s+to="\/login"\s+replace\s*\/>\}/,
+            'Root path must redirect to login');
+          assert.match(app, /<Route\s+path="\*"\s+element=\{<Navigate\s+to="\/login"\s+replace\s*\/>\}/,
+            'Fallback must redirect to login');
+          for (const p of ['/login', '/signup', '/reset-password', '/home', '/profile', '/chat', '/admin-vault-secret']) {
+            assert.ok(app.includes('path="' + p + '"'), 'Route missing: ' + p);
+          }
+          const popup = readFileSync('src/components/EventPopup.jsx', 'utf8');
+          assert.match(popup, /pathname !== '\/home'/,
+            'Event popup must be restricted to home');
+          assert.match(popup, /auth\.getSession\(\)/,
+            'Event popup must verify an authenticated session');
+          assert.match(popup, /event === 'SIGNED_OUT'/,
+            'Event popup must close on logout');
+          console.log('PASS: Landing removed, redirects retained, popup restricted to authenticated home');
+          NODE
+
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build React website
+        run: npm run build
+
+      - name: Summary
+        run: |
+          echo 'PASS: Frontend routing and build verified. No merge, production deploy or database access.'

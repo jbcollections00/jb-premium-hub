@@ -1,52 +1,39 @@
 import React from 'react';
-import { ShieldCheck, FileText, Lock, AlertCircle } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
+// Review draft: verify content rules, payment terms and contact process before production.
 export default function TermsPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
-        
-        {/* Header */}
-        <div className="border-b border-slate-800 pb-6">
+        <header className="border-b border-slate-800 pb-6">
           <h1 className="text-3xl font-extrabold text-white flex items-center gap-3">
             <FileText className="w-8 h-8 text-blue-500" /> Terms of Service
           </h1>
-          <p className="text-slate-400 text-sm mt-2">
-            Huling na-update: Agosto 2026
-          </p>
-        </div>
-
-        {/* Content Box */}
+          <p className="text-amber-300 text-sm mt-3">Draft for review — not yet approved for publication.</p>
+        </header>
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 text-sm leading-relaxed text-slate-300">
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-white">1. Pagtanggap sa mga Tuntunin</h2>
-            <p>
-              Sa pag-access at paggamit ng **JB Premium Hub & Public Media Gallery**, sumasang-ayon ka na sundin ang lahat ng nakasaad na mga tuntunin at kundisyon dito. Kung hindi ka sang-ayon sa alinman sa mga ito, pinapayuhan ka na huwag ipagpatuloy ang paggamit ng aming platform.
-            </p>
+            <h2 className="text-lg font-semibold text-white">1. Using JB Premium Hub</h2>
+            <p>JB Premium Hub provides account-based access to media and community features. Follow applicable laws and these rules when using the service.</p>
           </section>
-
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-white">2. User Vault Account at Access</h2>
-            <p>
-              Responsibilidad ng bawat user na panatilihing ligtas at hiwalay ang kanilang account details. Ang hindi awtorisadong pagbabahagi o pagbebenta ng iyong Vault Access credentials ay maaaring maging dahilan ng pagkaka-terminate ng iyong account nang walang refund.
-            </p>
+            <h2 className="text-lg font-semibold text-white">2. Accounts and access</h2>
+            <p>Keep your login credentials secure. Do not impersonate other users, bypass access controls, or share access to accounts without authorization.</p>
           </section>
-
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-white">3. Tamang Paggamit (Acceptable Use)</h2>
-            <p>
-              Ipinagbabawal ang anumang uri ng automated scraping, pag-upload ng mapanirang software, o paggamit ng aming media gallery sa mga gawaing labag sa batas.
-            </p>
+            <h2 className="text-lg font-semibold text-white">3. Media and community conduct</h2>
+            <p>Do not post illegal content, content that exploits or endangers children, harassment, privacy-violating material, malware, or media you do not have the right to share. Content may be reviewed or restricted to protect users and comply with applicable requirements.</p>
           </section>
-
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-white">4. Limitasyon ng Pananagutan</h2>
-            <p>
-              Ang JB Collections ay hindi mananagot sa anumang di-inaasahang pagkaantala ng serbisyo (downtime) na dulot ng maintenance o probema sa third-party server infrastructure.
-            </p>
+            <h2 className="text-lg font-semibold text-white">4. Membership and payments</h2>
+            <p>Available plans and their benefits are described at checkout. Pricing, renewal or expiration behavior, cancellation and refund rules must be confirmed and displayed clearly before paid membership is offered.</p>
+          </section>
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold text-white">5. Support and reporting</h2>
+            <p>Use the website's Support page to report account concerns, unsafe content, copyright issues or other problems.</p>
           </section>
         </div>
-
       </div>
     </div>
   );

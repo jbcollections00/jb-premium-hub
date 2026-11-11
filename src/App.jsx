@@ -1,9 +1,8 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 import MainLayout from './components/layout/MainLayout';
 import EventPopup from './components/EventPopup';
 
-import LandingPage from './pages/public/LandingPage';
 import Login from './pages/public/Login';
 import Signup from './pages/public/Signup';
 import ResetPassword from './pages/public/ResetPassword';
@@ -34,8 +33,8 @@ function App() {
       <EventPopup />
 
       <Routes>
-        {/* Standalone Public Pages */}
-        <Route path="/" element={<LandingPage />} />
+        {/* No landing page: send site visitors to Login. */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -59,7 +58,7 @@ function App() {
             {/* Existing admin-announcement messages */}
             <Route path="/messages" element={<Messages />} />
 
-            {/* New user-to-user chat */}
+            {/* User-to-user chat */}
             <Route path="/chat" element={<ChatMessages />} />
 
             <Route path="/buy-vip" element={<BuyVip />} />
@@ -73,8 +72,8 @@ function App() {
           <Route path="/admin-vault-secret" element={<AdminDashboard />} />
         </Route>
 
-        {/* Catch-all Fallback */}
-        <Route path="*" element={<LandingPage />} />
+        {/* Catch-all: redirect to Login instead of the old landing. */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );
