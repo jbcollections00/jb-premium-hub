@@ -52,8 +52,8 @@ jobs:
           assert.match(page, /jb-billing-checkout-test/);
           assert.match(page, /if \(!testCheckoutUiEnabled \|\| busy \|\| !user\) return;/);
           assert.match(page, /data\?\.environment !== 'test'/);
-          assert.match(page, /checkout === 'test-return'/);
-          assert.match(page, /checkout === 'test-cancel'/);
+          assert.match(page, /outcome === 'test-return'/);
+          assert.match(page, /outcome === 'test-cancel'/);
           // The old manual payment page must no longer accept receipt uploads.
           const legacy = readFileSync('src/pages/public/BuyVip.jsx', 'utf8');
           const profile = readFileSync('src/pages/public/Profile.jsx', 'utf8');
