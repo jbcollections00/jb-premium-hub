@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
 export default function ProtectedRoute({ adminOnly = false }) {
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -106,7 +107,7 @@ export default function ProtectedRoute({ adminOnly = false }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
 
   if (adminOnly && !isAdmin) {
