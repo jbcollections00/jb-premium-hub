@@ -1,0 +1,52 @@
+name: JB PayMongo Isolated PostgreSQL Integration (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/jb-paymongo-isolated-db-test.yml'
+      - 'scripts/paymongo-ci/**'
+      - 'sql/paymongo-ci/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jb-paymongo-db-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-postgres:
+    name: Synthetic billing database tests (no Supabase access)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: CI_only_32b3cc1f_unsafe_for_prod
+          POSTGRES_DB: jb_payment_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d jb_payment_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      CI: 'true'
+      PGHOST: '127.0.0.1'
+      PGPORT: '5432'
+      PGUSER: 'postgres'
+      PGPASSWORD: 'CI_only_32b3cc1f_unsafe_for_prod'
+      PGDATABASE: 'jb_payment_ci'
+      PGOPTIONS: '-c jb.isolated_ci=true'
+    steps:
+      - name: Check out review branch (no production deployment)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify scripts and run SQL integration tests
+        shell: bash
+        run: bash scripts/paymongo-ci/run-db-tests.sh
