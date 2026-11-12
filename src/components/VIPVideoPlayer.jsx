@@ -19,7 +19,10 @@ export default function VIPVideoPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isSeekReady, setIsSeekReady] = useState(false);
+  const [showSeekOverlay, setShowSeekOverlay] = useState(true);
+  const overlayTimerRef = useRef(null);
   const mainVideoRef = useRef(null);
+  const overlayVisible = showSeekOverlay || !isPlaying;
 
   // Tracking refs
   const hasLoggedWatchRef = useRef(false);
@@ -82,6 +85,8 @@ export default function VIPVideoPlayer({
     setIsPlaying(false);
     setHasStarted(false);
     setIsSeekReady(false);
+    setShowSeekOverlay(true);
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
   }, [mainVideoUrl, mediaId]);
 
   // 🎬 2. Programmatic Autoplay execution
@@ -156,6 +161,21 @@ export default function VIPVideoPlayer({
     startVideoPlay();
   };
 
+  // YouTube-style in-video overlay: visible while paused, and briefly after interaction.
+  const revealSeekOverlay = () => {
+    setShowSeekOverlay(true);
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    overlayTimerRef.current = setTimeout(() => {
+      if (mainVideoRef.current && !mainVideoRef.current.paused) {
+        setShowSeekOverlay(false);
+      }
+    }, 2400);
+  };
+
+  useEffect(() => () => {
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+  }, []);
+
   // Rewind / forward exactly 10 seconds, clamped to the current video's duration.
   const seekBy = (seconds) => {
     const video = mainVideoRef.current;
@@ -165,6 +185,7 @@ export default function VIPVideoPlayer({
     const nextTime = Math.max(0, Math.min(video.currentTime + seconds, duration));
     try {
       video.currentTime = nextTime;
+      revealSeekOverlay();
     } catch (error) {
       console.error('Unable to seek video:', error);
     }
@@ -241,6 +262,7 @@ export default function VIPVideoPlayer({
   const handleVideoPlay = async () => {
     setIsPlaying(true);
     setHasStarted(true);
+    revealSeekOverlay();
 
     if (!hasNotifiedPlayRef.current) {
       hasNotifiedPlayRef.current = true;
@@ -282,17 +304,25 @@ export default function VIPVideoPlayer({
 
   const handleVideoPause = () => {
     setIsPlaying(false);
+    setShowSeekOverlay(true);
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
   };
 
   const handleVideoEnded = () => {
     setIsPlaying(false);
+    setShowSeekOverlay(true);
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
   };
 
   return (
     <div className="flex flex-col w-full bg-slate-950 rounded-xl overflow-hidden shadow-2xl border border-slate-800/80">
       
       {/* 🎬 MAIN PLAYER CONTAINER */}
-      <div className="relative w-full h-full flex items-center justify-center bg-black group select-none">
+      <div
+        className="relative w-full h-full flex items-center justify-center bg-black group select-none"
+        onMouseMove={revealSeekOverlay}
+        onTouchStart={revealSeekOverlay}
+      >
         <div className="relative inline-block max-w-full max-h-[65vh]">
 
           <video
@@ -305,6 +335,7 @@ export default function VIPVideoPlayer({
             }}
             playsInline
             onLoadedMetadata={handleLoadedMetadata}
+            onClick={revealSeekOverlay}
             onEmptied={() => setIsSeekReady(false)}
             onPlay={handleVideoPlay}
             onPause={handleVideoPause}
@@ -347,45 +378,64 @@ export default function VIPVideoPlayer({
               </span>
             </div>
           )}
+
+          {/* On-screen 10s skip / play overlay: sits on the video, NOT beneath it. */}
+          {hasStarted && (
+            <div
+              className={`absolute inset-0 z-20 flex items-center justify-center gap-3 sm:gap-8 px-2 pb-10 sm:pb-12 pointer-events-none transition-opacity duration-200 ${
+                overlayVisible ? "opacity-100" : "opacity-0"
+              }`}
+              aria-label="Video playback shortcuts"
+            >
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); seekBy(-10); }}
+                disabled={!isSeekReady}
+                aria-label="Rewind 10 seconds"
+                title="Rewind 10 seconds"
+                className={`${overlayVisible ? "pointer-events-auto" : "pointer-events-none"} inline-flex h-12 w-12 sm:h-16 sm:w-16 shrink-0 flex-col items-center justify-center rounded-full bg-black/65 text-white shadow-xl ring-1 ring-white/20 backdrop-blur-sm transition-transform hover:scale-110 hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                <svg viewBox="0 0 32 32" className="w-7 h-7 sm:w-9 sm:h-9" aria-hidden="true" fill="none">
+                  <path d="M9 9H3V3" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M3 9A12 12 0 1 1 4 21" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                  <text x="16.5" y="21" fontSize="10" fontWeight="bold" fill="currentColor" textAnchor="middle">10</text>
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); togglePlayback(); }}
+                disabled={!isSeekReady}
+                aria-label={isPlaying ? "Pause video" : "Play video"}
+                title={isPlaying ? "Pause video" : "Play video"}
+                className={`${overlayVisible ? "pointer-events-auto" : "pointer-events-none"} inline-flex h-14 w-14 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-2xl ring-1 ring-white/25 backdrop-blur-sm transition-transform hover:scale-110 hover:bg-black/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                {isPlaying ? (
+                  <svg viewBox="0 0 24 24" className="h-6 w-6 sm:h-9 sm:w-9" fill="currentColor" aria-hidden="true">
+                    <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-6 w-6 sm:h-9 sm:w-9" fill="currentColor" aria-hidden="true"><path d="M8 4.5v15l12-7.5z" /></svg>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); seekBy(10); }}
+                disabled={!isSeekReady}
+                aria-label="Forward 10 seconds"
+                title="Forward 10 seconds"
+                className={`${overlayVisible ? "pointer-events-auto" : "pointer-events-none"} inline-flex h-12 w-12 sm:h-16 sm:w-16 shrink-0 flex-col items-center justify-center rounded-full bg-black/65 text-white shadow-xl ring-1 ring-white/20 backdrop-blur-sm transition-transform hover:scale-110 hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                <svg viewBox="0 0 32 32" className="w-7 h-7 sm:w-9 sm:h-9" aria-hidden="true" fill="none">
+                  <path d="M23 9h6V3" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M29 9A12 12 0 1 0 28 21" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                  <text x="15.5" y="21" fontSize="10" fontWeight="bold" fill="currentColor" textAnchor="middle">10</text>
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Telegram / YouTube-style skip buttons. The native timeline stays available. */}
-      <div className="flex items-center justify-center gap-3 px-3 py-3 bg-slate-950 border-t border-slate-800">
-        <button
-          type="button"
-          onClick={() => seekBy(-10)}
-          disabled={!isSeekReady}
-          aria-label="Rewind 10 seconds"
-          title="Rewind 10 seconds"
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
-        >
-          <span aria-hidden="true" className="text-xl leading-none">↶</span>
-          <span>10s</span>
-        </button>
-        <button
-          type="button"
-          onClick={togglePlayback}
-          disabled={!isSeekReady}
-          aria-label={isPlaying ? "Pause video" : "Play video"}
-          title={isPlaying ? "Pause video" : "Play video"}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
-        >
-          <span aria-hidden="true">{isPlaying ? "⏸" : "▶"}</span>
-          <span>{isPlaying ? "Pause" : "Play"}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => seekBy(10)}
-          disabled={!isSeekReady}
-          aria-label="Forward 10 seconds"
-          title="Forward 10 seconds"
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
-        >
-          <span aria-hidden="true" className="text-xl leading-none">↷</span>
-          <span>10s</span>
-        </button>
-      </div>
 
     </div>
   );
