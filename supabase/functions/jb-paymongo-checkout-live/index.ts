@@ -1,12 +1,24 @@
 /**
- * JB Premium Hub — Phase 123J-14
+ * JB Premium Hub — LIVE Checkout, controlled rollout guard
  * Supabase Edge Function: jb-paymongo-checkout-live
  *
  * DISABLED BY DEFAULT. Deployment alone cannot create a LIVE payment.
- * Required server secrets when deliberately enabled:
+ *
+ * Required server secrets:
  *   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
  *   PAYMONGO_LIVE_SECRET_KEY (sk_live_...)
  *   JB_BILLING_LIVE_SITE_ORIGIN (exact production HTTPS origin)
+ *
+ * EXTRA SERVER-SIDE CHECKOUT ACCESS GATE (fail-closed):
+ *   JB_LIVE_CHECKOUT_ACCESS_MODE=disabled | tester | public
+ *     - missing/disabled/unknown: deny ALL checkout requests
+ *     - tester: require JB_LIVE_CHECKOUT_TESTER_USER_ID (one auth UUID)
+ *     - public: ALSO require JB_LIVE_CHECKOUT_PUBLIC_RELEASE_APPROVED=true
+ *   IMPORTANT: these are Supabase Edge Function secrets, not VITE_ variables.
+ *
+ * The database checkout_enabled control is an INDEPENDENT additional lock.
+ * The frontend LIVE checkout UI flag is another, independent control.
+ * Keep all LIVE controls OFF until the supervised rollout plan is approved.
  *
  * Requires pre-installed RPCs:
  *   jb_billing_create_live_order_v1
@@ -14,9 +26,7 @@
  *   jb_billing_link_live_checkout_v1
  *
  * This creates checkout sessions; it NEVER marks payments paid,
- * settles an order, or activates membership. Do not connect the frontend
- * until webhook verification, recovery operations, and the LIVE rollout
- * procedures have passed review.
+ * settles an order, or activates membership.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -56,6 +66,35 @@ function response(status: number, body: Dict, origin: string | null): Response {
   });
 }
 function errorText(e: unknown): string { return e instanceof Error ? e.message : 'unknown'; }
+
+/**
+ * Restrict at the server, BEFORE creating an order or calling PayMongo.
+ * A hidden browser button alone is never an authorization mechanism.
+ * Returning 503 in an unconfigured state is intentional: fail closed.
+ */
+function checkoutAccess(userId: string): { status: number; error: string } | null {
+  const mode = Deno.env.get('JB_LIVE_CHECKOUT_ACCESS_MODE') || 'disabled';
+
+  if (mode === 'tester') {
+    const testerId = Deno.env.get('JB_LIVE_CHECKOUT_TESTER_USER_ID') || '';
+    if (!UUID.test(testerId)) {
+      return { status: 503, error: 'LIVE tester access not configured' };
+    }
+    if (userId.toLowerCase() !== testerId.toLowerCase()) {
+      return { status: 403, error: 'LIVE checkout is not available for this account' };
+    }
+    return null;
+  }
+
+  if (mode === 'public') {
+    if (Deno.env.get('JB_LIVE_CHECKOUT_PUBLIC_RELEASE_APPROVED') !== 'true') {
+      return { status: 503, error: 'LIVE public checkout not approved' };
+    }
+    return null;
+  }
+
+  return { status: 503, error: 'LIVE checkout access disabled' };
+}
 
 function validateProviderSession(data: unknown, orderId: string, amount: number, userId: string): string | null {
   if (!isObject(data) || data.type !== 'checkout_session' ||
@@ -110,7 +149,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch { return send(400, { error: 'Invalid JSON request' }); }
   if (!isObject(payload) || Object.keys(payload).length !== 2 ||
-      typeof payload.plan_code !== 'string' || !(payload.plan_code in PRICES) ||
+      typeof payload.plan_code !== 'string' || !Object.prototype.hasOwnProperty.call(PRICES, payload.plan_code) ||
       typeof payload.request_id !== 'string' || !UUID.test(payload.request_id))
     return send(400, { error: 'plan_code and request_id are required' });
   const planCode = payload.plan_code;
@@ -120,8 +159,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: userData, error: authError } = await authClient.auth.getUser(bearer[1]);
-  if (authError || !userData.user) return send(401, { error: 'Invalid user session' });
+  if (authError || !userData.user || userData.user.is_anonymous === true) {
+    return send(401, { error: 'Valid non-anonymous user login required' });
+  }
   const userId = userData.user.id;
+
+  // EXTRA guard: authenticate AND authorize this account before any
+  // service-role database mutation or PayMongo session creation.
+  const denied = checkoutAccess(userId);
+  if (denied) return send(denied.status, { error: denied.error });
 
   const db = createClient(url, service, {
     auth: { persistSession: false, autoRefreshToken: false },
