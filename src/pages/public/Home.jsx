@@ -850,9 +850,8 @@ export default function Home() {
     }
   };
 
-  // Save the video instead of opening a cross-origin player tab.
-  // A browser fetch requires GET CORS on the Cloudflare R2 media bucket.
-  // IMPORTANT: UI gating alone is not a security boundary for publicly served media.
+  // Stream the original video file; never open a second browser/player tab.
+  // Note: this UI restriction is not a substitute for authenticated CDN access.
   const handleDownloadSelectedMedia = async (e) => {
     if (e) {
       e.preventDefault();
@@ -864,6 +863,7 @@ export default function Home() {
     const videoUrl = getCdnUrl(video.media_url);
     if (!videoUrl) return;
 
+    // Use the actual source format: changing a file extension does not convert a video.
     let fileExtension = "mp4";
     try {
       const path = new URL(videoUrl, window.location.href).pathname;
@@ -872,23 +872,49 @@ export default function Home() {
         fileExtension = candidate;
       }
     } catch (error) {
-      console.warn("Using the default MP4 download filename:", error);
+      console.warn("Unknown video file extension; checking the MP4 content:", error);
     }
 
-    const filename = `Vault-Video-${video.id}.${fileExtension}`;
+    // Stable 12-digit number for each video, derived from its UUID.
+    // The same video keeps the same download name across visits and pages.
+    const idHex = String(video.id || "").replace(/[^a-f0-9]/gi, "");
+    const number = idHex.length >= 12
+      ? String(Number.parseInt(idHex.slice(0, 12), 16) % 1000000000000).padStart(12, "0")
+      : String(Date.now());
+    const filename = `JB-Collections_${number}.${fileExtension}`;
+    const mimeByExtension = {
+      mp4: "video/mp4",
+      webm: "video/webm",
+      mkv: "video/x-matroska",
+      mov: "video/quicktime",
+      m4v: "video/x-m4v",
+    };
+
+    // MP4 files normally contain the 'ftyp' box at byte offsets 4-7.
+    // This catches an HTML error page or wrong file labeled as MP4.
+    const isMp4Header = (bytes) => bytes?.length >= 8 &&
+      bytes[4] === 0x66 && bytes[5] === 0x74 &&
+      bytes[6] === 0x79 && bytes[7] === 0x70;
+
     downloadLockRef.current = true;
     setDownloadBusy(true);
 
     try {
-      // Chrome/Edge: stream directly to the chosen file, even for large videos.
-      // The picker must be invoked from the user's click, before any await.
       let fileHandle = null;
       if (typeof window.showSaveFilePicker === "function") {
         try {
-          fileHandle = await window.showSaveFilePicker({ suggestedName: filename });
+          // File picker must open synchronously from this user click (before network await).
+          fileHandle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: `${fileExtension.toUpperCase()} Video`,
+              accept: { [mimeByExtension[fileExtension]]: [`.${fileExtension}`] },
+            }],
+            excludeAcceptAllOption: true,
+          });
         } catch (error) {
           if (error?.name === "AbortError") return;
-          console.warn("Save dialog unavailable; using browser download:", error);
+          console.warn("File picker unavailable; using browser download:", error);
         }
       }
 
@@ -898,44 +924,98 @@ export default function Home() {
         credentials: "omit",
       });
       if (!response.ok) {
-        throw new Error(`Video request failed (HTTP ${response.status}).`);
+        throw new Error(`Video server returned HTTP ${response.status}.`);
       }
 
       const contentType = response.headers.get("content-type") || "";
       if (/text\/html|application\/json|text\/plain/i.test(contentType)) {
-        throw new Error("CDN returned an error page instead of the video file.");
+        throw new Error("The video server returned an error page, not a video file.");
       }
 
       if (fileHandle && response.body) {
-        const writable = await fileHandle.createWritable();
+        // Stream in chunks so large video files do not fill browser memory.
+        const reader = response.body.getReader();
+        let writable = null;
         try {
-          await response.body.pipeTo(writable);
+          const initialChunks = [];
+          let initialLength = 0;
+          while (initialLength < 8) {
+            const part = await reader.read();
+            if (part.done) break;
+            if (part.value?.byteLength) {
+              initialChunks.push(part.value);
+              initialLength += part.value.byteLength;
+            }
+          }
+          if (initialLength === 0) throw new Error("The video server returned an empty file.");
+          if (fileExtension === "mp4") {
+            const header = new Uint8Array(Math.min(initialLength, 8));
+            let offset = 0;
+            for (const chunk of initialChunks) {
+              const n = Math.min(chunk.byteLength, header.length - offset);
+              header.set(chunk.subarray(0, n), offset);
+              offset += n;
+              if (offset >= header.length) break;
+            }
+            if (!isMp4Header(header)) {
+              throw new Error("Source file does not have an MP4 header. Nothing was saved. Check the original video format.");
+            }
+          }
+
+          writable = await fileHandle.createWritable();
+          for (const chunk of initialChunks) await writable.write(chunk);
+          while (true) {
+            const part = await reader.read();
+            if (part.done) break;
+            await writable.write(part.value);
+          }
+          await writable.close();
         } catch (error) {
-          await writable.abort().catch(() => {});
+          if (writable) await writable.abort().catch(() => {});
+          await reader.cancel().catch(() => {});
           throw error;
+        } finally {
+          reader.releaseLock();
         }
       } else {
-        // Other browsers: same-origin blob URL honors the download attribute.
-        // This fallback can consume memory for large video files.
+        // Fallback for browsers without File System Access: may use more RAM.
         const blob = await response.blob();
-        if (!blob.size) throw new Error("Received an empty video file.");
-        const objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        try {
-          link.click();
-        } finally {
-          link.remove();
-          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        if (!blob.size) throw new Error("The video server returned an empty file.");
+        if (fileExtension === "mp4") {
+          const header = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+          if (!isMp4Header(header)) {
+            throw new Error("Source file does not have an MP4 header. Nothing was saved. Check the original video format.");
+          }
+        }
+        if (fileHandle) {
+          const writable = await fileHandle.createWritable();
+          try {
+            await writable.write(blob);
+            await writable.close();
+          } catch (error) {
+            await writable.abort().catch(() => {});
+            throw error;
+          }
+        } else {
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          try {
+            link.click();
+          } finally {
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+          }
         }
       }
+      console.info("JB Collections video download completed:", filename);
     } catch (error) {
       console.error("VIP video download failed:", error);
       window.alert(
-        "Video download failed. No new player tab was opened. " +
-        "If the Console reports a CORS error, the R2 video bucket must allow GET from https://www.jb-premium-hub.vip."
+        `Download failed: ${error?.message || "Unknown error"}. ` +
+        "If the Console shows a CORS/network error, the R2 VIDEO bucket must allow GET from https://www.jb-premium-hub.vip. Do not pay or retry checkout."
       );
     } finally {
       downloadLockRef.current = false;
