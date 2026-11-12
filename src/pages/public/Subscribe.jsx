@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, CreditCard, LockKeyhole, RefreshCw, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
@@ -18,17 +18,20 @@ const PLANS = [
   },
 ];
 
-// Explicitly OFF unless a deliberate production release sets the UI switch.
-// The backend checkout control is independently OFF by default.
+const SITE_ORIGIN = 'https://www.jb-premium-hub.vip';
+const RETURN_CHECK_INTERVAL_MS = 5000;
+const RETURN_CHECK_DURATION_MS = 2 * 60 * 1000;
+const CHECKOUT_ATTEMPT_KEY = 'jb_premium_hub_live_checkout_attempt';
+const CHECKOUT_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+// These are separate release switches. No browser flag bypasses backend payment controls.
 const checkoutUiEnabled = import.meta.env.PROD &&
   import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true' &&
-  window.location.origin === 'https://www.jb-premium-hub.vip';
+  window.location.origin === SITE_ORIGIN;
 
-// Isolated TEST checkout. Keep OFF unless explicitly enabled for a controlled QA run.
-// This does not enable LIVE checkout and TEST grants do not authorize LIVE access.
 const testCheckoutUiEnabled = import.meta.env.PROD &&
   import.meta.env.VITE_JB_TEST_CHECKOUT_UI_ENABLED === 'true' &&
-  window.location.origin === 'https://www.jb-premium-hub.vip';
+  window.location.origin === SITE_ORIGIN;
 
 function formatEntitlement(raw) {
   const item = Array.isArray(raw) ? raw[0] : raw;
@@ -39,17 +42,73 @@ function formatEntitlement(raw) {
 
   const expires = item.access_expires_at == null ? null : new Date(item.access_expires_at);
   const validExpiry = expires && !Number.isNaN(expires.getTime()) ? expires : null;
+
   return {
     tier: tier.toUpperCase(),
     canViewAlbums: item.can_view_albums === true,
     canDownload: item.can_download === true,
     showAds: item.show_ads === true,
-    expiry: validExpiry ? validExpiry.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : null,
+    expiryAt: validExpiry ? validExpiry.getTime() : null,
+    expiry: validExpiry
+      ? validExpiry.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+      : null,
   };
+}
+
+// Session storage is only a comparison hint for UI refresh; it is never payment evidence.
+function rememberLiveCheckoutAttempt(attempt) {
+  try {
+    window.sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, JSON.stringify(attempt));
+  } catch {
+    // Private browsing/storage restrictions do not block checkout.
+  }
+}
+
+function readLiveCheckoutAttempt(userId) {
+  try {
+    const raw = window.sessionStorage.getItem(CHECKOUT_ATTEMPT_KEY);
+    if (!raw) return null;
+    const attempt = JSON.parse(raw);
+    if (!attempt || attempt.userId !== userId ||
+        !['standard', 'vip'].includes(attempt.planCode) ||
+        !Number.isFinite(attempt.startedAt) ||
+        Date.now() - attempt.startedAt > CHECKOUT_ATTEMPT_MAX_AGE_MS ||
+        attempt.startedAt > Date.now() + 60000 ||
+        attempt.baselineKnown !== true ||
+        !['FREE', 'STANDARD', 'VIP'].includes(attempt.previousTier) ||
+        (attempt.previousExpiryAt !== null && !Number.isFinite(attempt.previousExpiryAt))) {
+      return null;
+    }
+    return attempt;
+  } catch {
+    return null;
+  }
+}
+
+function clearLiveCheckoutAttempt() {
+  try {
+    window.sessionStorage.removeItem(CHECKOUT_ATTEMPT_KEY);
+  } catch {
+    // Safe to ignore.
+  }
+}
+
+function membershipChangedAfterCheckout(next, attempt) {
+  if (!next || !attempt || !next.canViewAlbums ||
+      next.tier !== attempt.planCode.toUpperCase() ||
+      !Number.isFinite(next.expiryAt) || next.expiryAt <= Date.now()) {
+    return false;
+  }
+
+  // Compare the LIVE entitlement expiration with the snapshot from BEFORE checkout.
+  // An already-active membership must not be mistaken for a new successful payment.
+  const before = Number.isFinite(attempt.previousExpiryAt) ? attempt.previousExpiryAt : 0;
+  return next.tier !== attempt.previousTier || next.expiryAt > before + 1000;
 }
 
 export default function Subscribe() {
   const [params] = useSearchParams();
+  const outcome = params.get('checkout');
   const [plan, setPlan] = useState('vip');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -58,47 +117,146 @@ export default function Subscribe() {
   const [access, setAccess] = useState(null);
   const [accessError, setAccessError] = useState('');
   const [attemptedOrder, setAttemptedOrder] = useState(null);
-  const selected = PLANS.find((item) => item.code === plan);
+  const [returnStatus, setReturnStatus] = useState('idle');
+
+  const selected = PLANS.find((item) => item.code === plan) || PLANS[1];
   const entitlement = formatEntitlement(access);
 
-  const loadAccess = async () => {
-    setAccessError('');
+  const loadAccess = useCallback(async () => {
     try {
       const { data, error } = await supabase.rpc('jb_billing_my_access');
       if (error) throw error;
       setAccess(data);
+      setAccessError('');
+      return data;
     } catch {
-      setAccess(null);
       setAccessError('Membership status cannot be confirmed right now. Please try again.');
+      return null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    supabase.auth.getUser().then(async ({ data, error }) => {
-      if (cancelled) return;
-      if (error || !data?.user) {
-        setUser(null);
-        setChecking(false);
-        return;
+
+    const initialize = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (error || !data?.user) {
+          setUser(null);
+          return;
+        }
+        setUser(data.user);
+        const { data: current, error: accessErrorFromServer } = await supabase.rpc('jb_billing_my_access');
+        if (cancelled) return;
+        if (accessErrorFromServer) throw accessErrorFromServer;
+        setAccess(current);
+        setAccessError('');
+      } catch {
+        if (!cancelled) {
+          setAccessError('Membership status cannot be confirmed right now. Please try again.');
+        }
+      } finally {
+        if (!cancelled) setChecking(false);
       }
-      setUser(data.user);
-      await loadAccess();
-      if (!cancelled) setChecking(false);
-    }).catch(() => {
-      if (!cancelled) setChecking(false);
-    });
+    };
+
+    initialize();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (outcome === 'cancelled') clearLiveCheckoutAttempt();
+  }, [outcome]);
+
+  // A checkout return is NOT evidence of payment. Only the authenticated LIVE
+  // entitlement RPC can reflect an independently verified, settled payment.
+  useEffect(() => {
+    if (outcome !== 'returned' || checking) return undefined;
+    if (!user?.id) {
+      setReturnStatus('login_required');
+      return undefined;
+    }
+
+    let cancelled = false;
+    let inFlight = false;
+    let completed = false;
+    const started = Date.now();
+    const attempt = readLiveCheckoutAttempt(user.id);
+    let intervalId;
+    let deadlineId;
+
+    const stop = (status) => {
+      if (completed || cancelled) return;
+      completed = true;
+      window.clearInterval(intervalId);
+      window.clearTimeout(deadlineId);
+      setReturnStatus(status);
+    };
+
+    const checkLiveMembership = async () => {
+      if (cancelled || completed || inFlight) return;
+      if (Date.now() - started >= RETURN_CHECK_DURATION_MS) {
+        stop('timed_out');
+        return;
+      }
+      inFlight = true;
+      try {
+        const { data, error } = await supabase.rpc('jb_billing_my_access');
+        if (cancelled || completed) return;
+        if (error) throw error;
+
+        setAccess(data);
+        setAccessError('');
+        const latest = formatEntitlement(data);
+        if (membershipChangedAfterCheckout(latest, attempt)) {
+          clearLiveCheckoutAttempt();
+          stop('updated');
+        }
+      } catch {
+        if (!cancelled && !completed) {
+          setAccessError('Unable to check membership at the moment. Automatic checking will retry.');
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    setReturnStatus('checking');
+    intervalId = window.setInterval(checkLiveMembership, RETURN_CHECK_INTERVAL_MS);
+    deadlineId = window.setTimeout(() => stop('timed_out'), RETURN_CHECK_DURATION_MS);
+    void checkLiveMembership();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.clearTimeout(deadlineId);
+    };
+  }, [outcome, checking, user?.id]);
+
+  const refreshMembership = async () => {
+    const current = await loadAccess();
+    if (outcome === 'returned' && user?.id &&
+        membershipChangedAfterCheckout(
+          formatEntitlement(current),
+          readLiveCheckoutAttempt(user.id)
+        )) {
+      clearLiveCheckoutAttempt();
+      setReturnStatus('updated');
+    }
+  };
 
   const beginCheckout = async () => {
     if (!checkoutUiEnabled || busy || !user) return;
     setBusy(true);
     setMessage('');
     setAttemptedOrder(null);
+
     try {
       const { data: identity, error: authError } = await supabase.auth.getUser();
-      if (authError || identity?.user?.id !== user.id) throw new Error('Please sign in again.');
+      if (authError || identity?.user?.id !== user.id || identity.user.is_anonymous) {
+        throw new Error('Please sign in again.');
+      }
       const requestId = crypto.randomUUID();
       const { data, error } = await supabase.functions.invoke('jb-paymongo-checkout-live', {
         body: { plan_code: plan, request_id: requestId },
@@ -109,14 +267,24 @@ export default function Subscribe() {
           typeof data.checkout_url !== 'string') {
         throw new Error('Checkout could not be verified.');
       }
-      const url = new URL(data.checkout_url);
-      if (url.protocol !== 'https:' || !(
-        url.hostname === 'checkout.paymongo.com' ||
-        url.hostname.endsWith('.paymongo.com')
-      )) throw new Error('Unexpected checkout destination.');
-      window.location.assign(url.href);
+
+      const checkoutUrl = new URL(data.checkout_url);
+      if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.paymongo.com') {
+        throw new Error('Unexpected checkout destination.');
+      }
+
+      const previous = formatEntitlement(access);
+      rememberLiveCheckoutAttempt({
+        userId: user.id,
+        planCode: plan,
+        previousExpiryAt: previous?.expiryAt ?? null,
+        previousTier: previous?.tier ?? null,
+        baselineKnown: previous !== null,
+        startedAt: Date.now(),
+      });
+      window.location.assign(checkoutUrl.href);
     } catch (error) {
-      setMessage(error.message || 'Checkout unavailable. Please contact support.');
+      setMessage(error instanceof Error ? error.message : 'Checkout unavailable. Please contact support.');
     } finally {
       setBusy(false);
     }
@@ -140,30 +308,35 @@ export default function Subscribe() {
       if (data?.environment !== 'test' || typeof data.checkout_url !== 'string') {
         throw new Error('Unexpected TEST checkout response.');
       }
-      const url = new URL(data.checkout_url);
-      if (url.protocol !== 'https:' || url.hostname !== 'checkout.paymongo.com') {
+      const checkoutUrl = new URL(data.checkout_url);
+      if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.paymongo.com') {
         throw new Error('Unexpected TEST checkout destination.');
       }
-      window.location.assign(url.href);
+      window.location.assign(checkoutUrl.href);
     } catch (error) {
-      setMessage(error.message || 'TEST checkout unavailable. Please contact support.');
+      setMessage(error instanceof Error ? error.message : 'TEST checkout unavailable. Please contact support.');
     } finally {
       setBusy(false);
     }
   };
 
-  const outcome = params.get('checkout');
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 text-slate-100">
       <div className="mb-8">
         <p className="text-xs font-semibold tracking-widest text-blue-400 uppercase">JB Premium Hub</p>
-        <h1 className="text-3xl font-extrabold mt-2">Choose your membership</h1>
+        <h1 className="mt-2 text-3xl font-extrabold">Choose your membership</h1>
         <p className="mt-2 text-slate-400">One-month access plans. Payment confirmation is verified by the server, never by a browser redirect.</p>
       </div>
 
       {outcome === 'returned' && (
-        <div role="status" className="mb-6 rounded-xl border border-amber-600/40 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Returned from checkout. This does not confirm payment. Please refresh your membership status below after processing.
+        <div role="status" aria-live="polite" className="mb-6 rounded-xl border border-amber-600/40 bg-amber-950/30 p-4 text-sm text-amber-200">
+          {returnStatus === 'updated'
+            ? 'Your LIVE membership information has been updated by the server. See your current plan and expiration below.'
+            : returnStatus === 'timed_out'
+              ? 'No new LIVE membership update was confirmed within two minutes. This does not mean payment failed. Please contact support before paying again.'
+              : returnStatus === 'login_required'
+                ? 'Sign in to check your LIVE membership. Returning from checkout does not confirm payment.'
+                : 'Returned from checkout. Checking your LIVE membership automatically every 5 seconds for up to 2 minutes. Do not make another payment while confirmation is pending.'}
         </div>
       )}
       {outcome === 'test-return' && (
@@ -247,7 +420,7 @@ export default function Subscribe() {
                 {entitlement.tier}
               </span>
             </div>
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div><dt className="text-slate-400">Album access</dt><dd className="font-semibold">{entitlement.canViewAlbums ? 'Available' : 'Not included'}</dd></div>
               <div><dt className="text-slate-400">Downloads</dt><dd className="font-semibold">{entitlement.canDownload ? 'Enabled' : 'Disabled'}</dd></div>
               <div><dt className="text-slate-400">Advertisements</dt><dd className="font-semibold">{entitlement.tier === 'FREE' ? 'Not applicable — no album access' : entitlement.showAds ? 'Included' : 'Ad-free'}</dd></div>
@@ -256,7 +429,7 @@ export default function Subscribe() {
             {entitlement.tier === 'FREE' && <p className="mt-4 text-xs text-slate-400">Your account currently has no paid membership. Choose a plan when checkout becomes available.</p>}
           </div>
         )}
-        <button type="button" onClick={loadAccess} disabled={!user || checking}
+        <button type="button" onClick={refreshMembership} disabled={!user || checking}
           className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-50">
           <RefreshCw className="h-4 w-4" /> Refresh status
         </button>
