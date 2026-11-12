@@ -24,6 +24,11 @@ export default function Profile() {
     setProfileData,
   ] = useState(null);
 
+  // LIVE billing is the source of truth for the membership shown on Profile.
+  // An RPC failure must not be mistaken for a free or standard membership.
+  const [liveMembership, setLiveMembership] = useState(null);
+  const [liveMembershipError, setLiveMembershipError] = useState(false);
+
   const [
     expirationDate,
     setExpirationDate,
@@ -362,31 +367,63 @@ export default function Profile() {
         }
 
         /* ===============================================
-           VIP
+           VERIFIED LIVE MEMBERSHIP
+           Never infer paid access from profiles.account_type
+           or profiles.vip_until. Only the billing RPC
+           determines the displayed Standard/VIP status.
         =============================================== */
 
-        if (
-          profile?.vip_until
-        ) {
-          setExpirationDate(
-            profile.vip_until
-          );
+        try {
+          const { data: accessData, error: accessError } =
+            await supabase.rpc("jb_billing_my_access");
 
-          setTimeLeft(
-            calculateTimeLeft(
-              profile.vip_until
-            )
-          );
-        } else {
-          setExpirationDate(
-            null
-          );
+          if (accessError) throw accessError;
 
-          setTimeLeft(
-            null
+          const accessRow = Array.isArray(accessData)
+            ? accessData[0]
+            : accessData;
+          const tier = String(accessRow?.tier || "").toLowerCase();
+
+          if (!["free", "standard", "vip"].includes(tier)) {
+            throw new Error("Invalid LIVE membership response.");
+          }
+
+          const parsedExpiry = accessRow?.access_expires_at
+            ? new Date(accessRow.access_expires_at)
+            : null;
+          const isValidExpiry = Boolean(
+            parsedExpiry &&
+              !Number.isNaN(parsedExpiry.getTime()) &&
+              parsedExpiry.getTime() > Date.now()
           );
+          const isActivePaid =
+            tier !== "free" &&
+            accessRow.can_view_albums === true &&
+            isValidExpiry;
+
+          const normalizedMembership = {
+            tier: isActivePaid ? tier : "free",
+            expiresAt: isActivePaid ? parsedExpiry.toISOString() : null,
+          };
+
+          setLiveMembership(normalizedMembership);
+          setLiveMembershipError(false);
+          setExpirationDate(normalizedMembership.expiresAt);
+          setTimeLeft(
+            normalizedMembership.expiresAt
+              ? calculateTimeLeft(normalizedMembership.expiresAt)
+              : null
+          );
+        } catch (billingError) {
+          console.error(
+            "Unable to read verified LIVE membership:",
+            billingError?.message || billingError
+          );
+          setLiveMembership(null);
+          setLiveMembershipError(true);
+          setExpirationDate(null);
+          setTimeLeft(null);
         }
-
         /* ===============================================
            CODE HISTORY
         =============================================== */
@@ -1452,15 +1489,20 @@ export default function Profile() {
     ) >
       new Date();
 
+  const hasActiveLiveMembership = Boolean(
+    liveMembership?.expiresAt && hasActiveVipDate
+  );
+
   const isVip =
     isAdmin ||
-    (
-      rawAccountType ===
-        "vip" &&
-      Boolean(
-        hasActiveVipDate
-      )
-    );
+    (liveMembership?.tier === "vip" && hasActiveLiveMembership);
+
+  const isStandard =
+    !isAdmin &&
+    liveMembership?.tier === "standard" &&
+    hasActiveLiveMembership;
+
+  const isPaidMember = hasActiveLiveMembership;
 
   /* =========================================================
      FAQ DATA
@@ -1607,7 +1649,7 @@ export default function Profile() {
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border bg-blue-500/10 text-blue-400 border-blue-500/30">
-                  👤 Standard Member
+                  {liveMembershipError || !liveMembership ? "Membership Status Unavailable" : isStandard ? "👤 Standard Member" : "Free Account"}
                 </span>
               )}
 
@@ -1620,7 +1662,7 @@ export default function Profile() {
                 }
                 className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 px-4 rounded-xl shadow-lg shadow-amber-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider"
               >
-                👑 Choose STANDARD / VIP Plan
+                {isPaidMember ? "👑 View / Renew Membership" : "👑 Choose STANDARD / VIP Plan"}
               </button>
 
               {/* VIP COUNTDOWN */}
@@ -2224,7 +2266,7 @@ export default function Profile() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pb-3 border-b border-slate-800/80">
 
                   <span className="text-slate-400 font-medium">
-                    VIP Expiration
+                    Membership Expiration
                     Date
                   </span>
 
@@ -2233,7 +2275,7 @@ export default function Profile() {
                       ? formatDate(
                           expirationDate
                         )
-                      : "No Active VIP Subscription"}
+                      : liveMembershipError ? "Status unavailable" : "No active paid membership"}
                   </span>
                 </div>
 
