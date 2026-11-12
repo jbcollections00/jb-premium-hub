@@ -65,7 +65,8 @@ export default function VIPVideoPlayer({
     return new Date(expiresAt) > new Date();
   };
 
-  // When Home supplies an explicit boolean, do not override billing truth with stale profile fields.\n  const effectiveIsAdFree = typeof isAdFreeProp === "boolean" ? isAdFreeProp : isAdFreeUser;
+  // When Home supplies an explicit boolean, do not override billing truth with stale profile fields.
+  const effectiveIsAdFree = typeof isAdFreeProp === "boolean" ? isAdFreeProp : isAdFreeUser;
 
   // 🔄 1. Reset tracking refs, playback state, at active video reference kapag nagpalit ng video
   useEffect(() => {
