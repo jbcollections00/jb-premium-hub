@@ -42,6 +42,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const downloadLockRef = useRef(false);
 
   // AutoPlay state para sa Step 2 Play Trigger
   const [autoPlay, setAutoPlay] = useState(() => {
@@ -848,23 +850,97 @@ export default function Home() {
     }
   };
 
-  // Download button is rendered only for active VIP or Admin users
-  const handleDownloadSelectedMedia = (e) => {
+  // Save the video instead of opening a cross-origin player tab.
+  // A browser fetch requires GET CORS on the Cloudflare R2 media bucket.
+  // IMPORTANT: UI gating alone is not a security boundary for publicly served media.
+  const handleDownloadSelectedMedia = async (e) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (!canDownload || !selectedMedia?.media_url) return;
+    if (!canDownload || downloadLockRef.current || !selectedMedia?.media_url) return;
 
-    const videoUrl = getCdnUrl(selectedMedia.media_url);
-    const link = document.createElement("a");
-    link.href = videoUrl;
-    link.setAttribute("download", `Vault-Video-${selectedMedia.id}.mp4`);
-    link.setAttribute("target", "_blank");
-    link.setAttribute("rel", "noopener noreferrer");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const video = selectedMedia;
+    const videoUrl = getCdnUrl(video.media_url);
+    if (!videoUrl) return;
+
+    let fileExtension = "mp4";
+    try {
+      const path = new URL(videoUrl, window.location.href).pathname;
+      const candidate = path.split(".").pop()?.toLowerCase();
+      if (["mp4", "webm", "mkv", "mov", "m4v"].includes(candidate)) {
+        fileExtension = candidate;
+      }
+    } catch (error) {
+      console.warn("Using the default MP4 download filename:", error);
+    }
+
+    const filename = `Vault-Video-${video.id}.${fileExtension}`;
+    downloadLockRef.current = true;
+    setDownloadBusy(true);
+
+    try {
+      // Chrome/Edge: stream directly to the chosen file, even for large videos.
+      // The picker must be invoked from the user's click, before any await.
+      let fileHandle = null;
+      if (typeof window.showSaveFilePicker === "function") {
+        try {
+          fileHandle = await window.showSaveFilePicker({ suggestedName: filename });
+        } catch (error) {
+          if (error?.name === "AbortError") return;
+          console.warn("Save dialog unavailable; using browser download:", error);
+        }
+      }
+
+      const response = await fetch(videoUrl, {
+        method: "GET",
+        mode: "cors",
+        credentials: "omit",
+      });
+      if (!response.ok) {
+        throw new Error(`Video request failed (HTTP ${response.status}).`);
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (/text\/html|application\/json|text\/plain/i.test(contentType)) {
+        throw new Error("CDN returned an error page instead of the video file.");
+      }
+
+      if (fileHandle && response.body) {
+        const writable = await fileHandle.createWritable();
+        try {
+          await response.body.pipeTo(writable);
+        } catch (error) {
+          await writable.abort().catch(() => {});
+          throw error;
+        }
+      } else {
+        // Other browsers: same-origin blob URL honors the download attribute.
+        // This fallback can consume memory for large video files.
+        const blob = await response.blob();
+        if (!blob.size) throw new Error("Received an empty video file.");
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        try {
+          link.click();
+        } finally {
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        }
+      }
+    } catch (error) {
+      console.error("VIP video download failed:", error);
+      window.alert(
+        "Video download failed. No new player tab was opened. " +
+        "If the Console reports a CORS error, the R2 video bucket must allow GET from https://www.jb-premium-hub.vip."
+      );
+    } finally {
+      downloadLockRef.current = false;
+      setDownloadBusy(false);
+    }
   };
 
   return (
@@ -1353,11 +1429,12 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={handleDownloadSelectedMedia}
-                        className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
-                        title="VIP / Admin Video Download"
+                        disabled={downloadBusy}
+                        className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                        title="Save video to your device (VIP / Admin)"
                       >
                         <span>📥</span>
-                        <span>Download</span>
+                        <span>{downloadBusy ? "Downloading..." : "Download"}</span>
                       </button>
                     )}
                   </div>

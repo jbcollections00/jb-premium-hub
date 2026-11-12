@@ -18,6 +18,7 @@ export default function VIPVideoPlayer({
   const [isAdFreeUser, setIsAdFreeUser] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [isSeekReady, setIsSeekReady] = useState(false);
   const mainVideoRef = useRef(null);
 
   // Tracking refs
@@ -80,6 +81,7 @@ export default function VIPVideoPlayer({
 
     setIsPlaying(false);
     setHasStarted(false);
+    setIsSeekReady(false);
   }, [mainVideoUrl, mediaId]);
 
   // 🎬 2. Programmatic Autoplay execution
@@ -154,6 +156,27 @@ export default function VIPVideoPlayer({
     startVideoPlay();
   };
 
+  // Rewind / forward exactly 10 seconds, clamped to the current video's duration.
+  const seekBy = (seconds) => {
+    const video = mainVideoRef.current;
+    if (!video || !Number.isFinite(video.currentTime) || video.readyState < 1) return;
+
+    const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
+    const nextTime = Math.max(0, Math.min(video.currentTime + seconds, duration));
+    try {
+      video.currentTime = nextTime;
+    } catch (error) {
+      console.error('Unable to seek video:', error);
+    }
+  };
+
+  const togglePlayback = () => {
+    const video = mainVideoRef.current;
+    if (!video) return;
+    if (video.paused) startVideoPlay();
+    else video.pause();
+  };
+
   const startVideoPlay = () => {
     if (mainVideoRef.current) {
       mainVideoRef.current
@@ -165,6 +188,7 @@ export default function VIPVideoPlayer({
   };
 
   const handleLoadedMetadata = async (e) => {
+    setIsSeekReady(true);
     const durationInSeconds = Math.round(e.target.duration);
     const storedDuration = Number(currentDuration || 0);
 
@@ -281,18 +305,15 @@ export default function VIPVideoPlayer({
             }}
             playsInline
             onLoadedMetadata={handleLoadedMetadata}
+            onEmptied={() => setIsSeekReady(false)}
             onPlay={handleVideoPlay}
             onPause={handleVideoPause}
             onEnded={handleVideoEnded}
             className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
-            onError={(e) =>
-              console.error(
-                "Error loading video:",
-                e.target.error,
-                "URL Attempted:",
-                videoSrc
-              )
-            }
+            onError={(e) => {
+              setIsSeekReady(false);
+              console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc);
+            }}
           />
 
           {/* 🏷️ JB LOGO WATERMARK */}
@@ -327,6 +348,43 @@ export default function VIPVideoPlayer({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Telegram / YouTube-style skip buttons. The native timeline stays available. */}
+      <div className="flex items-center justify-center gap-3 px-3 py-3 bg-slate-950 border-t border-slate-800">
+        <button
+          type="button"
+          onClick={() => seekBy(-10)}
+          disabled={!isSeekReady}
+          aria-label="Rewind 10 seconds"
+          title="Rewind 10 seconds"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+        >
+          <span aria-hidden="true" className="text-xl leading-none">↶</span>
+          <span>10s</span>
+        </button>
+        <button
+          type="button"
+          onClick={togglePlayback}
+          disabled={!isSeekReady}
+          aria-label={isPlaying ? "Pause video" : "Play video"}
+          title={isPlaying ? "Pause video" : "Play video"}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+        >
+          <span aria-hidden="true">{isPlaying ? "⏸" : "▶"}</span>
+          <span>{isPlaying ? "Pause" : "Play"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => seekBy(10)}
+          disabled={!isSeekReady}
+          aria-label="Forward 10 seconds"
+          title="Forward 10 seconds"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+        >
+          <span aria-hidden="true" className="text-xl leading-none">↷</span>
+          <span>10s</span>
+        </button>
       </div>
 
     </div>
