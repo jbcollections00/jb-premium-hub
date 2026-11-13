@@ -1,14 +1,12 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 import MainLayout from './components/layout/MainLayout';
 import EventPopup from './components/EventPopup';
 
-import LandingPage from './pages/public/LandingPage';
 import Login from './pages/public/Login';
 import Signup from './pages/public/Signup';
 import ResetPassword from './pages/public/ResetPassword';
 import Home from './pages/public/Home';
-import ForYou from './pages/public/ForYou';
 import ActivateCode from './pages/public/ActivateCode';
 import Profile from './pages/public/Profile';
 import Messages from './pages/public/Messages';
@@ -16,8 +14,6 @@ import BuyVip from './pages/public/BuyVip';
 import Subscribe from './pages/public/Subscribe';
 import Contest from './pages/public/Contest';
 import LeaderboardPage from './pages/public/LeaderboardPage';
-
-import ChatMessages from './pages/ChatMessages';
 
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -36,7 +32,7 @@ function App() {
 
       <Routes>
         {/* Standalone Public Pages */}
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -53,15 +49,11 @@ function App() {
           {/* Protected User Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/home" element={<Home />} />
-            <Route path="/for-you" element={<ForYou />} />
             <Route path="/activate" element={<ActivateCode />} />
             <Route path="/profile" element={<Profile />} />
 
             {/* Existing admin-announcement messages */}
             <Route path="/messages" element={<Messages />} />
-
-            {/* New user-to-user chat */}
-            <Route path="/chat" element={<ChatMessages />} />
 
             <Route path="/buy-vip" element={<BuyVip />} />
             <Route path="/subscribe" element={<Subscribe />} />
@@ -76,7 +68,7 @@ function App() {
         </Route>
 
         {/* Catch-all Fallback */}
-        <Route path="*" element={<LandingPage />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </Router>
   );
