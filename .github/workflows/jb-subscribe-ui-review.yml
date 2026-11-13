@@ -12,6 +12,7 @@ on:
       - 'src/pages/public/Subscribe.jsx'
       - 'src/pages/public/BuyVip.jsx'
       - 'src/pages/public/Profile.jsx'
+      - 'package-lock.json'
       - '.github/workflows/jb-subscribe-ui-review.yml'
   workflow_dispatch:
 
