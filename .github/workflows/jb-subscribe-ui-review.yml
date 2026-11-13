@@ -39,7 +39,8 @@ jobs:
           const page = readFileSync('src/pages/public/Subscribe.jsx', 'utf8');
           assert.match(app, /path="\/subscribe" element=\{<Subscribe \/>\}/);
           assert.match(page, /VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true'/);
-          assert.match(page, /window.location.origin === 'https:\/\/www.jb-premium-hub.vip'/);
+          assert.match(page, /const SITE_ORIGIN = 'https:\/\/www\.jb-premium-hub\.vip'/);
+          assert.match(page, /window\.location\.origin === SITE_ORIGIN/);
           assert.match(page, /disabled=\{!checkoutUiEnabled/);
           assert.match(page, /jb_billing_my_access/);
           assert.match(page, /function formatEntitlement\(raw\)/);
