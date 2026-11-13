@@ -40,6 +40,12 @@ jobs:
           const page = readFileSync('src/pages/public/Subscribe.jsx', 'utf8');
           assert.match(app, /path="\/subscribe" element=\{<Subscribe \/>\}/);
           assert.match(page, /VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true'/);
+          // LIVE button must not be shown to non-tester accounts during controlled rollout.
+          assert.match(page, /VITE_JB_LIVE_CHECKOUT_UI_MODE/);
+          assert.match(page, /VITE_JB_LIVE_CHECKOUT_TESTER_USER_ID/);
+          assert.match(page, /CHECKOUT_UI_MODE === 'tester'/);
+          assert.match(page, /user\?\.id\?\.toLowerCase\(\) === TESTER_UI_USER_ID/);
+          assert.match(page, /CHECKOUT_UI_MODE === 'public'/);
           assert.match(page, /const SITE_ORIGIN = 'https:\/\/www\.jb-premium-hub\.vip'/);
           assert.match(page, /window\.location\.origin === SITE_ORIGIN/);
           assert.match(page, /disabled=\{!checkoutUiEnabled/);
