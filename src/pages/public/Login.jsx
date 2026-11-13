@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 
+// STEP 307D: Preserve existing authentication, login redirect and reset logic.
+// Only add display of the signup confirmation message already passed by Signup.
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,6 +15,9 @@ export default function Login() {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const signupMessage = typeof location.state?.signupMessage === 'string'
+    ? location.state.signupMessage
+    : '';
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -80,7 +85,7 @@ export default function Login() {
     } else {
       setMsg({
         type: 'success',
-        text: '📩 New confirmation link sent! Check your Inbox and Spam folder.',
+        text: 'New confirmation link sent! Check your Inbox and Spam folder.',
       });
     }
   };
@@ -103,7 +108,7 @@ export default function Login() {
     } else {
       setMsg({
         type: 'success',
-        text: '🎉 Password reset link sent! Check your email inbox.',
+        text: 'Password reset link sent! Check your email inbox.',
       });
     }
 
@@ -120,11 +125,18 @@ export default function Login() {
             className="w-16 h-16 mx-auto mb-3 object-contain drop-shadow-md"
           />
           <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
-          <p className="text-slate-400 text-xs mt-1">Log in to access your VIP status and vault</p>
+          <p className="text-slate-400 text-xs mt-1">Log in to access your membership and media gallery.</p>
         </div>
+
+        {!msg.text && signupMessage && (
+          <div role="status" className="text-xs p-3.5 rounded-xl text-center font-medium leading-relaxed bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+            {signupMessage}
+          </div>
+        )}
 
         {msg.text && (
           <div
+            role={msg.type === 'error' ? 'alert' : 'status'}
             className={`text-xs p-3.5 rounded-xl text-center font-medium leading-relaxed ${
               msg.type === 'error'
                 ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400'
@@ -149,20 +161,21 @@ export default function Login() {
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="text-slate-400 text-xs block mb-1">Email Address</label>
+            <label htmlFor="jb-login-email" className="text-slate-400 text-xs block mb-1">Email Address</label>
             <input
+              id="jb-login-email"
               type="email"
               required
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@example.com"
               className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
             />
           </div>
-
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="text-slate-400 text-xs">Password</label>
+              <label htmlFor="jb-login-password" className="text-slate-400 text-xs">Password</label>
               <button
                 type="button"
                 onClick={handleForgotPassword}
@@ -173,8 +186,10 @@ export default function Login() {
             </div>
             <div className="relative">
               <input
+                id="jb-login-password"
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -184,8 +199,9 @@ export default function Login() {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-3.5 text-slate-400 hover:text-white text-xs cursor-pointer"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
-                {showPassword ? '🙈' : '👁️'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>

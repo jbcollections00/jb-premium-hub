@@ -3,10 +3,7 @@ import {
   useState,
 } from "react";
 
-import {
-  Outlet,
-  useLocation,
-} from "react-router-dom";
+import { Outlet } from "react-router-dom";
 
 import { supabase } from "../../services/supabaseClient";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
@@ -16,13 +13,6 @@ import Footer from "./Footer";
 import SocialBar from "../SocialBar";
 
 export default function MainLayout() {
-  const location =
-    useLocation();
-
-  const isChatPage =
-    location.pathname ===
-    "/chat";
-
   const [
     showSocialBar,
     setShowSocialBar,
@@ -135,38 +125,7 @@ export default function MainLayout() {
     };
   }, []);
 
-  /*
-    CHAT PAGE:
-    - fixed to viewport height
-    - header stays on top
-    - chat fills remaining space
-    - no footer
-    - no body/page scrolling
-  */
-  if (isChatPage) {
-    return (
-      <div className="flex h-dvh flex-col overflow-hidden bg-slate-950">
-        {showSocialBar ===
-          true && (
-          <SocialBar
-            enabled
-          />
-        )}
-
-        <div className="flex-shrink-0">
-          <Header />
-        </div>
-
-        <main className="min-h-0 flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
-    );
-  }
-
-  /*
-    NORMAL SITE PAGES
-  */
+  // Standard site layout; chat-specific layout is intentionally excluded.
   return (
     <div className="flex min-h-screen flex-col justify-between bg-slate-950">
       {showSocialBar ===
