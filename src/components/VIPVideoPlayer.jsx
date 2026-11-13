@@ -343,7 +343,7 @@ export default function VIPVideoPlayer({
             className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
             onError={(e) => {
               setIsSeekReady(false);
-              console.error("Error loading video:", e.target.error, "URL Attempted:", videoSrc);
+              console.error("Error loading video:", e.target.error?.code ?? "unknown");
             }}
           />
 

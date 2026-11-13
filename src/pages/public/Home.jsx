@@ -4,6 +4,7 @@ import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
+import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -44,6 +45,7 @@ export default function Home() {
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const downloadLockRef = useRef(false);
+  const [privatePlayback, setPrivatePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
 
   // AutoPlay state para sa Step 2 Play Trigger
   const [autoPlay, setAutoPlay] = useState(() => {
@@ -139,6 +141,30 @@ export default function Home() {
     window.addEventListener("focus", onFocus);
     return () => { cancelled = true; window.removeEventListener("focus", onFocus); };
   }, [userProfile?.id]);
+
+  // Private playback is strictly opt-in. When enabled, NEVER fall back to a public media URL.
+  // The ticket endpoint authorizes the current user and exact video on the server.
+  useEffect(() => {
+    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id) return;
+    const id = String(selectedMedia.id);
+    let cancelled = false;
+    setPrivatePlayback({ id, url: "", status: "loading", error: "" });
+
+    if (!billingReady) return () => { cancelled = true; };
+    if (!membership.canViewAlbums) {
+      setPrivatePlayback({ id, url: "", status: "denied", error: "Active membership required for playback." });
+      return () => { cancelled = true; };
+    }
+
+    requestPrivateMediaUrl(id, "play")
+      .then((url) => {
+        if (!cancelled) setPrivatePlayback({ id, url, status: "ready", error: "" });
+      })
+      .catch(() => {
+        if (!cancelled) setPrivatePlayback({ id, url: "", status: "error", error: "Unable to authorize private playback. Refresh membership and try again." });
+      });
+    return () => { cancelled = true; };
+  }, [selectedMedia?.id, billingReady, membership.canViewAlbums, membership.tier, userProfile?.id]);
 
   // Body scroll management
   useEffect(() => {
@@ -761,6 +787,7 @@ export default function Home() {
 
     const targetY = scrollPosRef.current;
     setSelectedMedia(null);
+    setPrivatePlayback({ id: "", url: "", status: "idle", error: "" });
     setAutoPlay(false);
     setHasRecordedCurrentView(false);
     viewRecordedRef.current = false;
@@ -860,8 +887,8 @@ export default function Home() {
     if (!canDownload || downloadLockRef.current || !selectedMedia?.media_url) return;
 
     const video = selectedMedia;
-    const videoUrl = getCdnUrl(video.media_url);
-    if (!videoUrl) return;
+    let videoUrl = PRIVATE_MEDIA_UI_ENABLED ? "" : getCdnUrl(video.media_url);
+    if (!PRIVATE_MEDIA_UI_ENABLED && !videoUrl) return;
 
     // Use the actual source format: changing a file extension does not convert a video.
     let fileExtension = "mp4";
@@ -918,6 +945,11 @@ export default function Home() {
         }
       }
 
+      // Request the short-lived DOWNLOAD ticket only after the save dialog.
+      // Never use the legacy public media URL as a fallback when private mode is ON.
+      if (PRIVATE_MEDIA_UI_ENABLED) {
+        videoUrl = await requestPrivateMediaUrl(video.id, "download");
+      }
       const response = await fetch(videoUrl, {
         method: "GET",
         mode: "cors",
@@ -1126,7 +1158,7 @@ export default function Home() {
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
                           />
-                        ) : item.media_url ? (
+                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED ? (
                           <video
                             src={`${getCdnUrl(item.media_url)}#t=1`}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
@@ -1136,7 +1168,7 @@ export default function Home() {
                           />
                         ) : (
                           <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                            No Display
+                            {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "No Display"}
                           </div>
                         )}
 
@@ -1241,7 +1273,7 @@ export default function Home() {
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                       />
-                    ) : item.media_url ? (
+                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED ? (
                       <video
                         src={`${getCdnUrl(item.media_url)}#t=1`}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
@@ -1251,7 +1283,7 @@ export default function Home() {
                       />
                     ) : (
                       <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                        No Display
+                        {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "No Display"}
                       </div>
                     )}
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
@@ -1424,11 +1456,13 @@ export default function Home() {
                 )}
 
                 <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
+                  {(!PRIVATE_MEDIA_UI_ENABLED ||
+                    (privatePlayback.id === selectedMedia.id && privatePlayback.url)) ? (
                   <VIPVideoPlayer
                     key={selectedMedia.id}
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
-                    mainVideoUrl={getCdnUrl(selectedMedia.media_url)}
+                    mainVideoUrl={PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
                     isAdFree={billingReady ? !membership.showAds : false}
                     accountType={userProfile?.account_type}
                     vipUntil={userProfile?.vip_until}
@@ -1437,6 +1471,13 @@ export default function Home() {
                     onDurationUpdate={handleDurationUpdate}
                     autoPlay={autoPlay}
                   />
+                  ) : (
+                    <div role="status" className="w-full min-h-64 flex items-center justify-center p-6 text-center text-sm text-slate-300" aria-live="polite">
+                      {privatePlayback.id === selectedMedia.id && privatePlayback.error
+                        ? privatePlayback.error
+                        : "Checking your private video access..."}
+                    </div>
+                  )}
                 </div>
               </div>
 
