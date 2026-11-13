@@ -24,10 +24,16 @@ const RETURN_CHECK_DURATION_MS = 2 * 60 * 1000;
 const CHECKOUT_ATTEMPT_KEY = 'jb_premium_hub_live_checkout_attempt';
 const CHECKOUT_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-// These are separate release switches. No browser flag bypasses backend payment controls.
-const checkoutUiEnabled = import.meta.env.PROD &&
+// UI is fail-closed. Server checkout authorization remains independent.
+const checkoutUiBaseEnabled = import.meta.env.PROD &&
   import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true' &&
   window.location.origin === SITE_ORIGIN;
+
+// Require an explicit UI rollout mode. The tester UUID is a public frontend
+// display filter only; the Edge Function independently verifies user identity.
+const CHECKOUT_UI_MODE = import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_MODE || 'disabled';
+const TESTER_UI_USER_ID = String(import.meta.env.VITE_JB_LIVE_CHECKOUT_TESTER_USER_ID || '').toLowerCase();
+const VALID_TESTER_UI_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(TESTER_UI_USER_ID);
 
 const testCheckoutUiEnabled = import.meta.env.PROD &&
   import.meta.env.VITE_JB_TEST_CHECKOUT_UI_ENABLED === 'true' &&
@@ -113,6 +119,11 @@ export default function Subscribe() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [user, setUser] = useState(null);
+  const checkoutUiEnabled = checkoutUiBaseEnabled && (
+    CHECKOUT_UI_MODE === 'public' ||
+    (CHECKOUT_UI_MODE === 'tester' && VALID_TESTER_UI_ID &&
+      user?.id?.toLowerCase() === TESTER_UI_USER_ID)
+  );
   const [checking, setChecking] = useState(true);
   const [access, setAccess] = useState(null);
   const [accessError, setAccessError] = useState('');
