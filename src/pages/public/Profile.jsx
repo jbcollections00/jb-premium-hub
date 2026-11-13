@@ -1964,12 +1964,10 @@ export default function Profile() {
                     </div>
 
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                      Used for chat
-                      mentions. 3–30
-                      characters. Letters,
-                      numbers, dots,
-                      underscores and
-                      hyphens only.
+                      Your public username.
+                      Use 3–30 characters:
+                      letters, numbers, dots,
+                      underscores or hyphens.
                     </p>
 
                     {username &&
@@ -1987,8 +1985,7 @@ export default function Profile() {
                         username.trim()
                       ) && (
                         <p className="mt-1 text-[11px] font-semibold text-emerald-400">
-                          Your mention will
-                          be @
+                          Your username is @
                           {
                             username.trim()
                           }
@@ -2112,7 +2109,7 @@ export default function Profile() {
                     )}
 
                     <p className="text-[11px] text-slate-500">
-                      Your profile picture will appear in direct chats, search results, groups and channels.
+                      Your profile picture may appear alongside your profile and account activity.
                     </p>
                   </div>
                 </div>

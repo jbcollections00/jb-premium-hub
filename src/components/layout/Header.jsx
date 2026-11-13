@@ -1,466 +1,163 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CreditCard, LogOut, MessageCircle } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 
-// 🎨 Modernized Vector SVG Icons
-const IconMessage = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path 
-      d="M8.5 19H8C4 19 2 18 2 13V8C2 4 4 2 8 2H16C20 2 22 4 22 8V13C22 17 20 19 16 19H15.5C15.19 19 14.89 19.15 14.7 19.4L13.2 21.4C12.54 22.28 11.46 22.28 10.8 21.4L9.3 19.4C9.11 19.15 8.81 19 8.5 19Z" 
-      stroke="currentColor" 
-      strokeWidth="1.8" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    />
-    <path d="M15.9965 11H16.0055" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M11.9955 11H12.0045" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M7.99451 11H8.00351" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
-
-const IconForYou = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M12 3L13.8 8.2L19 10L13.8 11.8L12 17L10.2 11.8L5 10L10.2 8.2L12 3Z"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M18.5 15L19.4 17.6L22 18.5L19.4 19.4L18.5 22L17.6 19.4L15 18.5L17.6 17.6L18.5 15Z"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const IconLogout = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path 
-      d="M8.9 7.56C9.21 3.96 11.06 2.49 15.11 2.49H15.24C19.71 2.49 21.5 4.28 21.5 8.75V15.27C21.5 19.74 19.71 21.53 15.24 21.53H15.11C11.09 21.53 9.24 20.08 8.91 16.54" 
-      stroke="currentColor" 
-      strokeWidth="1.8" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    />
-    <path d="M15 12H3.62" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M5.85 8.65L2.5 12L5.85 15.35" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
-
+// STEP 307B: Header preserves profile, admin-announcement unread count,
+// Supabase Realtime messages, and logout. The obsolete For You navigation is
+// removed and replaced with the subscription/plans entry point.
 export default function Header() {
+  const navigate = useNavigate();
   const [messageCount, setMessageCount] = useState(0);
   const [userInitial, setUserInitial] = useState('U');
-  const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  useEffect(() => {
-    let adminMessagesChannel = null;
-    let userStatusChannel = null;
-    let isMounted = true;
-
-    const handleUpdate = () => {
-      fetchMessageCount();
-    };
-
-    window.addEventListener("messagesUpdated", handleUpdate);
-
-    const setupRealtime = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!isMounted) return;
-
-      await fetchMessageCount();
-
-      adminMessagesChannel = supabase
-        .channel("header_admin_messages")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "admin_messages" },
-          () => {
-            fetchMessageCount();
-          }
-        )
-        .subscribe();
-
-      if (session?.user?.id) {
-        userStatusChannel = supabase
-          .channel(`header_user_message_status_${session.user.id}`)
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: "user_message_status",
-              filter: `user_id=eq.${session.user.id}`,
-            },
-            () => {
-              fetchMessageCount();
-            }
-          )
-          .subscribe();
-      }
-    };
-
-    setupRealtime();
-
-    return () => {
-      isMounted = false;
-      window.removeEventListener("messagesUpdated", handleUpdate);
-
-      if (adminMessagesChannel) {
-        supabase.removeChannel(adminMessagesChannel);
-      }
-
-      if (userStatusChannel) {
-        supabase.removeChannel(userStatusChannel);
-      }
-    };
-  }, []);
-
-  const fetchMessageCount = async () => {
+  const fetchMessageCount = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.user) {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
         setMessageCount(0);
+        setUserInitial('U');
         return;
       }
 
       const userId = session.user.id;
-      const email = session.user.email || "";
-
-      if (email) {
-        setUserInitial(email.charAt(0).toUpperCase());
-      }
+      const email = session.user.email || '';
+      setUserInitial(email ? email.charAt(0).toUpperCase() : 'U');
 
       const { data: visibleMessages, error: messagesError } = await supabase
-        .from("admin_messages")
-        .select("id")
+        .from('admin_messages')
+        .select('id')
         .or(`user_id.eq.${userId},and(send_to_all.eq.true,user_id.is.null)`);
-
-      if (messagesError) {
-        throw messagesError;
-      }
+      if (messagesError) throw messagesError;
 
       const messageIds = (visibleMessages || []).map((message) => message.id);
-
       if (messageIds.length === 0) {
         setMessageCount(0);
         return;
       }
 
       const { data: statuses, error: statusError } = await supabase
-        .from("user_message_status")
-        .select("message_id, is_read, is_deleted")
-        .eq("user_id", userId)
-        .in("message_id", messageIds);
+        .from('user_message_status')
+        .select('message_id, is_read, is_deleted')
+        .eq('user_id', userId)
+        .in('message_id', messageIds);
+      if (statusError) throw statusError;
 
-      if (statusError) {
-        throw statusError;
-      }
-
-      const statusMap = new Map(
-        (statuses || []).map((status) => [status.message_id, status])
-      );
-
+      const statusMap = new Map((statuses || []).map((status) => [status.message_id, status]));
       const unreadCount = messageIds.reduce((count, messageId) => {
         const status = statusMap.get(messageId);
-
-        if (status?.is_deleted) {
-          return count;
-        }
-
-        if (!status || !status.is_read) {
-          return count + 1;
-        }
-
-        return count;
+        return count + (!status?.is_deleted && !status?.is_read ? 1 : 0);
       }, 0);
-
       setMessageCount(unreadCount);
-    } catch (err) {
-      console.error("Error fetching message count:", err);
+    } catch (error) {
+      console.error('Header unread count unavailable:', error);
       setMessageCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let userStatusChannel = null;
+    const adminMessagesChannel = supabase
+      .channel('header_admin_messages')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'admin_messages',
+      }, () => { if (active) void fetchMessageCount(); })
+      .subscribe();
+
+    const attachUserChannel = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!active || !session?.user?.id) return;
+      userStatusChannel = supabase
+        .channel(`header_user_message_status_${session.user.id}`)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'user_message_status',
+          filter: `user_id=eq.${session.user.id}`,
+        }, () => { if (active) void fetchMessageCount(); })
+        .subscribe();
+    };
+
+    const onMessagesUpdated = () => { if (active) void fetchMessageCount(); };
+    window.addEventListener('messagesUpdated', onMessagesUpdated);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      if (!active) return;
+      // Run the asynchronous query after the auth callback completes.
+      setTimeout(() => { if (active) void fetchMessageCount(); }, 0);
+    });
+
+    void fetchMessageCount();
+    void attachUserChannel();
+
+    return () => {
+      active = false;
+      window.removeEventListener('messagesUpdated', onMessagesUpdated);
+      subscription?.unsubscribe();
+      void supabase.removeChannel(adminMessagesChannel);
+      if (userStatusChannel) void supabase.removeChannel(userStatusChannel);
+    };
+  }, [fetchMessageCount]);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      navigate('/login', { replace: true });
+    } catch (error) {
+      console.error('Sign out failed:', error);
+      setLoggingOut(false);
     }
   };
 
-  const handleNavigation = (targetPath) => {
-    navigate(targetPath);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/');
-  };
+  const navClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-2.5 py-2 text-sm font-semibold text-slate-300 transition-colors hover:border-slate-700 hover:bg-white/5 hover:text-white sm:px-3';
 
   return (
-    <header className="site-header">
-      <style>{`
-        .site-header {
-          background-color: rgba(10, 15, 29, 0.92);
-          backdrop-filter: blur(16px);
-          border-bottom: 1px solid rgba(30, 41, 59, 0.8);
-          color: white;
-          padding: 12px 20px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-        }
-
-        .nav-brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          text-decoration: none;
-        }
-
-        .logo-box {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 40px;
-          height: 40px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
-          padding: 1.5px;
-          box-shadow: 0 0 15px rgba(139, 92, 246, 0.25);
-        }
-
-        .logo-box-inner {
-          width: 100%;
-          height: 100%;
-          background-color: #0f172a;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 6px;
-          overflow: hidden;
-        }
-
-        .brand-subtitle {
-          font-size: 11px;
-          color: #94a3b8;
-          font-weight: 500;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          margin-top: 2px;
-        }
-
-        .nav-controls {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .nav-item-btn {
-          color: #cbd5e1;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          text-decoration: none;
-          font-size: 14px;
-          font-weight: 600;
-          padding: 7px 12px;
-          border-radius: 10px;
-          transition: all 0.2s ease;
-          position: relative;
-          border: 1px solid transparent;
-          cursor: pointer;
-        }
-
-        .nav-item-btn:hover {
-          color: #ffffff;
-          background-color: rgba(255, 255, 255, 0.06);
-          border-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .profile-avatar {
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 800;
-          font-size: 12px;
-          color: #ffffff;
-          box-shadow: 0 0 10px rgba(124, 58, 237, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .icon-wrapper {
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .unread-badge {
-          position: absolute;
-          top: -6px;
-          right: -8px;
-          background: linear-gradient(135deg, #ef4444, #dc2626);
-          color: #ffffff;
-          font-size: 9px;
-          font-weight: 900;
-          min-width: 16px;
-          height: 16px;
-          padding: 0 4px;
-          border-radius: 9999px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
-          border: 1.5px solid #0a0f1d;
-          line-height: 1;
-          pointer-events: none;
-        }
-
-        .btn-logout {
-          background-color: rgba(239, 68, 68, 0.1);
-          color: #f87171;
-          border: 1px solid rgba(239, 68, 68, 0.25);
-          font-size: 14px;
-          font-weight: 600;
-          padding: 7px 14px;
-          border-radius: 10px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          transition: all 0.2s ease;
-        }
-
-        .btn-logout:hover {
-          background-color: #ef4444;
-          color: #ffffff;
-          box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
-          border-color: transparent;
-        }
-
-        @media (max-width: 768px) {
-          .hide-on-mobile {
-            display: none !important;
-          }
-          .site-header {
-            padding: 10px 14px;
-          }
-          .nav-controls {
-            gap: 6px;
-          }
-          .nav-item-btn {
-            padding: 6px;
-          }
-          .btn-logout {
-            padding: 8px;
-          }
-        }
-      `}</style>
-
-      {/* 1️⃣ Brand Logo & Title */}
-      <Link to="/home" className="nav-brand">
-        <div className="logo-box">
-          <div className="logo-box-inner">
-            <img 
-              src="/logo.png" 
-              alt="JB Logo" 
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          </div>
-        </div>
-
-        {/* Naitago ang pangalan sa mobile gamit ang hide-on-mobile */}
-        <div className="hide-on-mobile" style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
-            <span style={{ fontSize: '1.2rem', fontWeight: 900, background: 'linear-gradient(to right, #60a5fa, #a78bfa, #f472b6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              JB
-            </span>
-            <span style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>
-              PREMIUM
-            </span>
-            <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '5px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#e9d5ff', border: '1px solid rgba(168, 85, 247, 0.35)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              HUB
-            </span>
-          </div>
-
-          <span className="brand-subtitle">
-            Premium Vault & Media Gallery
+    <header className="sticky top-0 z-50 flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/95 px-3 py-3 text-white shadow-lg backdrop-blur-xl sm:px-5">
+      <Link to="/home" className="flex min-w-0 items-center gap-3" aria-label="JB Premium Hub Home">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 p-0.5">
+          <span className="flex h-full w-full items-center justify-center rounded-[10px] bg-slate-900 p-1.5">
+            <img src="/logo.png" alt="JB Premium Hub" className="h-full w-full object-contain" />
           </span>
-        </div>
+        </span>
+        <span className="hidden min-w-0 flex-col sm:flex">
+          <span className="text-lg font-extrabold tracking-tight">
+            <span className="text-blue-400">JB</span> PREMIUM <span className="text-purple-400">HUB</span>
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-widest text-slate-400">Media Gallery & Memberships</span>
+        </span>
       </Link>
 
-      {/* 2️⃣ User Controls */}
-      <div className="nav-controls">
-        {/* 👤 Profile Link */}
-        <Link 
-          to="/profile"
-          onClick={(e) => {
-            e.preventDefault();
-            handleNavigation('/profile');
-          }}
-          className="nav-item-btn" 
-          title="Profile"
-        >
-          <div className="profile-avatar">
-            {userInitial}
-          </div>
-          <span className="hide-on-mobile">Profile</span>
+      <nav className="flex shrink-0 items-center gap-0.5 sm:gap-2" aria-label="User navigation">
+        <Link to="/profile" className={navClass} title="Profile" aria-label="Profile">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-xs font-extrabold text-white">{userInitial}</span>
+          <span className="hidden md:inline">Profile</span>
         </Link>
 
-        {/* ✨ For You Link */}
-        <Link
-          to="/for-you"
-          onClick={(e) => {
-            e.preventDefault();
-            handleNavigation('/for-you');
-          }}
-          className="nav-item-btn"
-          title="For You"
-        >
-          <div className="icon-wrapper">
-            <IconForYou />
-          </div>
-          <span className="hide-on-mobile">For You</span>
+        <Link to="/subscribe" className={navClass} title="Membership plans" aria-label="Membership plans">
+          <CreditCard size={19} aria-hidden="true" />
+          <span className="hidden md:inline">Plans</span>
         </Link>
 
-        {/* 💬 Messages Link */}
-        <Link 
-          to="/messages"
-          onClick={(e) => {
-            e.preventDefault();
-            handleNavigation('/messages');
-          }}
-          className="nav-item-btn" 
-          title="Messages"
-        >
-          <div className="icon-wrapper">
-            <IconMessage />
-
+        <Link to="/messages" className={navClass} title="Messages" aria-label={`Messages${messageCount ? `, ${messageCount} unread` : ''}`}>
+          <span className="relative inline-flex">
+            <MessageCircle size={20} aria-hidden="true" />
             {messageCount > 0 && (
-              <span className="unread-badge">
+              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-slate-950 bg-red-600 px-0.5 text-[9px] font-bold text-white">
                 {messageCount > 99 ? '99+' : messageCount}
               </span>
             )}
-          </div>
-          <span className="hide-on-mobile">Messages</span>
+          </span>
+          <span className="hidden md:inline">Messages</span>
         </Link>
 
-        {/* 🚪 Logout Button */}
-        <button onClick={handleLogout} className="btn-logout" title="Logout">
-          <IconLogout />
-          <span className="hide-on-mobile">Logout</span>
+        <button type="button" disabled={loggingOut} onClick={handleLogout} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-600 hover:text-white disabled:opacity-50 sm:px-3" title="Logout" aria-label="Logout">
+          <LogOut size={19} aria-hidden="true" />
+          <span className="hidden md:inline">Logout</span>
         </button>
-      </div>
+      </nav>
     </header>
   );
 }
