@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
+import AdminMembershipModal from "./AdminMembershipModal";
 
 const USERS_PER_PAGE = 50;
 
@@ -10,6 +11,7 @@ export default function AdminUsers() {
   const [filterType, setFilterType] = useState("ALL");
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
   const [actionInProgress, setActionInProgress] = useState(null);
+  const [membershipUser, setMembershipUser] = useState(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -155,24 +157,7 @@ export default function AdminUsers() {
     }
   };
 
-  const handleToggleVip = async (userId, currentType) => {
-    const newType = currentType === "VIP" ? "STANDARD" : "VIP";
-    setActionInProgress(userId);
-
-    const { error } = await supabase
-      .from("profiles")
-      .update({ account_type: newType })
-      .eq("id", userId);
-
-    if (error) {
-      alert("Failed to update account tier: " + error.message);
-    } else {
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, account_type: newType } : u))
-      );
-    }
-    setActionInProgress(null);
-  };
+  // Membership changes now use audited, admin-only RPCs in AdminMembershipModal.
 
   const handleBanUser = async (userId, isBanned) => {
     setActionInProgress(userId);
@@ -293,6 +278,7 @@ export default function AdminUsers() {
                   paginatedUsers.map((u) => {
                     const isOnline = onlineUserIds.has(u.id);
                     const isVip = (u.account_type || "").toUpperCase() === "VIP";
+                    const isAdminUser = (u.role || "").toLowerCase() === "admin" || (u.account_type || "").toLowerCase() === "admin";
 
                     return (
                       <tr key={u.id} className="hover:bg-gray-800/40 transition-colors">
@@ -304,7 +290,7 @@ export default function AdminUsers() {
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
                             isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                           }`}>
-                            {u.account_type || 'STANDARD'}
+                            Profile: {u.account_type || 'unknown'}
                           </span>
                         </td>
                         <td className="p-4">
@@ -321,11 +307,12 @@ export default function AdminUsers() {
                         </td>
                         <td className="p-4 text-right space-x-2">
                           <button
-                            disabled={actionInProgress === u.id}
-                            onClick={() => handleToggleVip(u.id, u.account_type)}
+                            disabled={actionInProgress === u.id || Boolean(u.is_banned) || isAdminUser}
+                            onClick={() => setMembershipUser(u)}
                             className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                            title="Manage complimentary membership grants; payment subscriptions are unchanged"
                           >
-                            {isVip ? 'Demote VIP' : 'Make VIP'}
+                            Manage Membership
                           </button>
                           <button
                             disabled={actionInProgress === u.id}
@@ -384,6 +371,13 @@ export default function AdminUsers() {
             </div>
           )}
         </>
+      )}
+      {membershipUser && (
+        <AdminMembershipModal
+          key={membershipUser.id}
+          user={membershipUser}
+          onClose={() => setMembershipUser(null)}
+        />
       )}
     </div>
   );
