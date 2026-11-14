@@ -13,6 +13,14 @@ on:
       - 'src/pages/public/BuyVip.jsx'
       - 'src/pages/public/Profile.jsx'
       - 'src/pages/admin/AdminDashboard.jsx'
+      - 'src/pages/admin/AdminLogin.jsx'
+      - 'src/pages/admin/AdminMembershipModal.jsx'
+      - 'src/pages/admin/AdminUsersTab.jsx'
+      - 'src/pages/admin/AdminMessagesTab.jsx'
+      - 'src/pages/admin/SupportTicketsTab.jsx'
+      - 'src/pages/admin/AccessCodesTab.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'src/pages/admin/adminWorkspace.css'
       - 'supabase/migrations/20261114190000_jb_billing_my_history_v1.sql'
       - 'package-lock.json'
       - '.github/workflows/jb-subscribe-ui-review.yml'
@@ -77,9 +85,16 @@ jobs:
           assert.match(profile, /navigate\(\s*"\/subscribe"/);
           // Admin visual redesign must keep the existing admin navigation and auth guards.
           const admin = readFileSync('src/pages/admin/AdminDashboard.jsx', 'utf8');
-          for (const id of ['dashboard','events','tickets','users','messages','chat-reports','chat-analytics','codes','upload']) {
-            assert.ok(admin.includes("id: '" + id + "'"), 'Missing admin tab: ' + id);
+          for (const id of ['dashboard','tickets','users','messages','codes','upload']) {
+            assert.ok(admin.includes("id: '" + id + "'"), 'Missing visible admin tab: ' + id);
           }
+          for (const id of ['events','chat-reports','chat-analytics']) {
+            assert.ok(!admin.includes("id: '" + id + "'"), 'Hidden admin tab must stay off navigation: ' + id);
+          }
+          // Hidden workflows remain in code for optional later restoration.
+          assert.match(admin,/activeTab === 'events'/);
+          assert.match(admin,/activeTab === 'chat-reports'/);
+          assert.match(admin,/activeTab === 'chat-analytics'/);
           assert.match(admin,/onClick=\{handleAdminLogout\}/);
           assert.match(admin,/isAdminAuthenticated/);
           assert.match(admin,/activeTab === 'dashboard'/);
@@ -93,6 +108,34 @@ jobs:
           assert.match(admin,/jbh-admin-hero/);
           assert.doesNotMatch(admin,/name: 'Guest profiles'|label: 'Guest profiles'|Guest Activity|VIP Upgrade Conversion Rate|Standard Users/);
           assert.equal((admin.match(/onClick=\{handleAdminLogout\}/g)||[]).length, 1);
+          const adminCss = readFileSync('src/pages/admin/adminWorkspace.css','utf8');
+          for (const path of [
+            'AdminUsersTab.jsx','AdminMessagesTab.jsx','SupportTicketsTab.jsx',
+            'AccessCodesTab.jsx','AdminMediaTab.jsx'
+          ]) {
+            const text = readFileSync('src/pages/admin/' + path,'utf8');
+            assert.match(text,/jbh-admin-page/,'Missing premium admin page: ' + path);
+          }
+          assert.match(admin,/import '\.\/adminWorkspace\.css'/);
+          assert.match(adminCss,/jbh-admin-page-head/);
+          assert.match(adminCss,/jbh-admin-panel/);
+          assert.match(adminCss,/jbh-admin-input/);
+          assert.match(adminCss,/jbh-admin-primary/);
+          assert.match(adminCss,/jbh-admin-dialog/);
+          const adminLogin = readFileSync('src/pages/admin/AdminLogin.jsx','utf8');
+          assert.match(adminLogin,/src="\/jb-logo.png"/);
+          assert.match(adminLogin,/signInWithPassword/);
+          const modal = readFileSync('src/pages/admin/AdminMembershipModal.jsx','utf8');
+          assert.match(modal,/jbh-admin-dialog/);
+          assert.match(modal,/jb_admin_membership_grant/);
+          const media = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
+          assert.match(media,/handleBulkUploadToCloudflare/);
+          assert.match(media,/createR2UploadUrl/);
+          assert.match(media,/handleDeleteMedia/);
+          const support = readFileSync('src/pages/admin/SupportTicketsTab.jsx','utf8');
+          assert.match(support,/handleSendReply/);
+          const messages = readFileSync('src/pages/admin/AdminMessagesTab.jsx','utf8');
+          assert.match(messages,/handleSendMessage/);
                     const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
           const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
           assert.match(guard, /state=\{\{ from: location\.pathname/);
