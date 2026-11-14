@@ -115,6 +115,9 @@ function membershipChangedAfterCheckout(next, attempt) {
 export default function Subscribe() {
   const [params] = useSearchParams();
   const outcome = params.get('checkout');
+  // Read-only support diagnostics. Shows pass/fail booleans only; never displays
+  // Supabase user IDs, configured tester IDs, auth tokens or payment secrets.
+  const showCheckoutDiagnostics = params.get('checkout_debug') === '1';
   const [plan, setPlan] = useState('vip');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -364,6 +367,32 @@ export default function Subscribe() {
         <div role="status" className="mb-6 rounded-xl border border-slate-600 bg-slate-900 p-4 text-sm text-slate-300">
           Checkout was cancelled. No membership is granted from this redirect.
         </div>
+      )}
+
+      {showCheckoutDiagnostics && (
+        <section aria-label="Read-only checkout diagnostics" className="mb-6 rounded-xl border border-amber-600/40 bg-slate-900 p-4 text-sm text-slate-200">
+          <h2 className="font-bold text-amber-200">Checkout diagnostics (read-only)</h2>
+          <p className="mt-1 text-xs text-slate-400">This panel does not initiate payments or display account IDs or secrets.</p>
+          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+            {[
+              ['Production build', import.meta.env.PROD === true],
+              ['Correct website origin', window.location.origin === SITE_ORIGIN],
+              ['LIVE checkout UI flag', import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true'],
+              ['Tester-only UI mode', CHECKOUT_UI_MODE === 'tester'],
+              ['Valid tester UUID configured', VALID_TESTER_UI_ID],
+              ['Signed-in session loaded', !checking && Boolean(user?.id)],
+              ['Signed-in account matches tester', !checking && VALID_TESTER_UI_ID && Boolean(user?.id) && user.id.toLowerCase() === TESTER_UI_USER_ID],
+            ].map(([name, passed]) => (
+              <div key={name} className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 px-3 py-2">
+                <dt>{name}</dt>
+                <dd className={passed ? 'font-semibold text-emerald-300' : 'font-semibold text-amber-300'}>
+                  {checking && String(name).startsWith('Signed-in') ? 'CHECKING' : passed ? 'PASS' : 'BLOCKED'}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-slate-400">Server-side checkout authorization is a separate control; this only diagnoses the visible button.</p>
+        </section>
       )}
 
       {!checkoutUiEnabled && (
