@@ -134,17 +134,17 @@ export default function Signup() {
     }
   };
 
-  const inputClass = 'w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500';
+  const inputClass = 'jbh-field text-sm';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-8 font-sans text-white">
-      <div className="w-full max-w-md space-y-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl sm:p-8">
+    <div className="jbh-auth">
+      <div className="jbh-auth-card space-y-6">
         <div className="text-center">
-          <img src="/jb-logo.png" alt="JB Premium Hub logo" className="mx-auto mb-3 h-16 w-16 object-contain" />
-          <h1 className="text-2xl font-bold">Create an Account</h1>
-          <p className="mt-1 text-xs text-slate-400">Create your profile and explore JB Premium Hub.</p>
+          <img src="/jb-logo.png" alt="JB Premium Hub logo" className="mx-auto mb-4 h-16 w-16 object-contain" />
+          <h1 className="text-3xl font-extrabold tracking-tight text-white">Create your account</h1>
+          <p className="mt-2 text-sm text-slate-400">Join JB Premium Hub and discover more.</p>
           {activeRefCode && (
-            <p className="mt-3 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-400">
+            <p className="mt-3 inline-flex rounded-full border border-indigo-400/25 bg-indigo-400/10 px-3 py-1 text-[11px] font-semibold text-indigo-200">
               Referral detected
             </p>
           )}
@@ -197,12 +197,12 @@ export default function Signup() {
             </label>
           </div>
           <button type="submit" disabled={!canSubmit}
-            className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">
+            className="jbh-btn w-full">
             {loading ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
         <p className="text-center text-xs text-slate-400">Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-blue-400 hover:underline">Log In</Link>
+          <Link to="/login" className="font-semibold text-indigo-300 hover:text-white">Log in</Link>
         </p>
       </div>
     </div>
