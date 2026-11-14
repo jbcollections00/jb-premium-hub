@@ -69,13 +69,13 @@ export default function SupportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="jbh-page min-h-screen text-slate-200">
       <div className="max-w-3xl mx-auto space-y-8">
         
         {/* Header */}
-        <div className="border-b border-slate-800 pb-6 text-center sm:text-left">
+        <div className="border-b border-white/10 pb-6 text-center sm:text-left">
           <h1 className="text-3xl font-extrabold text-white flex items-center justify-center sm:justify-start gap-3">
-            <Headset className="w-8 h-8 text-emerald-500" /> Contact Support
+            <Headset className="h-8 w-8 text-indigo-300" /> Contact Support
           </h1>
           <p className="text-slate-400 text-sm mt-2">
             Have a question or technical issue? Send a message to our team.
@@ -83,7 +83,7 @@ export default function SupportPage() {
         </div>
 
         {/* Form Container */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+        <div className="jbh-surface p-6 sm:p-8">
           {submitted ? (
             <div className="text-center py-8 space-y-3">
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
@@ -139,7 +139,7 @@ export default function SupportPage() {
                 <input 
                   type="text" 
                   required
-                  placeholder="Vault Access / Account Issue / Inquiry"
+                  placeholder="Membership, account or payment question"
                   value={formData.subject}
                   onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
