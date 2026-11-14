@@ -217,22 +217,22 @@ export default function AdminUsers() {
   const paginatedUsers = filteredUsers.slice(startIndex, startIndex + USERS_PER_PAGE);
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">User Management</h1>
-        <p className="text-xs text-gray-400 mt-1">
-          Kabuuang Rehistradong Users: <span className="text-red-500 font-bold">{users.length}</span>
-        </p>
-      </div>
+    <div className="jbh-admin-page space-y-6">
+      <header className="jbh-admin-page-head">
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-100">People & accounts</p>
+        <h1 className="mt-2">User management</h1>
+        <p className="mt-2 text-sm">Review account profiles, membership grants and access settings.</p>
+        <p className="mt-3 text-xs">Profiles loaded: <strong>{users.length.toLocaleString()}</strong></p>
+      </header>
 
-      <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+      <div className="jbh-admin-panel flex flex-col items-stretch justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
         <div className="relative w-full md:w-1/2">
           <input
             type="text"
-            placeholder="🔍 Search Name, Email, or User ID..."
+            placeholder="Search name, email or user ID"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-red-500"
+            className="jbh-admin-input w-full px-4 py-3 text-sm"
           />
         </div>
 
@@ -241,13 +241,13 @@ export default function AdminUsers() {
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="bg-gray-900 border border-gray-800 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-red-500 cursor-pointer w-full md:w-auto"
+            className="w-full min-w-40 px-3 py-2.5 text-sm sm:w-auto"
           >
             <option value="ALL">All Accounts ({users.length})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
             <option value="ADMIN">Admins Only</option>
-            <option value="VIP">VIP Members</option>
-            <option value="STANDARD">Standard Users</option>
+            <option value="VIP">VIP profiles</option>
+            <option value="STANDARD">Regular profiles</option>
           </select>
         </div>
       </div>
@@ -256,12 +256,12 @@ export default function AdminUsers() {
         <div className="text-center py-12 text-gray-500 text-xs">Loading user profiles...</div>
       ) : (
         <>
-          <div className="overflow-x-auto bg-gray-900 border border-gray-800 rounded-2xl shadow-xl">
+          <div className="jbh-admin-panel jbh-admin-table overflow-x-auto">
             <table className="w-full text-left text-xs text-gray-300">
               <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="p-4">User Details</th>
-                  <th className="p-4">Account Tier</th>
+                  <th className="p-4">Profile type</th>
                   <th className="p-4">Status</th>
                   <th className="p-4">Joined Date</th>
                   <th className="p-4 text-right">Actions</th>
@@ -309,7 +309,7 @@ export default function AdminUsers() {
                           <button
                             disabled={actionInProgress === u.id || Boolean(u.is_banned) || isAdminUser}
                             onClick={() => setMembershipUser(u)}
-                            className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                            className="jbh-admin-secondary px-3 py-2 text-xs font-semibold disabled:opacity-50"
                             title="Manage complimentary membership grants; payment subscriptions are unchanged"
                           >
                             Manage Membership
@@ -317,7 +317,7 @@ export default function AdminUsers() {
                           <button
                             disabled={actionInProgress === u.id}
                             onClick={() => handleAccessAccount(u)}
-                            className="px-2.5 py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-lg font-bold text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                            className="jbh-admin-secondary px-3 py-2 text-xs font-semibold disabled:opacity-50"
                           >
                             Impersonate
                           </button>
@@ -347,7 +347,7 @@ export default function AdminUsers() {
 
           {/* Lalabas lang ang Pagination UI kung higit sa 50 ang filtered users */}
           {totalPages > 1 && (
-            <div className="flex justify-between items-center gap-3 mt-6 bg-gray-900 border border-gray-800 p-4 rounded-xl">
+            <div className="jbh-admin-panel mt-5 flex flex-wrap items-center justify-between gap-3 p-4">
               <span className="text-xs text-gray-400">
                 Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{totalPages}</strong>
               </span>
@@ -356,14 +356,14 @@ export default function AdminUsers() {
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1 || loading}
-                  className="px-3 py-1.5 bg-gray-800 border border-gray-700 text-xs font-bold rounded-lg text-white hover:bg-gray-700 disabled:opacity-40 cursor-pointer transition-colors"
+                  className="jbh-admin-secondary px-4 py-2 text-xs font-semibold disabled:opacity-40"
                 >
                   ← Prev
                 </button>
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages || loading}
-                  className="px-3 py-1.5 bg-gray-800 border border-gray-700 text-xs font-bold rounded-lg text-white hover:bg-gray-700 disabled:opacity-40 cursor-pointer transition-colors"
+                  className="jbh-admin-secondary px-4 py-2 text-xs font-semibold disabled:opacity-40"
                 >
                   Next →
                 </button>

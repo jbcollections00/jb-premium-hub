@@ -22,15 +22,15 @@ export default function AdminMessagesTab({ users = [] }) {
     },
     {
       id: 'new_content',
-      label: 'New Content Release',
-      title: 'New Content Available in Vault',
-      content: 'Exclusive new media has just been added to the Vault. Log in to explore the latest updates.'
+      label: 'New content release',
+      title: 'New media available',
+      content: 'New media is available on JB Premium Hub. Sign in to explore the latest uploads.'
     },
     {
       id: 'new_code',
-      label: 'VIP Access Code Delivery',
+      label: 'Access code delivery',
       title: 'Your VIP Access Code',
-      content: 'Thank you for your purchase. Below is your VIP Access Code:\n\n[INSERT_CODE_HERE]\n\nYou can redeem this code directly in your Account Profile settings.'
+      content: 'Here is your access code:\n\n[INSERT_CODE_HERE]\n\nYou can redeem your code from My account. If you paid with PayMongo, your membership activates automatically after payment confirmation.'
     },
     {
       id: 'support_update',
@@ -137,15 +137,14 @@ export default function AdminMessagesTab({ users = [] }) {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl font-sans">
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Compose Admin Message</h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Dispatch direct messages, account updates, or system-wide announcements to registered users.
-        </p>
-      </div>
+    <div className="jbh-admin-page space-y-6">
+      <header className="jbh-admin-page-head">
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-100">Communication</p>
+        <h1 className="mt-2">Messages & announcements</h1>
+        <p className="mt-2 text-sm">Send announcements, updates and direct messages to members.</p>
+      </header>
 
-      <form onSubmit={handleSendMessage} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-5 shadow-xl">
+      <form onSubmit={handleSendMessage} className="jbh-admin-panel space-y-6 p-5 sm:p-7">
         
         {/* Status Alert Banner */}
         {statusMsg.text && (
@@ -168,7 +167,7 @@ export default function AdminMessagesTab({ users = [] }) {
           <select
             value={selectedUser}
             onChange={(e) => setSelectedUser(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs font-medium focus:outline-none focus:border-red-500 transition-colors cursor-pointer"
+            className="jbh-admin-input w-full px-4 py-3 text-sm"
           >
             <option value="">-- Select Target User --</option>
             <option value="ALL" className="font-bold text-amber-400">
@@ -183,13 +182,13 @@ export default function AdminMessagesTab({ users = [] }) {
         </div>
 
         {/* Template Selector */}
-        <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80 space-y-2">
+        <div className="jbh-admin-muted-panel space-y-3 p-4">
           <label className="block text-xs font-semibold text-amber-400 uppercase tracking-wider">
             ⚡ Quick Load Preset Template
           </label>
           <select
             onChange={handleSelectTemplate}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 text-xs font-medium focus:outline-none focus:border-amber-500 transition-colors cursor-pointer"
+            className="jbh-admin-input w-full px-4 py-2.5 text-sm"
           >
             {MESSAGE_TEMPLATES.map((tmpl) => (
               <option key={tmpl.id} value={tmpl.id}>
@@ -208,8 +207,8 @@ export default function AdminMessagesTab({ users = [] }) {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. VIP Subscription Code Delivery"
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-red-500 transition-colors"
+            placeholder="e.g. New media update"
+            className="jbh-admin-input w-full px-4 py-3 text-sm"
           />
         </div>
 
@@ -222,13 +221,13 @@ export default function AdminMessagesTab({ users = [] }) {
             rows={5}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Write message details or paste code specifications..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white text-xs focus:outline-none focus:border-red-500 transition-colors resize-none"
+            placeholder="Write your announcement or member message..."
+            className="jbh-admin-input w-full p-4 text-sm resize-y"
           />
         </div>
 
         {/* Media Attachments */}
-        <div className="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+        <div className="jbh-admin-muted-panel space-y-3 p-4">
           <label className="block text-xs font-semibold text-sky-400 uppercase tracking-wider">
             📎 Media Attachment (Optional)
           </label>

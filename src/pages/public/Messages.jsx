@@ -487,7 +487,7 @@ export default function Messages() {
                         {!item.is_read && (
                           <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0 inline-block animate-pulse" />
                         )}
-                        {item.title || "Opisyal na Abiso"}
+                        {item.title || "Announcement"}
                       </h3>
 
                       <p className="text-xs text-slate-400 line-clamp-2 mt-1">
@@ -519,13 +519,13 @@ export default function Messages() {
                   <div className="pb-6 border-b border-slate-800">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-sm shadow-md shrink-0">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-500 font-bold text-white text-sm shadow-md">
                           JB
                         </div>
                         <div>
                           <h2 className="text-md font-bold text-white flex items-center gap-2">
-                            JB Vault Admin
-                            <span className="bg-red-950 text-red-400 text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider border border-red-900/50">
+                            JB Premium Hub
+                            <span className="rounded-md border border-indigo-400/25 bg-indigo-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-200">
                               Official
                             </span>
                           </h2>
@@ -566,7 +566,7 @@ export default function Messages() {
                     </div>
 
                     <h1 className="text-xl font-bold text-white mt-4 flex items-center gap-2">
-                      <span>🔑</span> {selectedMessage.title || "Opisyal na Abiso"}
+                      <span>🔑</span> {selectedMessage.title || "Announcement"}
                     </h1>
                   </div>
 

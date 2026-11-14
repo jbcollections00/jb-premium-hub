@@ -124,7 +124,7 @@ export default function Header() {
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-3 sm:px-6">
         <Link to="/home" className="group flex min-w-0 items-center gap-2.5" aria-label="JB Premium Hub home">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-400/20 bg-slate-900/80 p-1 shadow-[0_0_24px_rgba(99,102,241,0.12)]">
-            <img src="/logo.png" alt="" className="h-full w-full object-contain" />
+            <img src="/jb-logo.png" alt="" className="h-full w-full object-contain" />
           </span>
           <span className="hidden flex-col sm:flex">
             <span className="text-sm font-black tracking-[.11em] text-slate-100 md:text-base">

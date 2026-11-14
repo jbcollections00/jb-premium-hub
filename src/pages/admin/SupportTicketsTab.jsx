@@ -25,21 +25,10 @@ export default function SupportTicketsTab({ supabase }) {
 
   // Quick Response Templates
   const QUICK_TEMPLATES = [
-    {
-      id: 'thank_you',
-      label: '🎁 VIP Approval & Thank You',
-      text: `Thank you for your payment! Your payment proof has been verified, and your VIP Access is now active.\n\nThank you for supporting our platform! Enjoy your access.`
-    },
-    {
-      id: 'vip_benefits',
-      label: '⭐ VIP Member Benefits List',
-      text: `🎉 Welcome to VIP Membership! Here are your exclusive VIP Benefits:\n\n✨ Full Unlimited Access to all Vault Videos\n🚀 Priority High-Speed Streaming & Media Access\n🎟️ Automatic Entry to Contests & Exclusive Events\n🎧 Priority 24/7 Customer Support\n\nThank you for being a valued VIP member!`
-    },
-    {
-      id: 'request_receipt',
-      label: '⚠️ Request Clearer Receipt',
-      text: `Hello,\n\nWe received your support ticket, but the payment receipt uploaded was unclear or incomplete. Please reply with a full, clear screenshot of your transaction reference number so we can process your VIP status immediately.\n\nThank you!`
-    }
+    { id: 'thank_you', label: 'Thank you & follow-up', text: 'Thank you for contacting JB Premium Hub support. We have reviewed your message and will share an update once your request has been resolved.' },
+    { id: 'vip_benefits', label: 'Membership benefits', text: 'Standard includes one month of media access with advertisements and no downloads. VIP includes one month of access without advertisements and with downloads. PayMongo membership access begins automatically only after payment has been verified.' },
+    { id: 'request_receipt', label: 'Payment status check', text: 'Thank you for reaching out about your payment. Please include the checkout reference and approximate payment date. Our team will check the verified PayMongo payment status. Please do not submit another payment while your first payment is being reviewed.' }
+
   ];
 
   useEffect(() => {
@@ -274,17 +263,17 @@ export default function SupportTicketsTab({ supabase }) {
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-120px)] bg-slate-950 text-slate-100 rounded-xl border border-slate-800 overflow-hidden">
+    <section className="jbh-admin-page jbh-admin-panel flex min-h-[650px] flex-col overflow-hidden">
 
       {!selectedTicket ? (
         <>
           {/* =========================
               TICKET LIST VIEW
              ========================= */}
-          <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+          <div className="jbh-admin-page-head rounded-none border-0 border-b p-5 sm:p-7">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-white">Support Tickets</h2>
+                <h2>Support tickets</h2>
                 <p className="text-xs text-slate-400 mt-1">
                   Select a ticket to open the full conversation.
                 </p>
@@ -292,7 +281,7 @@ export default function SupportTicketsTab({ supabase }) {
 
               <button
                 onClick={fetchTickets}
-                className="self-start lg:self-auto px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors flex items-center gap-2 text-xs font-semibold"
+                className="jbh-admin-secondary flex items-center gap-2 self-start px-4 py-2.5 text-xs font-semibold lg:self-auto"
                 title="Refresh List"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -308,14 +297,14 @@ export default function SupportTicketsTab({ supabase }) {
                   placeholder="Search user email or name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-slate-700"
+                  className="jbh-admin-input w-full py-2.5 pl-10 pr-4 text-sm"
                 />
               </div>
 
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-slate-300 focus:outline-none sm:w-48"
+                className="min-w-44 px-3 py-2.5 text-sm"
               >
                 <option value="all">All Statuses</option>
                 <option value="open">Open</option>
@@ -367,7 +356,7 @@ export default function SupportTicketsTab({ supabase }) {
                       type="button"
                       key={ticket.id}
                       onClick={() => setSelectedTicket(ticket)}
-                      className="text-left bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-4 transition-all group"
+                      className="jbh-admin-feature-card group p-5 text-left transition-all"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -412,7 +401,7 @@ export default function SupportTicketsTab({ supabase }) {
           {/* =========================
               FULL TICKET VIEW
              ========================= */}
-          <div className="p-4 border-b border-slate-800 bg-slate-900/60 flex flex-col gap-3 shrink-0">
+          <div className="jbh-admin-page-head flex shrink-0 flex-col gap-3 rounded-none border-0 border-b p-5">
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
@@ -627,7 +616,7 @@ export default function SupportTicketsTab({ supabase }) {
           {/* Reply area */}
           <form
             onSubmit={handleSendReply}
-            className="p-4 border-t border-slate-800 bg-slate-900/50 shrink-0 space-y-3"
+            className="jbh-admin-muted-panel shrink-0 space-y-3 rounded-none border-0 border-t p-5"
           >
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 shrink-0">
@@ -673,7 +662,7 @@ export default function SupportTicketsTab({ supabase }) {
               <button
                 type="submit"
                 disabled={submitting || !replyText.trim()}
-                className="px-6 py-3 sm:py-0 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold text-sm rounded-lg flex items-center justify-center gap-2 transition-colors shrink-0 cursor-pointer"
+                className="jbh-admin-primary flex shrink-0 items-center justify-center gap-2 px-6 py-3 text-sm font-semibold disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
                 <span>{submitting ? 'Sending...' : 'Send'}</span>
@@ -682,6 +671,6 @@ export default function SupportTicketsTab({ supabase }) {
           </form>
         </>
       )}
-    </div>
+    </section>
   );
 }

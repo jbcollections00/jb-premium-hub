@@ -46,7 +46,7 @@ export default function AdminMediaTab() {
   const [
     notifyUsers,
     setNotifyUsers,
-  ] = useState(true);
+  ] = useState(false); // Opt in to mass announcements; never auto-send by default.
 
   const [
     thumbnailBackfillLoading,
@@ -136,12 +136,12 @@ export default function AdminMediaTab() {
   ========================================================= */
 
   const createNeutralThumbnailDataUrl = (
-    category = "Vault Content"
+    category = "JB Media"
   ) => {
     const cleanCategory =
       String(
         category ||
-          "Vault Content"
+          "JB Media"
       )
         .replace(
           /[<>&"'`]/g,
@@ -316,55 +316,43 @@ export default function AdminMediaTab() {
 
   const fetchMedia =
     async () => {
+      const batchSize = 1000;
       try {
-        const {
-          data: mediaData,
-          count: mediaCount,
-          error,
-        } =
-          await supabase
-            .from("media")
-            .select(
-              "*",
-              {
-                count:
-                  "exact",
-              }
-            )
-            .order(
-              "created_at",
-              {
-                ascending:
-                  false,
-              }
-            );
+        const allMedia = [];
+        let total = null;
+        let offset = 0;
 
-        if (error) {
-          throw error;
+        // Supabase's default PostgREST row cap is 1,000. Fetch the complete
+        // library in pages so filters, duplicate review, and cover counts
+        // are based on all records rather than only the first page.
+        for (;;) {
+          const { data, count, error } = await supabase
+            .from("media")
+            .select("*", { count: offset === 0 ? "exact" : undefined })
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(offset, offset + batchSize - 1);
+
+          if (error) throw error;
+          if (offset === 0) total = count;
+
+          const rows = data || [];
+          allMedia.push(...rows);
+          offset += rows.length;
+
+          if (rows.length < batchSize || (total !== null && offset >= total)) {
+            break;
+          }
         }
 
-        setMediaList(
-          mediaData ||
-            []
-        );
-
-        setTotalMediaCount(
-          mediaCount ||
-            0
-        );
+        setMediaList(allMedia);
+        setTotalMediaCount(total ?? allMedia.length);
       } catch (error) {
-        console.error(
-          "Failed to fetch media:",
-          error
-        );
-
-        setMediaList(
-          []
-        );
-
-        setTotalMediaCount(
-          0
-        );
+        console.error("Failed to load complete media library:", error);
+        // Do not imply that a partial load represents the complete catalog.
+        setMediaList([]);
+        setTotalMediaCount(0);
+        window.alert("Could not load the media library. Please refresh and try again.");
       }
     };
 
@@ -958,7 +946,7 @@ export default function AdminMediaTab() {
               const thumbnailUrl =
                 createNeutralThumbnailDataUrl(
                   item.category ||
-                    "Vault Content"
+                    "JB Media"
                 );
 
               const {
@@ -1146,7 +1134,7 @@ export default function AdminMediaTab() {
 
               let thumbnailUrl =
                 createNeutralThumbnailDataUrl(
-                  "Vault Content"
+                  "JB Media"
                 );
 
               /* =============================================
@@ -1197,7 +1185,7 @@ export default function AdminMediaTab() {
                         thumbnailUrl,
 
                       category:
-                        "Vault Content",
+                        "JB Media",
 
                       type:
                         "video",
@@ -1478,7 +1466,7 @@ export default function AdminMediaTab() {
               thumbnail_url:
                 createNeutralThumbnailDataUrl(
                   item.category ||
-                    "Vault Content"
+                    "JB Media"
                 ),
             })
             .eq(
@@ -1674,39 +1662,6 @@ export default function AdminMediaTab() {
     };
 
   /* =========================================================
-     DELETE ALL
-  ========================================================= */
-
-  const handleDeleteAllMedia =
-    async () => {
-      if (
-        !window.confirm(
-          "⚠️ BABALA: Sigurado ka bang gusto mong burahin ang LAHAT ng videos?"
-        )
-      ) {
-        return;
-      }
-
-      const {
-        error,
-      } =
-        await supabase
-          .from(
-            "media"
-          )
-          .delete()
-          .not(
-            "id",
-            "is",
-            null
-          );
-
-      if (!error) {
-        fetchMedia();
-      }
-    };
-
-  /* =========================================================
      COPY LINK
   ========================================================= */
 
@@ -1790,25 +1745,23 @@ export default function AdminMediaTab() {
   ========================================================= */
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="jbh-admin-page mx-auto max-w-7xl space-y-6">
 
       {/* =====================================================
           HEADER
       ===================================================== */}
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+      <header className="jbh-admin-page-head flex flex-col justify-between gap-5 xl:flex-row xl:items-center">
 
         <div>
 
-          <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+          <h1 className="flex flex-wrap items-center gap-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
 
             <span>
-              Vault Media Uploader
+              Media manager
             </span>
 
-            <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono font-semibold">
-              v4.0
-            </span>
+
 
           </h1>
 
@@ -1821,7 +1774,7 @@ export default function AdminMediaTab() {
 
         <div className="grid grid-cols-2 gap-3">
 
-          <div className="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl">
+          <div className="jbh-admin-stat flex items-center gap-4 p-4">
 
             <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
 
@@ -1855,7 +1808,7 @@ export default function AdminMediaTab() {
 
           </div>
 
-          <div className="bg-gradient-to-br from-slate-900 to-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 shadow-xl">
+          <div className="jbh-admin-stat flex items-center gap-4 p-4">
 
             <div className="p-3 bg-violet-500/10 border border-violet-500/20 rounded-xl text-violet-400">
               <span className="text-xl">
@@ -1879,13 +1832,13 @@ export default function AdminMediaTab() {
 
         </div>
 
-      </div>
+      </header>
 
       {/* =====================================================
           NAVIGATION
       ===================================================== */}
 
-      <div className="flex border-b border-slate-800 gap-2">
+      <div className="jbh-admin-subtabs flex flex-wrap gap-2">
 
         <button
           type="button"
@@ -1916,7 +1869,7 @@ export default function AdminMediaTab() {
             />
           </svg>
 
-          Uploaded Files Grid ({filteredMedia.length})
+          Media library ({filteredMedia.length.toLocaleString()} of {totalMediaCount.toLocaleString()})
 
         </button>
 
@@ -1949,7 +1902,7 @@ export default function AdminMediaTab() {
             />
           </svg>
 
-          Upload New Media
+          Upload media
 
         </button>
 
@@ -1961,7 +1914,7 @@ export default function AdminMediaTab() {
 
       {activeTab ===
         "upload" && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-md space-y-5">
+        <div className="jbh-admin-panel space-y-5 p-5 sm:p-7">
 
           <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <span>
@@ -1976,7 +1929,7 @@ export default function AdminMediaTab() {
             className="space-y-5"
           >
 
-            <div className="relative group border-2 border-dashed border-slate-700/80 hover:border-indigo-500/80 bg-slate-950/40 hover:bg-indigo-950/10 rounded-2xl p-12 transition-all duration-300 text-center cursor-pointer flex flex-col items-center justify-center">
+            <div className="jbh-admin-upload-drop group relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 text-center transition-all sm:p-12">
 
               <input
                 type="file"
@@ -2188,7 +2141,7 @@ export default function AdminMediaTab() {
                                 <img
                                   src={
                                     createNeutralThumbnailDataUrl(
-                                      "Vault Content"
+                                      "JB Media"
                                     )
                                   }
                                   alt=""
@@ -2238,7 +2191,7 @@ export default function AdminMediaTab() {
 
             {/* NOTIFY */}
 
-            <div className="flex items-center justify-between bg-slate-950/60 border border-slate-800 p-4 rounded-xl">
+            <div className="jbh-admin-muted-panel flex items-center justify-between gap-3 p-4">
 
               <label
                 htmlFor="notify-toggle"
@@ -2278,7 +2231,7 @@ export default function AdminMediaTab() {
                 uploadFiles.length ===
                   0
               }
-              className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-indigo-600/20 disabled:shadow-none cursor-pointer flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
+              className="jbh-admin-primary flex w-full items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold disabled:opacity-50"
             >
 
               <svg
@@ -2316,7 +2269,7 @@ export default function AdminMediaTab() {
 
           {/* TOOLBAR */}
 
-          <div className="flex flex-col md:flex-row justify-between items-center gap-3 bg-slate-900/40 border border-slate-800 p-3 rounded-2xl">
+          <div className="jbh-admin-panel flex flex-col items-stretch justify-between gap-3 p-4 md:flex-row md:items-center">
 
             <div className="flex flex-wrap items-center gap-2 w-full md:w-auto flex-1">
 
@@ -2440,18 +2393,6 @@ export default function AdminMediaTab() {
                 : `Generate Covers (${missingThumbnailCount})`}
             </button>
 
-            {mediaList.length >
-              0 && (
-              <button
-                type="button"
-                onClick={
-                  handleDeleteAllMedia
-                }
-                className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
-              >
-                Delete All Videos
-              </button>
-            )}
 
           </div>
 
@@ -2464,8 +2405,8 @@ export default function AdminMediaTab() {
               {duplicateGroups.length ===
               0 ? (
 
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
-                  ✨ Walang natagpuang duplicate na video sa iyong Vault!
+                <div className="jbh-admin-empty text-sm">
+                  No duplicate media found.
                 </div>
 
               ) : (
@@ -2478,7 +2419,7 @@ export default function AdminMediaTab() {
                       key={
                         group.cleanTitle
                       }
-                      className="bg-slate-900/60 border border-amber-500/30 rounded-2xl p-5 space-y-4 shadow-xl"
+                      className="jbh-admin-feature-card space-y-4 p-5"
                     >
 
                       <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-3 gap-2">
@@ -2607,15 +2548,15 @@ export default function AdminMediaTab() {
               {paginatedMedia.length ===
               0 ? (
 
-                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-500 text-xs">
+                <div className="jbh-admin-empty text-sm">
                   {searchQuery
-                    ? "Walang nahanap na video sa search."
-                    : "Wala pang nakaupload na videos."}
+                    ? "No media matched your search."
+                    : "No media uploaded yet."}
                 </div>
 
               ) : (
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
 
                   {paginatedMedia.map(
                     (
@@ -2625,7 +2566,7 @@ export default function AdminMediaTab() {
                         key={
                           item.id
                         }
-                        className="bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 rounded-2xl overflow-hidden flex flex-col justify-between transition-all group shadow-lg hover:shadow-indigo-500/10"
+                        className="jbh-admin-feature-card group flex flex-col justify-between overflow-hidden transition-all"
                       >
 
                         {/* THUMBNAIL */}
@@ -2637,11 +2578,11 @@ export default function AdminMediaTab() {
                               item.thumbnail_url ||
                               createNeutralThumbnailDataUrl(
                                 item.category ||
-                                  "Vault Content"
+                                  "JB Media"
                               )
                             }
-                            alt=""
-                            className="w-full h-full object-cover"
+                            alt={item.title ? `Thumbnail for ${item.title}` : "Media thumbnail"}
+                            className="h-full w-full object-contain p-2"
                             loading="lazy"
                           />
 
@@ -2886,7 +2827,7 @@ export default function AdminMediaTab() {
 
               {totalPages >
                 1 && (
-                <div className="flex items-center justify-between bg-slate-900/40 border border-slate-800 p-4 rounded-2xl">
+                <div className="jbh-admin-panel flex flex-wrap items-center justify-between gap-3 p-4">
 
                   <span className="text-xs text-slate-400 font-mono">
                     Page{" "}
@@ -2897,7 +2838,7 @@ export default function AdminMediaTab() {
                     <strong className="text-white">
                       {totalPages}
                     </strong>{" "}
-                    ({filteredMedia.length} Total Items)
+                    ({filteredMedia.length.toLocaleString()} matching · {totalMediaCount.toLocaleString()} in library)
                   </span>
 
                   <div className="flex items-center gap-2">
