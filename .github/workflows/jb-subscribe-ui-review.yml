@@ -12,6 +12,7 @@ on:
       - 'src/pages/public/Subscribe.jsx'
       - 'src/pages/public/BuyVip.jsx'
       - 'src/pages/public/Profile.jsx'
+      - 'supabase/migrations/20261114190000_jb_billing_my_history_v1.sql'
       - 'package-lock.json'
       - '.github/workflows/jb-subscribe-ui-review.yml'
   workflow_dispatch:
@@ -46,10 +47,10 @@ jobs:
           assert.match(page, /CHECKOUT_UI_MODE === 'tester'/);
           assert.match(page, /user\?\.id\?\.toLowerCase\(\) === TESTER_UI_USER_ID/);
           assert.match(page, /CHECKOUT_UI_MODE === 'public'/);
-          assert.match(page, /params\.get\('checkout_debug'\) === '1'/);
-          assert.match(page, /Read-only checkout diagnostics/);
-          assert.match(page, /Valid tester UUID configured/);
-          assert.match(page, /Signed-in account matches tester/);
+          assert.doesNotMatch(page, /checkout_debug/);
+          assert.doesNotMatch(page, /Read-only checkout diagnostics/);
+          assert.doesNotMatch(page, /QA ONLY/);
+          assert.match(page, /One-time payment/);
           assert.match(page, /const SITE_ORIGIN = 'https:\/\/www\.jb-premium-hub\.vip'/);
           assert.match(page, /window\.location\.origin === SITE_ORIGIN/);
           assert.match(page, /disabled=\{!checkoutUiEnabled/);
@@ -116,6 +117,20 @@ jobs:
           assert.match(home,/onClick=\{\(\) => setShowRedeemModal\(true\)\}/);
           assert.match(home,/Redeem Code/);
           assert.match(layout,/getBillingAccess\(\)/);
+          // Prevent premature third-party ad script injection on VIP or account pages.
+          assert.match(layout,/location\.pathname === "\/home" && showSocialBar/);
+          assert.match(layout,/membership\.tier === "standard" && membership\.showAds === true/);
+          assert.doesNotMatch(layout,/setShowSocialBar\(\s*true\s*\)/);
+          // Payment history is auth-scoped, read-only, and excludes secrets.
+          const profile = readFileSync('src/pages/public/Profile.jsx','utf8');
+          const historySql = readFileSync('supabase/migrations/20261114190000_jb_billing_my_history_v1.sql','utf8');
+          assert.match(profile,/jb_billing_my_history_v1/);
+          assert.match(historySql,/o\.user_id = \(SELECT auth\.uid\(\)\)/);
+          assert.match(historySql,/o\.provider_environment = 'live'/);
+          assert.match(historySql,/SECURITY DEFINER/);
+          assert.match(historySql,/REVOKE ALL ON FUNCTION.*FROM PUBLIC/);
+          assert.match(historySql,/GRANT EXECUTE ON FUNCTION.*TO authenticated/);
+          assert.doesNotMatch(historySql,/PAYMONGO_LIVE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY/);
           assert.match(player,/typeof isAdFreeProp === "boolean"/);
           console.log('PASS: membership entitlement parsing and integration checks');
           NODE

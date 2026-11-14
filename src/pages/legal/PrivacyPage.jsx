@@ -3,13 +3,13 @@ import { Lock, Eye, Database, ShieldAlert } from 'lucide-react';
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="jbh-page min-h-screen text-slate-200">
       <div className="max-w-4xl mx-auto space-y-8">
         
         {/* Header */}
-        <div className="border-b border-slate-800 pb-6">
+        <div className="border-b border-white/10 pb-6">
           <h1 className="text-3xl font-extrabold text-white flex items-center gap-3">
-            <Lock className="w-8 h-8 text-purple-500" /> Privacy Policy
+            <Lock className="h-8 w-8 text-indigo-300" /> Privacy Policy
           </h1>
           <p className="text-slate-400 text-sm mt-2">
             Paano namin pinoprotektahan at pinapangalagaan ang iyong impormasyon.
@@ -17,7 +17,7 @@ export default function PrivacyPage() {
         </div>
 
         {/* Content Box */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 text-sm leading-relaxed text-slate-300">
+        <div className="jbh-surface space-y-6 p-6 text-sm leading-relaxed text-slate-300 sm:p-8">
           <section className="space-y-2">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <Database className="w-4 h-4 text-purple-400" /> Impormasyong Aming Kinokolekta

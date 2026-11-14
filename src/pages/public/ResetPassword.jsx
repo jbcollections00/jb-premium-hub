@@ -17,7 +17,7 @@ export default function ResetPassword() {
       if (!session) {
         setMsg({
           type: 'error',
-          text: '⛔ Invalid or expired password reset link. Please request a new one.',
+          text: 'This reset link has expired. Please request a new one.',
         });
       }
     };
@@ -63,10 +63,10 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl max-w-md w-full shadow-2xl">
+    <div className="jbh-auth">
+      <div className="jbh-auth-card">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600/10 border border-blue-500/20 text-blue-400 text-2xl mb-3">
+          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl border border-indigo-400/25 bg-indigo-400/10 text-2xl text-indigo-300">
             🔑
           </div>
           <h2 className="text-2xl font-bold text-white">Reset Password</h2>
@@ -98,7 +98,7 @@ export default function ResetPassword() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Minimum 6 characters"
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+              className="jbh-field text-sm"
             />
           </div>
 
@@ -111,14 +111,14 @@ export default function ResetPassword() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Re-type new password"
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+              className="jbh-field text-sm"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
+            className="jbh-btn mt-2 w-full"
           >
             {loading ? 'Updating Password...' : 'Save New Password'}
           </button>

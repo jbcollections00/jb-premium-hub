@@ -408,19 +408,19 @@ export default function Messages() {
   const unreadCount = messages.filter((m) => !m.is_read).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-6 lg:p-8">
+    <div className="jbh-page min-h-screen text-white">
       <div className="max-w-6xl mx-auto">
         
         {/* Header Section */}
         <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <span className="p-2 bg-red-600/10 border border-red-600/20 rounded-xl text-red-500">
+          <h1 className="flex items-center gap-3 text-2xl font-extrabold tracking-tight text-white md:text-3xl">
+            <span className="rounded-xl border border-indigo-400/25 bg-indigo-500/10 p-2 text-indigo-300">
               📢
             </span>
-            Admin Announcements
+            Messages
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Mga opisyal na abiso at mensahe mula sa JB Premium Vault Admin.
+            Updates and announcements from JB Premium Hub.
           </p>
         </div>
 
@@ -429,13 +429,13 @@ export default function Messages() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
           </div>
         ) : messages.length === 0 ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center shadow-lg my-8">
+          <div className="jbh-surface my-8 p-10 text-center">
             <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500 text-2xl">
               📥
             </div>
-            <h3 className="text-lg font-bold text-white">Walang Bagong Mensahe</h3>
+            <h3 className="text-lg font-bold text-white">All caught up</h3>
             <p className="text-slate-400 text-sm mt-1 max-w-md mx-auto">
-              Wala pang ipinapadalang abiso o announcement ang Admin sa ngayon.
+              New updates will appear here.
             </p>
           </div>
         ) : (

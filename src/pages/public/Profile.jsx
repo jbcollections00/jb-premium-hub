@@ -28,6 +28,10 @@ export default function Profile() {
   // An RPC failure must not be mistaken for a free or standard membership.
   const [liveMembership, setLiveMembership] = useState(null);
   const [liveMembershipError, setLiveMembershipError] = useState(false);
+  // Payment history comes from an auth-scoped, read-only billing RPC.
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(true);
+  const [paymentHistoryError, setPaymentHistoryError] = useState(false);
 
   const [
     expirationDate,
@@ -194,6 +198,45 @@ export default function Profile() {
 
   useEffect(() => {
     fetchUserData();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPaymentHistory = async () => {
+      if (active) {
+        setPaymentHistoryLoading(true);
+        setPaymentHistoryError(false);
+      }
+
+      try {
+        const { data, error } = await supabase.rpc("jb_billing_my_history_v1");
+        if (error) throw error;
+        if (!Array.isArray(data)) throw new Error("Payment history response unavailable.");
+
+        if (active) {
+          setPaymentHistory(data);
+          setPaymentHistoryError(false);
+        }
+      } catch (error) {
+        console.error("Could not load payment history:", error);
+        if (active) {
+          setPaymentHistory([]);
+          setPaymentHistoryError(true);
+        }
+      } finally {
+        if (active) setPaymentHistoryLoading(false);
+      }
+    };
+
+    void loadPaymentHistory();
+
+    // Refresh after returning from the PayMongo checkout or switching tabs.
+    window.addEventListener("focus", loadPaymentHistory);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", loadPaymentHistory);
+    };
   }, []);
 
   /* =========================================================
@@ -1514,21 +1557,21 @@ export default function Profile() {
         "How do I activate or extend my VIP membership?",
 
       a:
-        "Enter your purchased Access Code in the 'Redeem Access Code' section above. Extra days automatically stack onto your current subscription expiration.",
+        "Choose a plan to pay securely with PayMongo, or redeem a valid access code in your account.",
     },
     {
       q:
         "What happens when my VIP status expires?",
 
       a:
-        "Your account reverts to Standard status until renewed.",
+        "Your paid access ends at expiry unless another active entitlement applies. You can renew from the Plans page.",
     },
     {
       q:
         "How can I buy an Access Code?",
 
       a:
-        "Use the account's purchase page or contact Admin Support.",
+        "Choose a membership plan on the Plans page, or contact support about access codes.",
     },
   ];
 
@@ -1542,7 +1585,7 @@ export default function Profile() {
     "";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10 font-sans">
+    <div className="jbh-page min-h-screen text-white">
       <div className="max-w-5xl mx-auto space-y-8">
 
         {/* =================================================
@@ -1550,15 +1593,14 @@ export default function Profile() {
         ================================================= */}
 
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            Account Dashboard
+          <h1 className="jbh-title">
+            My account
           </h1>
 
           <p className="text-slate-400 text-sm mt-1">
             Manage your profile,
-            active subscription
-            status, and security
-            settings.
+            membership, payment history,
+            and security settings.
           </p>
         </div>
 
@@ -1578,9 +1620,9 @@ export default function Profile() {
                 PROFILE CARD
             ================================================= */}
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-xl relative overflow-hidden">
+            <div className="jbh-surface relative overflow-hidden p-6 text-center">
 
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-600 via-amber-500 to-amber-300" />
+              <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-indigo-500 via-violet-400 to-sky-400" />
 
               <div className="w-24 h-24 mx-auto bg-slate-800 rounded-full flex items-center justify-center border-4 border-slate-950 shadow-inner my-3 relative overflow-visible">
 
@@ -1660,9 +1702,9 @@ export default function Profile() {
                     "/subscribe"
                   )
                 }
-                className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 px-4 rounded-xl shadow-lg shadow-amber-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider"
+                className="jbh-btn mt-4 w-full text-sm"
               >
-                {isPaidMember ? "👑 View / Renew Membership" : "👑 Choose STANDARD / VIP Plan"}
+                {isPaidMember ? "Manage membership" : "Explore membership plans"}
               </button>
 
               {/* VIP COUNTDOWN */}
@@ -2317,45 +2359,96 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* =================================================
-                DANGER ZONE
-            ================================================= */}
 
-            <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl">
-
-              <h3 className="text-lg font-bold text-rose-400 mb-2 flex items-center gap-2">
-                ⚠️ Danger Zone
-              </h3>
-
-              <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                Permanently remove your
-                account and access to any
-                active VIP memberships.
-                This action cannot be
-                undone.
-              </p>
-
-              <button
-                onClick={() => {
-                  setDeleteError(
-                    ""
-                  );
-
-                  setDeleteConfirmText(
-                    ""
-                  );
-
-                  setShowDeleteModal(
-                    true
-                  );
-                }}
-                className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2"
-              >
-                🗑️ Delete My Account
-              </button>
-            </div>
           </div>
         </div>
+
+
+        {/* =================================================
+            PAYMENT & CHECKOUT HISTORY
+            Auth-scoped RPC: current user's LIVE orders only.
+        ================================================= */}
+        <section className="jbh-surface p-6 sm:p-7" aria-labelledby="payment-history-heading">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 id="payment-history-heading" className="text-xl font-extrabold tracking-tight text-white">
+                Subscription & payment history
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Your PayMongo purchases and recent checkout activity.
+              </p>
+            </div>
+            <button type="button" onClick={() => navigate("/subscribe")}
+              className="jbh-btn-quiet text-xs font-semibold">
+              View plans
+            </button>
+          </div>
+
+          {paymentHistoryLoading ? (
+            <div role="status" className="mt-6 rounded-2xl border border-white/10 bg-slate-950/50 p-6 text-sm text-slate-400">
+              Loading your payment history…
+            </div>
+          ) : paymentHistoryError ? (
+            <div role="alert" className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-sm text-amber-200">
+              We couldn’t load your payment history right now. Please refresh or contact support.
+            </div>
+          ) : paymentHistory.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/50 p-6 text-sm text-slate-400">
+              You have no PayMongo checkout history yet.
+            </div>
+          ) : (
+            <div className="mt-6 space-y-3">
+              {paymentHistory.map((entry) => {
+                const status = String(entry.status || "pending").toLowerCase();
+                const statusLabel = status === "paid" ? "Paid" :
+                  status === "pending" ? "Pending payment" :
+                  status === "cancelled" ? "Cancelled" :
+                  status === "refunded" ? "Refunded" :
+                  status === "failed" ? "Failed" : status.replaceAll("_", " ");
+                const statusClass = status === "paid"
+                  ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300"
+                  : status === "pending"
+                    ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+                    : "border-white/10 bg-white/5 text-slate-300";
+                const amount = Number(entry.amount_centavos);
+                const price = Number.isFinite(amount)
+                  ? new Intl.NumberFormat("en-PH", {
+                      style: "currency",
+                      currency: "PHP",
+                    }).format(amount / 100)
+                  : "—";
+                const orderedAt = entry.created_at && !Number.isNaN(new Date(entry.created_at).getTime())
+                  ? new Date(entry.created_at).toLocaleString("en-PH", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })
+                  : "Date unavailable";
+
+                return (
+                  <article key={entry.order_id} className="jbh-surface-soft flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold tracking-wide text-white">
+                        {String(entry.plan_code || "Membership").toUpperCase()} membership
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Checkout date: {orderedAt}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Reference: {String(entry.order_id || "").slice(0, 8).toUpperCase()}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className={"rounded-full border px-3 py-1 text-xs font-semibold " + statusClass}>
+                        {statusLabel}
+                      </span>
+                      <strong className="text-base text-white">{price}</strong>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* =================================================
             SUBSCRIPTION HISTORY
@@ -2364,13 +2457,11 @@ export default function Profile() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
 
           <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-            📜 Subscription Code
-            History
+            Access code history
           </h3>
 
           <p className="text-xs text-slate-400 mb-4">
-            Record of all codes you
-            have successfully redeemed.
+            Your redeemed access codes are listed separately from online payments.
           </p>
 
           <div className="overflow-x-auto">
@@ -2554,6 +2645,26 @@ export default function Profile() {
             </div>
           </div>
         </div>
+        {/* =================================================
+            ACCOUNT DELETION — LAST SETTING
+        ================================================= */}
+        <section className="mt-8 rounded-2xl border border-rose-400/20 bg-slate-900/60 p-6 sm:p-7" aria-labelledby="account-deletion-heading">
+          <h2 id="account-deletion-heading" className="text-base font-bold text-rose-300">Account deletion</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+            Permanently delete your account and any active membership access. This action cannot be undone.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteError("");
+              setDeleteConfirmText("");
+              setShowDeleteModal(true);
+            }}
+            className="mt-4 inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/20"
+          >
+            Delete my account
+          </button>
+        </section>
       </div>
 
       {/* =================================================

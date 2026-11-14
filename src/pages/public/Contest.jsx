@@ -90,18 +90,18 @@ export default function Contest() {
   const currentReferrals = contestData?.qualified_referrals_count || 0;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10 font-sans">
+    <div className="jbh-page min-h-screen text-white">
       <div className="max-w-3xl mx-auto space-y-6">
         
         {/* Event Header Banner */}
-        <div className="relative rounded-2xl overflow-hidden border border-amber-500/30 bg-slate-900 shadow-2xl">
+        <div className="jbh-surface relative overflow-hidden">
           <img
             src={activeEvent.banner_url || "/contest-banner-placeholder.png"}
             alt="Contest Banner"
             className="w-full h-56 object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent p-6 flex flex-col justify-end">
-            <span className="bg-amber-500 text-slate-950 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full w-max mb-2">
+            <span className="mb-2 w-max rounded-full border border-indigo-400/30 bg-indigo-500/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-200">
               Official Site Event
             </span>
             <h1 className="text-3xl font-black">{activeEvent.title}</h1>
@@ -111,7 +111,7 @@ export default function Contest() {
 
         {/* User Invite & Progress Section */}
         {userProfile ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+          <div className="jbh-surface space-y-6 p-6">
             <div>
               <h2 className="text-lg font-bold text-amber-400">🎁 Your Exclusive Invite Link</h2>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -128,7 +128,7 @@ export default function Contest() {
               />
               <button
                 onClick={handleCopy}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-6 py-3 rounded-xl transition-all cursor-pointer shrink-0"
+                className="jbh-btn shrink-0 text-xs"
               >
                 {copied ? "✓ Copied!" : "📋 Copy Link"}
               </button>
@@ -161,7 +161,7 @@ export default function Contest() {
         )}
 
         {/* Rules Section */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3">
+        <div className="jbh-surface space-y-3 p-6">
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">📜 Challenge Rules</h3>
           <ul className="text-xs text-slate-400 space-y-2 list-disc list-inside">
             <li>Invited users must register using your unique link.</li>
