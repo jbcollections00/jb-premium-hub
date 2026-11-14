@@ -130,14 +130,14 @@ export default function AdminMembershipModal({ user, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-3 sm:p-6" role="presentation">
-      <div role="dialog" aria-modal="true" aria-label={`Manage membership for ${displayName}`} className="w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 text-white shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 bg-slate-900 border-b border-slate-800 p-4 sm:p-5">
+      <div role="dialog" aria-modal="true" aria-label={`Manage membership for ${displayName}`} className="jbh-admin-dialog max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border text-white shadow-2xl">
+        <div className="jbh-admin-dialog-head sticky top-0 z-10 flex items-start justify-between gap-4 border-b p-5 sm:p-6">
           <div className="min-w-0">
-            <h2 className="text-lg font-black">Manage Membership</h2>
+            <h2 className="text-xl font-extrabold tracking-tight">Membership management</h2>
             <p className="text-sm text-slate-300 break-words">{displayName}</p>
             <p className="font-mono text-[10px] text-slate-500 break-all">{user.id}</p>
           </div>
-          <button type="button" onClick={onClose} disabled={busy} className="text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700 px-3 py-2 rounded-lg text-xs disabled:opacity-40">Close</button>
+          <button type="button" onClick={onClose} disabled={busy} className="jbh-admin-dialog-quiet rounded-xl px-4 py-2 text-sm disabled:opacity-40">Close</button>
         </div>
 
         <div className="p-4 sm:p-5 space-y-5">
@@ -147,7 +147,7 @@ export default function AdminMembershipModal({ user, onClose }) {
             valid access tier; media RLS and private-media authorization must also allow that tier.
           </p>
 
-          <form onSubmit={handleGrant} className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+          <form onSubmit={handleGrant} className="jbh-admin-dialog-section space-y-4 rounded-2xl p-5">
             <h3 className="font-bold text-sm text-amber-400">Grant STANDARD / VIP</h3>
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="text-xs text-slate-300 space-y-1 flex flex-col">
@@ -166,7 +166,7 @@ export default function AdminMembershipModal({ user, onClose }) {
               Audit reason (required; up to 300 characters)
               <input type="text" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} disabled={busy} className="p-2.5 rounded-lg bg-slate-950 border border-slate-700 text-white" />
             </label>
-            <button type="submit" disabled={!ready} className="px-4 py-2.5 rounded-lg bg-amber-500 text-black text-xs font-black hover:bg-amber-400 disabled:opacity-40">
+            <button type="submit" disabled={!ready} className="jbh-admin-dialog-primary px-5 py-3 text-sm font-bold disabled:opacity-40">
               {busy ? "Saving..." : `Grant ${plan.toUpperCase()}`}
             </button>
           </form>
@@ -182,7 +182,7 @@ export default function AdminMembershipModal({ user, onClose }) {
                 {grants.map((grant) => {
                   const status = describeStatus(grant);
                   return (
-                    <div key={grant.id} className="border border-slate-800 rounded-xl p-3 bg-slate-900/70 space-y-2">
+                    <div key={grant.id} className="jbh-admin-dialog-section space-y-2 rounded-xl p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-black text-xs text-white">{String(grant.plan_code).toUpperCase()}</span>
                         <span className={`text-xs font-semibold ${status === "Active" ? "text-emerald-400" : "text-slate-400"}`}>{status}</span>

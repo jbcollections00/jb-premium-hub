@@ -134,7 +134,7 @@ export default function Footer() {
       <div className="mx-auto grid w-full max-w-7xl items-start gap-7 md:grid-cols-[1fr_auto] md:gap-10">
         <div>
           <Link to="/home" className="inline-flex items-center gap-3 text-slate-100" aria-label="JB Premium Hub home">
-            <img src="/logo.png" alt="" className="h-9 w-9 rounded-lg object-contain" />
+            <img src="/jb-logo.png" alt="" className="h-9 w-9 rounded-lg object-contain" />
             <span className="text-sm font-extrabold tracking-[.12em]">JB PREMIUM HUB</span>
           </Link>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-400">

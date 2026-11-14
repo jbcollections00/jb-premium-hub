@@ -74,7 +74,7 @@ export default function SupportPage() {
         
         {/* Header */}
         <div className="border-b border-white/10 pb-6 text-center sm:text-left">
-          <h1 className="text-3xl font-extrabold text-white flex items-center justify-center sm:justify-start gap-3">
+          <h1 className="flex items-center justify-center gap-3 text-3xl font-extrabold tracking-tight text-white sm:justify-start">
             <Headset className="h-8 w-8 text-indigo-300" /> Contact Support
           </h1>
           <p className="text-slate-400 text-sm mt-2">
@@ -89,11 +89,11 @@ export default function SupportPage() {
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
               <h2 className="text-xl font-bold text-white">Message Submitted!</h2>
               <p className="text-slate-400 text-sm max-w-md mx-auto">
-                Thank you for contacting the JB Support Team. Your message has been received and will be reviewed by an Admin shortly.
+                Thanks for contacting JB Premium Hub. Your message has been received and will be reviewed by our support team.
               </p>
               <button 
                 onClick={() => setSubmitted(false)}
-                className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition-colors cursor-pointer"
+                className="jbh-btn-quiet mt-4 text-sm"
               >
                 Send another message
               </button>
@@ -118,7 +118,7 @@ export default function SupportPage() {
                     placeholder="John Doe"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="jbh-field text-sm"
                   />
                 </div>
                 <div>
@@ -129,7 +129,7 @@ export default function SupportPage() {
                     placeholder="john@example.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="jbh-field text-sm"
                   />
                 </div>
               </div>
@@ -142,7 +142,7 @@ export default function SupportPage() {
                   placeholder="Membership, account or payment question"
                   value={formData.subject}
                   onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  className="jbh-field text-sm"
                 />
               </div>
 
@@ -154,7 +154,7 @@ export default function SupportPage() {
                   placeholder="Provide the details of your issue here..."
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+                  className="jbh-field resize-y text-sm"
                 />
               </div>
 
@@ -167,14 +167,14 @@ export default function SupportPage() {
                   type="file" 
                   accept="image/*,.pdf,.doc,.docx"
                   onChange={handleFileChange}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-400 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  className="jbh-field cursor-pointer text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-200"
                 />
               </div>
 
               <button 
                 type="submit"
                 disabled={loading}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white font-medium text-sm py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-900/30 mt-2"
+                className="jbh-btn mt-2 w-full text-sm disabled:opacity-50"
               >
                 {loading ? (
                   <>

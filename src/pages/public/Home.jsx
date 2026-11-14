@@ -855,7 +855,7 @@ export default function Home() {
     const shareUrl = `https://www.jb-premium-hub.vip/v/${selectedMedia.id}`;
     const shareData = {
       title: selectedMedia.title || "JB Premium Hub",
-      text: "Watch this video on JB Premium Hub Vault!",
+      text: "Watch this video on JB Premium Hub.",
       url: shareUrl,
     };
 
@@ -1045,10 +1045,7 @@ export default function Home() {
       console.info("JB Collections video download completed:", filename);
     } catch (error) {
       console.error("VIP video download failed:", error);
-      window.alert(
-        `Download failed: ${error?.message || "Unknown error"}. ` +
-        "If the Console shows a CORS/network error, the R2 VIDEO bucket must allow GET from https://www.jb-premium-hub.vip. Do not pay or retry checkout."
-      );
+      window.alert("We couldn't download this file. Please try again or contact support. Do not pay again for an existing membership.");
     } finally {
       downloadLockRef.current = false;
       setDownloadBusy(false);
@@ -1071,14 +1068,14 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-xl md:text-2xl font-black text-white tracking-wide">
-                    Most Watched
+                    Most watched
                   </h2>
                   <span className="rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
-                    Popular
+                    Trending
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Most played by the community
+                  Popular right now
                 </p>
               </div>
             </div>
@@ -1168,12 +1165,12 @@ export default function Home() {
                           />
                         ) : (
                           <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                            {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "No Display"}
+                            {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                           </div>
                         )}
 
                         <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                          <div className="w-10 h-10 bg-amber-500 group-hover:bg-red-600 text-black group-hover:text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
+                          <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
                             <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
                               <path d="M8 5v14l11-7z" />
                             </svg>
@@ -1207,7 +1204,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="p-6 bg-slate-950/40 border border-slate-800/60 rounded-2xl text-center text-slate-500 text-xs">
-              Wala pang karagdagang data para sa Most Watched videos.
+              Featured videos will appear here.
             </div>
           )}
         </div>
@@ -1216,7 +1213,7 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Media library</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-            Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
+            Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
           </span>
         </div>
 
@@ -1226,7 +1223,7 @@ export default function Home() {
             onClick={() => handleCategoryChange("all")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
               activeCategory === "all"
-                ? "bg-red-600 text-white"
+                ? "bg-indigo-600 text-white"
                 : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
             }`}
           >
@@ -1236,7 +1233,7 @@ export default function Home() {
             onClick={() => handleCategoryChange("pinay_asian")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
               activeCategory === "pinay_asian"
-                ? "bg-red-600 text-white"
+                ? "bg-indigo-600 text-white"
                 : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
             }`}
           >
@@ -1283,11 +1280,11 @@ export default function Home() {
                       />
                     ) : (
                       <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                        {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "No Display"}
+                        {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                       </div>
                     )}
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                      <div className="w-12 h-12 bg-red-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                      <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                         <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
                           <path d="M8 5v14l11-7z" />
                         </svg>
@@ -1417,8 +1414,8 @@ export default function Home() {
           >
             <div className="p-4 md:px-6 md:py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900 shrink-0">
               <div className="flex flex-col pr-4">
-                <span className="text-[10px] md:text-xs font-black text-red-500 uppercase tracking-widest">
-                  Video Vault
+                <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-[.12em] md:text-xs">
+                  Now playing
                 </span>
                 <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">
                   {selectedMedia.title}
