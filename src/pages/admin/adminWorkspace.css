@@ -1,0 +1,144 @@
+/*
+ * JB Premium Hub — Phase 313B
+ * One shared look for all operational admin tabs. CSS is scoped to .jbh-admin
+ * and .jbh-admin-page: it never changes the public store, membership or player.
+ */
+.jbh-admin {
+  --jba-ink: #f6faff;
+  --jba-muted: #b7c9e7;
+  --jba-line: rgba(172, 202, 251, .28);
+  --jba-panel: linear-gradient(155deg, #28446e 0%, #203b66 48%, #1a3157 100%);
+  --jba-field: #152944;
+}
+.jbh-admin-main { width: 100%; }
+.jbh-admin-page { max-width: 1280px; margin-inline: auto; color: var(--jba-ink); min-width: 0; }
+.jbh-admin-page,
+.jbh-admin-page * { box-sizing: border-box; }
+.jbh-admin-page h1,
+.jbh-admin-page h2,
+.jbh-admin-page h3 { letter-spacing: -.025em; }
+.jbh-admin-page .jbh-admin-page-head {
+  padding: 25px 28px;
+  background: linear-gradient(112deg, #2e60ba 0%, #446dc6 52%, #6852b3 100%);
+  border: 1px solid rgba(200, 221, 255, .42);
+  border-radius: 24px;
+  box-shadow: inset 0 1px rgba(255,255,255,.16), 0 16px 40px rgba(4,18,53,.20);
+}
+.jbh-admin-page .jbh-admin-page-head :is(h1,h2) { font-size: clamp(1.45rem, 2.35vw, 2.05rem); line-height: 1.2; font-weight: 800; color: #fff; }
+.jbh-admin-page .jbh-admin-page-head :is(p,small) { color: #e0eaff; }
+.jbh-admin-page .jbh-admin-page-head :is(.text-red-500, .text-indigo-400) { color: #b4e8ff; }
+.jbh-admin-page .jbh-admin-panel,
+.jbh-admin-page .jbh-admin-stat,
+.jbh-admin-page [class~="bg-white"],
+.jbh-admin-page [class~="bg-gray-50"] {
+  background: var(--jba-panel) !important;
+  border: 1px solid var(--jba-line) !important;
+  border-radius: 20px;
+  box-shadow: inset 0 1px rgba(255,255,255,.10), 0 15px 35px rgba(4,18,53,.12);
+  color: var(--jba-ink);
+}
+.jbh-admin-page .jbh-admin-stat { min-height: 92px; }
+.jbh-admin-page .jbh-admin-stat [class*="text-gray-400"],
+.jbh-admin-page .jbh-admin-stat [class*="text-slate-400"] { color: #bed0e9; }
+.jbh-admin-page .jbh-admin-panel-muted,
+.jbh-admin-page .jbh-admin-muted-panel {
+  background: rgba(12, 30, 57, .40);
+  border: 1px solid rgba(169, 198, 245, .19);
+  border-radius: 15px;
+}
+.jbh-admin-page [class~="bg-gray-900"],
+.jbh-admin-page [class~="bg-slate-900"] {
+  border-color: rgba(165, 198, 248, .20);
+}
+.jbh-admin-page [class~="bg-gray-950"],
+.jbh-admin-page [class~="bg-slate-950"] {
+  border-color: rgba(165, 198, 248, .18);
+}
+.jbh-admin-page :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+  min-height: 40px;
+  color: #f8fbff !important;
+  background: var(--jba-field) !important;
+  border: 1px solid rgba(170, 201, 250, .31) !important;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.11);
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.jbh-admin-page textarea { min-height: 85px; }
+.jbh-admin-page :is(input, textarea)::placeholder { color: #98accd; opacity: .9; }
+.jbh-admin-page :is(input, textarea, select):focus-visible {
+  outline: none !important;
+  border-color: #9cd9ff !important;
+  box-shadow: 0 0 0 3px rgba(95,172,255,.18) !important;
+}
+.jbh-admin-page :is(input, button, select, textarea):disabled { cursor: not-allowed; opacity: .55; }
+.jbh-admin-page :is(input, select, textarea) option { color: #101c31; background-color: #e5efff; }
+.jbh-admin-page .jbh-admin-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 42px; padding: 10px 18px;
+  border-radius: 12px; border: 1px solid rgba(189,221,255,.38);
+  color: #fff !important; font-size: .84rem; font-weight: 750;
+  background: linear-gradient(110deg,#346ddd,#6867e9) !important;
+  box-shadow: 0 10px 26px rgba(35,79,189,.22);
+  transition: filter .16s ease, transform .16s ease;
+}
+.jbh-admin-page .jbh-admin-primary:hover:not(:disabled) { filter: brightness(1.13); transform: translateY(-1px); }
+.jbh-admin-page .jbh-admin-secondary {
+  border-radius: 12px;
+  border: 1px solid rgba(177,205,249,.34);
+  color: #eef7ff !important; background: rgba(59,89,146,.37) !important;
+}
+.jbh-admin-page .jbh-admin-secondary:hover:not(:disabled) { background: rgba(79,111,174,.55) !important; }
+.jbh-admin-page .jbh-admin-page-head button.jbh-admin-secondary { background: rgba(255,255,255,.16) !important; border-color: rgba(255,255,255,.30); }
+.jbh-admin-page :is(button, a) { -webkit-tap-highlight-color: transparent; }
+.jbh-admin-page button { transition: background-color .16s, border-color .16s, filter .16s; }
+.jbh-admin-page :is(table, th, td) { border-color: rgba(180,206,248,.16); }
+.jbh-admin-page table { border-collapse: separate; border-spacing: 0; }
+.jbh-admin-page thead { background: rgba(13,28,54,.43); }
+.jbh-admin-page th { color: #d0e1fc; font-size: .70rem; font-weight: 750; letter-spacing: .055em; }
+.jbh-admin-page td { color: #e8f1ff; }
+.jbh-admin-page tbody tr { transition: background-color .16s; }
+.jbh-admin-page tbody tr:hover { background: rgba(92,140,213,.10); }
+.jbh-admin-page .jbh-admin-table { overflow-x: auto; }
+.jbh-admin-page .jbh-admin-table table { min-width: 680px; }
+.jbh-admin-page :is(.text-gray-900, .text-slate-900, .text-gray-800, .text-slate-800) { color: #f1f7ff; }
+.jbh-admin-page .jbh-admin-empty {
+  padding: 40px 20px; border: 1px dashed rgba(171,206,255,.35);
+  border-radius: 18px; text-align: center; color: #bdd2ef;
+  background: rgba(18,39,74,.45);
+}
+.jbh-admin-page .jbh-admin-subtabs {
+  display: flex; gap: .6rem; flex-wrap: wrap;
+  padding: .55rem; border: 1px solid rgba(186,217,255,.22);
+  background: rgba(16,34,65,.42); border-radius: 15px;
+}
+.jbh-admin-page .jbh-admin-subtabs button {
+  border: 1px solid transparent; border-radius: 11px;
+  padding: 10px 16px; min-height: 42px;
+}
+.jbh-admin-page .jbh-admin-subtabs button[aria-pressed="true"] {
+  background: linear-gradient(120deg,rgba(76,121,230,.45),rgba(132,106,226,.30));
+  color: #fff; border-color: rgba(175,209,255,.34);
+}
+.jbh-admin-page .jbh-admin-subtabs button[aria-pressed="false"] { color: #c1d5f4; }
+.jbh-admin-page .jbh-admin-subtabs button:hover { background: rgba(125,166,237,.15); }
+.jbh-admin-page .jbh-admin-feature-card {
+  border: 1px solid rgba(169,203,249,.26);
+  border-radius: 17px;
+  background: linear-gradient(150deg,rgba(40,66,110,.90),rgba(22,42,78,.94));
+  box-shadow: 0 8px 23px rgba(0,12,42,.09);
+}
+.jbh-admin-page .jbh-admin-feature-card:hover { border-color: rgba(155,210,255,.62); }
+.jbh-admin-page .jbh-admin-input { width: 100%; }
+.jbh-admin-dialog { background: linear-gradient(150deg,#263f6e,#172a4a) !important; border-color: rgba(181,213,255,.3) !important; }
+.jbh-admin-dialog :is(input,select,textarea) { background:#142945 !important;color:#fff !important;border-color:rgba(174,206,255,.3) !important; }
+.jbh-admin-dialog :is(input,select,textarea):focus-visible { outline:2px solid #8bc9ff; }
+@media (max-width: 640px) {
+  .jbh-admin-page .jbh-admin-page-head { padding: 20px; border-radius: 19px; }
+  .jbh-admin-page .jbh-admin-stat { min-height: 82px; }
+  .jbh-admin-page .jbh-admin-table table { min-width: 580px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jbh-admin-page button,
+  .jbh-admin-page .jbh-admin-primary { transition: none; }
+  .jbh-admin-page .jbh-admin-primary:hover:not(:disabled) { transform: none; }
+}
