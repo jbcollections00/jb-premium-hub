@@ -1259,7 +1259,7 @@ export default function Home() {
           </button>
         </div>
 
-        <AdSlot position="middle" enabled={billingReady && membership.showAds} />
+        <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
