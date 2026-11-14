@@ -297,35 +297,34 @@ export default function AccessCodesTab() {
   });
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">VIP Access Code Management</h1>
-        <p className="text-xs text-gray-400 mt-1">
-          Generate 30-Day VIP access keys for registered non-admin users and track redemption status.
-        </p>
-      </div>
+    <div className="jbh-admin-page space-y-6">
+      <header className="jbh-admin-page-head">
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-100">Member benefits</p>
+        <h1 className="mt-2">Access codes</h1>
+        <p className="mt-2 text-sm">Create and manage complimentary VIP codes. PayMongo purchases activate separately and automatically.</p>
+      </header>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="jbh-admin-stat p-4 sm:p-5">
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Total VIP Codes</p>
           <p className="text-2xl font-black text-white mt-1">{totalCodesCount}</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
+        <div className="jbh-admin-stat p-4 sm:p-5">
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Available (Unused)</p>
           <p className="text-2xl font-black text-emerald-400 mt-1">{availableCodesCount}</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Active VIP Subs</p>
+        <div className="jbh-admin-stat p-4 sm:p-5">
+          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Active code grants</p>
           <p className="text-2xl font-black text-amber-400 mt-1">{activeSubsCount}</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl shadow-sm">
+        <div className="jbh-admin-stat p-4 sm:p-5">
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Expired VIP</p>
           <p className="text-2xl font-black text-rose-400 mt-1">{expiredCodesCount}</p>
         </div>
       </div>
 
-      <form onSubmit={handleGenerateCode} className="bg-gray-900 border border-gray-800 p-5 rounded-2xl space-y-4 shadow-xl">
-        <h2 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Generate & Direct Send VIP Access Code</h2>
+      <form onSubmit={handleGenerateCode} className="jbh-admin-panel space-y-5 p-5 sm:p-6">
+        <h2 className="text-base font-extrabold text-white">Create or send a VIP code</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
           <div className="sm:col-span-2">
@@ -345,8 +344,8 @@ export default function AccessCodesTab() {
               type="text"
               value={customCode}
               onChange={(e) => setCustomCode(e.target.value)}
-              placeholder="CUSTOM CODE (BLANK FOR AUTO)"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white text-xs uppercase font-mono focus:outline-none focus:border-blue-500"
+              placeholder="Custom code (optional)"
+              className="jbh-admin-input w-full px-3 py-3 font-mono text-sm uppercase"
             />
           </div>
 
@@ -354,9 +353,9 @@ export default function AccessCodesTab() {
             <select
               value={directSendUser}
               onChange={(e) => setDirectSendUser(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sky-300 text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+              className="jbh-admin-input w-full px-3 py-3 text-sm"
             >
-              <option value="">📩 Direct Send to Registered User? (Optional)</option>
+              <option value="">Send to a member (optional)</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.email} ({u.account_type || 'standard'})
@@ -369,9 +368,9 @@ export default function AccessCodesTab() {
             <button
               type="submit"
               disabled={generating}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white font-bold py-2.5 rounded-xl transition-all text-xs cursor-pointer shadow-lg shadow-blue-600/20 shrink-0"
+              className="jbh-admin-primary w-full text-sm disabled:opacity-50"
             >
-              {generating ? 'Generating...' : 'Generate 🚀'}
+              {generating ? 'Generating…' : 'Generate code'}
             </button>
           </div>
         </div>
@@ -383,14 +382,14 @@ export default function AccessCodesTab() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search code or user ID..."
-          className="w-full sm:w-80 bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 text-white text-xs focus:outline-none focus:border-blue-500"
+          className="jbh-admin-input w-full px-4 py-3 text-sm sm:w-80"
         />
 
         <div className="flex gap-2 w-full sm:w-auto">
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-gray-300 text-xs font-medium focus:outline-none cursor-pointer"
+            className="px-3 py-2.5 text-sm"
           >
             <option value="ALL">All Status</option>
             <option value="AVAILABLE">Available (Unused)</option>
@@ -403,7 +402,7 @@ export default function AccessCodesTab() {
       {loading ? (
         <div className="p-12 text-center text-gray-500 text-xs">Loading VIP access codes...</div>
       ) : filteredCodes.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 p-8 text-center rounded-2xl text-gray-500 text-xs">
+        <div className="jbh-admin-empty text-sm">
           No VIP access codes found matching your query.
         </div>
       ) : (
@@ -419,7 +418,7 @@ export default function AccessCodesTab() {
             return (
               <div
                 key={c.id}
-                className="bg-gray-900 border border-gray-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-gray-700"
+                className="jbh-admin-feature-card flex flex-col justify-between gap-4 p-4 transition-all sm:flex-row sm:items-center"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -495,7 +494,7 @@ export default function AccessCodesTab() {
 
       {selectedCodeForSend && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+          <div className="jbh-admin-dialog w-full max-w-md space-y-4 rounded-2xl border p-6 shadow-2xl">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <span>📩</span> Send Access Code
             </h3>
