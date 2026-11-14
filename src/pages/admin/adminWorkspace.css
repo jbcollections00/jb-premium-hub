@@ -142,3 +142,48 @@
   .jbh-admin-page .jbh-admin-primary { transition: none; }
   .jbh-admin-page .jbh-admin-primary:hover:not(:disabled) { transform: none; }
 }
+
+
+/* Preview login, upload drop-zone and the complimentary membership dialog. */
+.jbh-admin-login-shell {
+  background: radial-gradient(ellipse 56rem 35rem at 50% -8rem, rgba(87,139,248,.37),transparent 70%),
+    linear-gradient(150deg,#112340,#152b50,#141b3c);
+}
+.jbh-admin-login-card {
+  border: 1px solid rgba(180,214,255,.36);
+  background: linear-gradient(155deg,#254673,#1b315b);
+  box-shadow: 0 30px 90px rgba(0,13,38,.35), inset 0 1px rgba(255,255,255,.1);
+}
+.jbh-admin-upload-drop {
+  color: #d9eaff;
+  background: linear-gradient(160deg,rgba(58,98,165,.30),rgba(30,59,105,.18));
+  border-color: rgba(154,201,255,.42);
+}
+.jbh-admin-upload-drop:hover,
+.jbh-admin-upload-drop:focus-within {
+  border-color: #a1dafa;
+  background: linear-gradient(160deg,rgba(68,128,207,.35),rgba(48,75,140,.25));
+}
+.jbh-admin-dialog {
+  box-shadow: 0 35px 90px rgba(0,10,32,.48);
+}
+.jbh-admin-dialog-head {
+  background: linear-gradient(115deg,#2c5db1,#5657b9);
+  border-color: rgba(202,223,255,.27);
+}
+.jbh-admin-dialog-section {
+  background: rgba(17,39,78,.57);
+  border: 1px solid rgba(170,207,250,.24);
+}
+.jbh-admin-dialog-quiet {
+  color:#eaf3ff; background:rgba(246,250,255,.14);
+  border:1px solid rgba(203,226,255,.25);
+}
+.jbh-admin-dialog-quiet:hover { background:rgba(246,250,255,.23); }
+.jbh-admin-dialog-primary {
+  border-radius: 12px; color:#fff;
+  background:linear-gradient(110deg,#3671df,#6d68ef);
+  box-shadow:0 8px 26px rgba(39,84,181,.24);
+}
+.jbh-admin-dialog-primary:hover { filter:brightness(1.12); }
+.jbh-admin-dialog :is(select,input) { min-height: 42px; padding: 10px 12px; border-radius: 11px; }
