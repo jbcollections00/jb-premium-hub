@@ -46,7 +46,7 @@ export default function AdminMediaTab() {
   const [
     notifyUsers,
     setNotifyUsers,
-  ] = useState(true);
+  ] = useState(false); // Opt in to mass announcements; never auto-send by default.
 
   const [
     thumbnailBackfillLoading,
