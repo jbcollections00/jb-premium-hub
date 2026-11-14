@@ -187,3 +187,38 @@
 }
 .jbh-admin-dialog-primary:hover { filter:brightness(1.12); }
 .jbh-admin-dialog :is(select,input) { min-height: 42px; padding: 10px 12px; border-radius: 11px; }
+
+
+/* Legacy nested UI surfaces follow the same illuminated indigo-blue palette.
+ * Form fields, status colors, destructive buttons and video previews are left
+ * intact so the UI redesign does not obscure operational meaning.
+ */
+.jbh-admin-page [class~="bg-gray-900"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-gray-800"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900/90"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900/80"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900/70"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900/60"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900/50"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-900/40"]:not(input):not(select):not(textarea) {
+  background-color: #263e65;
+  border-color: rgba(174,203,250,.25);
+}
+.jbh-admin-page [class~="bg-slate-950/60"]:not(input):not(select):not(textarea),
+.jbh-admin-page [class~="bg-slate-950/40"]:not(input):not(select):not(textarea) {
+  background-color: rgba(14,35,65,.70);
+  border-color: rgba(174,203,250,.20);
+}
+.jbh-admin-page [class~="text-gray-500"],
+.jbh-admin-page [class~="text-slate-500"] { color: #b1c4e4; }
+.jbh-admin-page [class~="border-gray-800"],
+.jbh-admin-page [class~="border-slate-800"] { border-color: rgba(170,201,246,.23); }
+.jbh-admin-page [class~="bg-gray-950"]:not(input):not(select):not(textarea) {
+  background-color: rgba(12,29,56,.68);
+}
+/* Do not override the intentional chart/video/image preview black surfaces. */
+.jbh-admin-page :is(video, iframe) { background-color: #0b1425; }
+.jbh-admin-page .jbh-admin-table tbody tr:nth-child(even) { background-color: rgba(18,38,72,.21); }
+.jbh-admin-page .jbh-admin-feature-card:hover,
+.jbh-admin-page .jbh-admin-stat:hover { box-shadow: 0 14px 30px rgba(4,18,53,.15); }
