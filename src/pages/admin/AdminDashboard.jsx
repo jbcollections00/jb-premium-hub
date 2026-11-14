@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clapperboard, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
+import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -19,6 +19,7 @@ import AccessCodesTab from './AccessCodesTab';
 import AdminUsersTab from './AdminUsersTab';
 import AdminMessagesTab from './AdminMessagesTab'; 
 import AdminMediaTab from './AdminMediaTab';
+import AdminBillingTab from './AdminBillingTab';
 import './adminWorkspace.css';
 import ChatReports from './ChatReports';
 import ChatAnalytics from './ChatAnalytics';
@@ -34,16 +35,12 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const isAdmin = localStorage.getItem('isAdminAuthenticated');
-    if (!isAdmin) {
-      navigate('/admin-login');
-      return;
-    }
-    
+    // <ProtectedRoute adminOnly> verifies the Supabase-authenticated admin role
+    // before this component mounts. Do not trust a spoofable localStorage flag.
     fetchData();
     checkAndSendVIPExpirationAlerts();
     setupPresence();
-  }, [navigate]);
+  }, []);
 
   // Realtime Presence for Live Online Users
   const setupPresence = async () => {
@@ -183,9 +180,16 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAdminLogout = () => {
-    localStorage.removeItem('isAdminAuthenticated');
-    navigate('/admin-login');
+  const handleAdminLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      localStorage.removeItem('isAdminAuthenticated');
+      navigate('/admin-login', { replace: true });
+    } catch (error) {
+      console.error('Admin sign out failed:', error?.message || 'UNKNOWN');
+      window.alert('Unable to sign out. Please try again.');
+    }
   };
 
   // Profile categories are not the same as paid billing entitlements.
@@ -241,6 +245,7 @@ export default function AdminDashboard() {
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'users', icon: Users, label: 'Users', count: registeredProfileCount },
+    { id: 'billing', icon: CreditCard, label: 'Billing & memberships' },
     { id: 'messages', icon: MessageSquare, label: 'Messages' },
     { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'codes', icon: KeyRound, label: 'Access codes' },
@@ -335,6 +340,14 @@ export default function AdminDashboard() {
               ))}
             </section>
 
+            <button type="button" onClick={() => setActiveTab('billing')}
+              className="jbh-admin-panel flex w-full flex-wrap items-center justify-between gap-4 rounded-2xl p-5 text-left transition-colors hover:border-sky-300/50">
+              <div>
+                <p className="text-base font-extrabold text-white">Billing & memberships</p>
+                <p className="mt-1 text-sm text-slate-300">Verified PayMongo payments, current access, pending orders and activity.</p>
+              </div>
+              <span className="jbh-admin-primary rounded-xl px-5 py-2.5 text-sm">View billing</span>
+            </button>
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
               <section className="jbh-admin-panel flex flex-col justify-between rounded-[24px] p-5 sm:p-6">
                 <div>
@@ -393,6 +406,7 @@ export default function AdminDashboard() {
         )}
 
         {activeTab === 'events' && <AdminEventControl />}
+        {activeTab === 'billing' && <AdminBillingTab />}
         {activeTab === 'tickets' && <SupportTicketsTab supabase={supabase} />}
         {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}
         {activeTab === 'messages' && <AdminMessagesTab users={users} />}
