@@ -121,7 +121,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return new Response(null, { status: 204, headers: {
       'access-control-allow-origin': corsOrigin,
       'access-control-allow-methods': 'POST, OPTIONS',
-      'access-control-allow-headers': 'authorization, apikey, content-type',
+      'access-control-allow-headers': 'authorization, apikey, content-type, x-client-info, x-retry-count, traceparent, tracestate, baggage',
       'access-control-max-age': '300',
       'vary': 'Origin',
     } });
