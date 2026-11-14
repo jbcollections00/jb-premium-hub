@@ -84,10 +84,15 @@ jobs:
           assert.match(admin,/isAdminAuthenticated/);
           assert.match(admin,/activeTab === 'dashboard'/);
           assert.match(admin,/const profileCounts = users.reduce/);
-          assert.match(admin,/Profile labels, not verified paid plans/);
+          assert.match(admin,/Registered account categories/);
           assert.match(admin,/Regular profiles/);
           assert.match(admin,/Admin profiles/);
-          assert.doesNotMatch(admin,/VIP Upgrade Conversion Rate|Standard Users/);
+          assert.match(admin,/registeredProfileCount = users.length - profileCounts.guest/);
+          assert.match(admin,/src="\\/jb-logo.png"/);
+          assert.match(admin,/jbh-admin-kpi/);
+          assert.match(admin,/jbh-admin-hero/);
+          assert.doesNotMatch(admin,/name: 'Guest profiles'|label: 'Guest profiles'|Guest Activity|VIP Upgrade Conversion Rate|Standard Users/);
+          assert.equal((admin.match(/onClick=\\{handleAdminLogout\\}/g)||[]).length, 1);
                     const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
           const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
           assert.match(guard, /state=\{\{ from: location\.pathname/);
