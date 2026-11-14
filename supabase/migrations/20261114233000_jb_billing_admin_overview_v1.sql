@@ -99,6 +99,7 @@ BEGIN
       AND o.paymongo_payment_id IS NOT NULL
   ), grant_rows AS (
     SELECT
+      p.id AS paid_order_id,
       p.user_id,
       p.plan_code,
       COALESCE(
@@ -132,15 +133,15 @@ BEGIN
   ), coverage AS (
     SELECT
       (SELECT COUNT(*) FROM paid) AS paid_count,
-      (SELECT COUNT(*) FROM grant_rows WHERE expiry IS NOT NULL) AS dated_link_count
+      (SELECT COUNT(DISTINCT paid_order_id) FROM grant_rows WHERE expiry IS NOT NULL) AS dated_link_count
   )
   SELECT pg_catalog.jsonb_build_object(
-    'available', (coverage.paid_count = 0 OR coverage.dated_link_count > 0),
+    'available', (coverage.paid_count = 0 OR coverage.dated_link_count = coverage.paid_count),
     'source', 'verified live paid entitlements',
-    'active_vip', CASE WHEN coverage.paid_count = 0 OR coverage.dated_link_count > 0
+    'active_vip', CASE WHEN coverage.paid_count = 0 OR coverage.dated_link_count = coverage.paid_count
       THEN (SELECT COUNT(*) FILTER (WHERE has_vip) FROM active_by_user)
       ELSE NULL END,
-    'active_standard', CASE WHEN coverage.paid_count = 0 OR coverage.dated_link_count > 0
+    'active_standard', CASE WHEN coverage.paid_count = 0 OR coverage.dated_link_count = coverage.paid_count
       THEN (SELECT COUNT(*) FILTER (WHERE NOT has_vip AND has_standard) FROM active_by_user)
       ELSE NULL END
   )
