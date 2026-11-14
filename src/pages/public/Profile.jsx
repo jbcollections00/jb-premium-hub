@@ -2359,43 +2359,7 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* =================================================
-                DANGER ZONE
-            ================================================= */}
 
-            <div className="bg-slate-900 border border-rose-900/40 rounded-2xl p-6 shadow-xl">
-
-              <h3 className="text-lg font-bold text-rose-400 mb-2 flex items-center gap-2">
-                ⚠️ Danger Zone
-              </h3>
-
-              <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                Permanently remove your
-                account and access to any
-                active VIP memberships.
-                This action cannot be
-                undone.
-              </p>
-
-              <button
-                onClick={() => {
-                  setDeleteError(
-                    ""
-                  );
-
-                  setDeleteConfirmText(
-                    ""
-                  );
-
-                  setShowDeleteModal(
-                    true
-                  );
-                }}
-                className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 font-bold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2"
-              >
-                🗑️ Delete My Account
-              </button>
-            </div>
           </div>
         </div>
 
@@ -2681,6 +2645,26 @@ export default function Profile() {
             </div>
           </div>
         </div>
+        {/* =================================================
+            ACCOUNT DELETION — LAST SETTING
+        ================================================= */}
+        <section className="mt-8 rounded-2xl border border-rose-400/20 bg-slate-900/60 p-6 sm:p-7" aria-labelledby="account-deletion-heading">
+          <h2 id="account-deletion-heading" className="text-base font-bold text-rose-300">Account deletion</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+            Permanently delete your account and any active membership access. This action cannot be undone.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteError("");
+              setDeleteConfirmText("");
+              setShowDeleteModal(true);
+            }}
+            className="mt-4 inline-flex items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/20"
+          >
+            Delete my account
+          </button>
+        </section>
       </div>
 
       {/* =================================================
