@@ -21,14 +21,14 @@ export default function TermsPage() {
           <section className="space-y-2">
             <h2 className="text-lg font-semibold text-white">1. Pagtanggap sa mga Tuntunin</h2>
             <p>
-              Sa pag-access at paggamit ng **JB Premium Hub & Public Media Gallery**, sumasang-ayon ka na sundin ang lahat ng nakasaad na mga tuntunin at kundisyon dito. Kung hindi ka sang-ayon sa alinman sa mga ito, pinapayuhan ka na huwag ipagpatuloy ang paggamit ng aming platform.
+              Sa pag-access at paggamit ng JB Premium Hub, sumasang-ayon ka na sundin ang lahat ng nakasaad na mga tuntunin at kundisyon dito. Kung hindi ka sang-ayon sa alinman sa mga ito, pinapayuhan ka na huwag ipagpatuloy ang paggamit ng aming platform.
             </p>
           </section>
 
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold text-white">2. User Vault Account at Access</h2>
+            <h2 className="text-lg font-semibold text-white">2. User Account at Access</h2>
             <p>
-              Responsibilidad ng bawat user na panatilihing ligtas at hiwalay ang kanilang account details. Ang hindi awtorisadong pagbabahagi o pagbebenta ng iyong Vault Access credentials ay maaaring maging dahilan ng pagkaka-terminate ng iyong account nang walang refund.
+              Responsibilidad ng bawat user na panatilihing ligtas at hiwalay ang kanilang account details. Ang hindi awtorisadong pagbabahagi o pagbebenta ng iyong account credentials ay maaaring maging dahilan ng pagkaka-terminate ng iyong account nang walang refund.
             </p>
           </section>
 
