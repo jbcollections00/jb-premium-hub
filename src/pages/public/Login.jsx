@@ -116,16 +116,16 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
-      <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-md w-full shadow-2xl space-y-6">
+    <div className="jbh-auth">
+      <div className="jbh-auth-card space-y-6">
         <div className="text-center">
           <img
             src="/jb-logo.png"
             alt="JB Logo"
-            className="w-16 h-16 mx-auto mb-3 object-contain drop-shadow-md"
+            className="mx-auto mb-4 h-16 w-16 object-contain"
           />
-          <h2 className="text-2xl font-bold text-white">Welcome Back</h2>
-          <p className="text-slate-400 text-xs mt-1">Log in to access your membership and media gallery.</p>
+          <h2 className="text-3xl font-extrabold tracking-tight text-white">Welcome back</h2>
+          <p className="mt-2 text-sm text-slate-400">Sign in to continue to JB Premium Hub.</p>
         </div>
 
         {!msg.text && signupMessage && (
@@ -170,7 +170,7 @@ export default function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@example.com"
-              className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+              className="jbh-field text-sm"
             />
           </div>
           <div>
@@ -179,7 +179,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={handleForgotPassword}
-                className="text-[11px] text-blue-400 hover:underline cursor-pointer"
+                className="cursor-pointer text-xs font-semibold text-indigo-300 hover:text-white"
               >
                 Forgot Password?
               </button>
@@ -193,7 +193,7 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 pr-10"
+                className="jbh-field pr-20 text-sm"
               />
               <button
                 type="button"
@@ -209,7 +209,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading || !email || !password}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer mt-2"
+            className="jbh-btn mt-2 w-full"
           >
             {loading ? 'Logging In...' : 'Log In'}
           </button>
@@ -217,7 +217,7 @@ export default function Login() {
 
         <div className="text-center text-xs text-slate-400">
           Don't have an account?{' '}
-          <Link to="/signup" className="text-blue-400 hover:underline font-semibold">
+          <Link to="/signup" className="font-semibold text-indigo-300 hover:text-white">
             Sign Up
           </Link>
         </div>
