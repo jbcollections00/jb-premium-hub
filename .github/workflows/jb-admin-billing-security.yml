@@ -1,0 +1,45 @@
+name: JB Admin Billing — SQL security (NO DEPLOY)
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql'
+      - '.github/tests/admin-billing-fixture.sql'
+      - '.github/tests/admin-billing-assertions.sql'
+      - '.github/workflows/jb-admin-billing-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  admin-billing-sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: admin_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d admin_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: local-ci-only
+      PGDATABASE: admin_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PostgreSQL client
+        run: psql --version
+      - name: Create isolated fake billing schema
+        run: psql -v ON_ERROR_STOP=1 -f .github/tests/admin-billing-fixture.sql
+      - name: Apply real reporting migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql
+      - name: Assert correct totals and deny non-admin/anon
+        run: psql -v ON_ERROR_STOP=1 -f .github/tests/admin-billing-assertions.sql
