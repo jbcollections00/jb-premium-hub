@@ -75,6 +75,12 @@ body { margin: 0; min-width: 320px; background: #080e1b; color: #eaf0fb; }
 .jbh-footer a:hover { color: #fff; }
 .jbh-media-card { transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; }
 .jbh-media-card:hover { transform: translateY(-3px); border-color: rgba(129,140,248,.46); box-shadow: 0 18px 40px rgba(0,0,0,.23); }
+/* Keep desktop admin navigation scrollable without a distracting track. */
+.jbh-admin-sidebar { scrollbar-width: none; -ms-overflow-style: none; }
+.jbh-admin-sidebar::-webkit-scrollbar { display: none; }
+.jbh-admin [aria-label="Admin workspace navigation"] { scrollbar-width: none; }
+.jbh-admin [aria-label="Admin workspace navigation"]::-webkit-scrollbar { display: none; }
+
 @media (max-width: 640px) { .jbh-page { padding: 26px 16px 56px; } }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
