@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, CalendarDays, Clapperboard, Flag, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
+import { Clapperboard, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -19,6 +19,7 @@ import AccessCodesTab from './AccessCodesTab';
 import AdminUsersTab from './AdminUsersTab';
 import AdminMessagesTab from './AdminMessagesTab'; 
 import AdminMediaTab from './AdminMediaTab';
+import './adminWorkspace.css';
 import ChatReports from './ChatReports';
 import ChatAnalytics from './ChatAnalytics';
 import AdminEventControl from '../../components/admin/AdminEventControl';
@@ -239,12 +240,9 @@ export default function AdminDashboard() {
 
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
-    { id: 'events', icon: CalendarDays, label: 'Events' },
     { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'users', icon: Users, label: 'Users', count: registeredProfileCount },
     { id: 'messages', icon: MessageSquare, label: 'Messages' },
-    { id: 'chat-reports', icon: Flag, label: 'Chat reports' },
-    { id: 'chat-analytics', icon: BarChart3, label: 'Chat analytics' },
     { id: 'codes', icon: KeyRound, label: 'Access codes' },
     { id: 'upload', icon: Clapperboard, label: 'Media manager' },
   ];
@@ -312,7 +310,7 @@ export default function AdminDashboard() {
         </button>
       </aside>
 
-      <main className="relative min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-9 lg:py-9">
+      <main className="jbh-admin-main relative min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-9 lg:py-9">
         {activeTab === 'dashboard' && (
           <div className="relative mx-auto max-w-7xl space-y-6 lg:space-y-7">
             <header className="jbh-admin-hero relative overflow-hidden rounded-[26px] px-6 py-7 sm:px-8 sm:py-9">
