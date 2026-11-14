@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, BarChart3, CalendarDays, Clapperboard, Flag, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Users } from 'lucide-react';
+import { BarChart3, CalendarDays, Clapperboard, Flag, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Users } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -187,29 +187,31 @@ export default function AdminDashboard() {
     navigate('/admin-login');
   };
 
-  const vipUsersCount = users.filter(
-    (u) => u.account_type?.toLowerCase() === 'vip'
-  ).length;
+  // Profile categories are not the same as paid billing entitlements.
+  // Keep them separate, mutually exclusive, and exhaustive for this dashboard.
+  const profileCounts = users.reduce((counts, user) => {
+    const type = String(user.account_type || "").toLowerCase();
+    const role = String(user.role || "").toLowerCase();
+    if (user.is_anonymous || !user.email || type === 'guest' || type === 'anonymous') counts.guest += 1;
+    else if (type === 'admin' || role === 'admin') counts.admin += 1;
+    else if (type === 'vip') counts.vip += 1;
+    else if (type === 'standard' || !type) counts.regular += 1;
+    else counts.other += 1;
+    return counts;
+  }, { vip: 0, regular: 0, guest: 0, admin: 0, other: 0 });
 
-  const guestUsersCount = users.filter(
-    (u) => u.is_anonymous || u.account_type?.toLowerCase() === 'guest' || u.account_type?.toLowerCase() === 'anonymous' || !u.email
-  ).length;
-
-  const standardUsersCount = users.filter(
-    (u) => 
-      (u.account_type?.toLowerCase() === 'standard' || !u.account_type) && 
-      !u.is_anonymous && 
-      u.email && 
-      u.account_type?.toLowerCase() !== 'vip' && 
-      u.account_type?.toLowerCase() !== 'admin'
-  ).length;
-
+  const vipUsersCount = profileCounts.vip;
+  const regularUsersCount = profileCounts.regular;
+  const guestUsersCount = profileCounts.guest;
+  const adminUsersCount = profileCounts.admin;
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
   const pieChartData = [
-    { name: 'VIP Members', value: vipUsersCount, color: '#10b981' },
-    { name: 'Standard Users', value: standardUsersCount, color: '#3b82f6' },
-    { name: 'Guest Users', value: guestUsersCount, color: '#f59e0b' },
+    { name: 'VIP profiles', value: vipUsersCount, color: '#a78bfa' },
+    { name: 'Regular profiles', value: regularUsersCount, color: '#6366f1' },
+    { name: 'Guest profiles', value: guestUsersCount, color: '#f59e0b' },
+    { name: 'Admin profiles', value: adminUsersCount, color: '#38bdf8' },
+    { name: 'Other profiles', value: profileCounts.other, color: '#94a3b8' },
   ].filter(item => item.value > 0);
 
   const getLast7DaysData = () => {
@@ -236,10 +238,6 @@ export default function AdminDashboard() {
   };
 
   const weeklyTrendData = getLast7DaysData();
-  const registeredOnlyCount = standardUsersCount + vipUsersCount;
-  const vipConversionRate = registeredOnlyCount > 0 
-    ? ((vipUsersCount / registeredOnlyCount) * 100).toFixed(1) 
-    : 0;
 
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
@@ -255,9 +253,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="jbh-app jbh-admin flex min-h-screen flex-col text-slate-100 lg:flex-row">
-      <aside className="z-20 flex w-full flex-shrink-0 flex-col gap-5 border-b border-white/10 bg-[#0b1323]/95 px-4 py-4 backdrop-blur-xl sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:justify-between lg:gap-8 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-5 lg:py-7">
+      <aside className="jbh-admin-sidebar z-20 flex w-full flex-shrink-0 flex-col gap-3 border-b border-white/10 bg-[#0b1323]/95 px-4 py-3 backdrop-blur-xl sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:justify-between lg:gap-4 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-5 lg:py-5">
         <div className="min-w-0">
-          <div className="mb-5 flex items-center gap-3 px-1 lg:mb-8">
+          <div className="mb-4 flex items-center gap-3 px-1 lg:mb-5">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-indigo-400/25 bg-indigo-400/10 text-indigo-200">
               <ShieldCheck size={22} aria-hidden="true" />
             </span>
@@ -267,7 +265,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <p className="hidden px-3 pb-2 text-[11px] font-semibold uppercase tracking-[.16em] text-slate-500 lg:block">Workspace</p>
-          <nav className="flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0" aria-label="Admin workspace navigation">
+          <nav className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0" aria-label="Admin workspace navigation">
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
               const Icon = item.icon;
@@ -278,7 +276,7 @@ export default function AdminDashboard() {
                   onClick={() => setActiveTab(item.id)}
                   title={item.label}
                   aria-current={isActive ? 'page' : undefined}
-                  className={`group relative flex min-h-11 shrink-0 items-center justify-between gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-colors sm:text-sm lg:w-full ${
+                  className={`group relative flex min-h-10 shrink-0 items-center justify-between gap-2.5 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors sm:text-sm lg:w-full ${
                     isActive
                       ? 'border-indigo-400/25 bg-indigo-400/15 text-indigo-100'
                       : 'border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-white'
@@ -313,18 +311,18 @@ export default function AdminDashboard() {
         </button>
       </aside>
 
-      <main className="min-w-0 flex-1 px-4 py-7 sm:px-6 lg:px-9 lg:py-10">
+      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-9 lg:py-8">
         {activeTab === 'dashboard' && (
           <div className="mx-auto max-w-7xl space-y-7">
             <div>
-              <h1 className="jbh-title">Workspace overview</h1>
-              <p className="jbh-muted mt-2 text-sm">Activity, memberships and content at a glance.</p>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Overview</h1>
+              <p className="jbh-muted mt-2 text-sm">Manage your members, content, and community.</p>
             </div>
 
-            {/* 7 Metric Cards Grid */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+            {/* Account-profile overview (not a billing/subscription report) */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-4">
               <div className="jbh-surface-soft p-4">
-                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Total Users</p>
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Total profiles</p>
                 <p className="text-2xl font-black text-purple-400 mt-1">{users.length}</p>
               </div>
 
@@ -337,18 +335,22 @@ export default function AdminDashboard() {
               </div>
 
               <div className="jbh-surface-soft p-4">
-                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">VIP Members</p>
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">VIP profiles</p>
                 <p className="text-2xl font-black text-emerald-400 mt-1">{vipUsersCount}</p>
               </div>
 
               <div className="jbh-surface-soft p-4">
-                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Standard Users</p>
-                <p className="text-2xl font-black text-blue-400 mt-1">{standardUsersCount}</p>
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Regular profiles</p>
+                <p className="text-2xl font-black text-blue-400 mt-1">{regularUsersCount}</p>
               </div>
 
               <div className="jbh-surface-soft p-4">
-                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Guest Users</p>
+                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Guest profiles</p>
                 <p className="text-2xl font-black text-amber-400 mt-1">{guestUsersCount}</p>
+              </div>
+              <div className="jbh-surface-soft p-4">
+                <p className="text-slate-400 text-[10px] font-semibold uppercase tracking-wider">Admin profiles</p>
+                <p className="mt-1 text-2xl font-black text-sky-300">{adminUsersCount}</p>
               </div>
 
               <div className="jbh-surface-soft p-4">
@@ -356,7 +358,7 @@ export default function AdminDashboard() {
                 <p className="text-2xl font-black text-sky-400 mt-1">{totalMediaCount}</p>
               </div>
 
-              <div className="jbh-surface-soft col-span-2 p-4 sm:col-span-1">
+              <div className="jbh-surface-soft p-4">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Pending Tickets</p>
                 <p className="text-2xl font-black text-rose-400 mt-1">{pendingTicketsCount}</p>
               </div>
@@ -365,8 +367,8 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="jbh-surface flex flex-col justify-between p-5">
                 <div>
-                  <h3 className="text-sm font-bold text-white mb-1">User Tier Distribution</h3>
-                  <p className="text-[11px] text-gray-400">Ratio of VIP vs Standard vs Guest Users</p>
+                  <h3 className="text-sm font-bold text-white mb-1">Account profile mix</h3>
+                  <p className="text-[11px] text-gray-400">Profile labels, not verified paid plans</p>
                 </div>
 
                 <div className="h-52 my-2 flex items-center justify-center">
@@ -394,19 +396,13 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                <div className="flex justify-around pt-2 border-t border-gray-800 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                    <span className="text-gray-300 font-medium">VIP ({vipUsersCount})</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                    <span className="text-gray-300 font-medium">Standard ({standardUsersCount})</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                    <span className="text-gray-300 font-medium">Guest ({guestUsersCount})</span>
-                  </div>
+                <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 border-t border-white/10 pt-4 text-xs">
+                  {pieChartData.map((entry) => (
+                    <span key={entry.name} className="inline-flex items-center gap-2 text-slate-300">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                      {entry.name.replace(" profiles", "")} ({entry.value})
+                    </span>
+                  ))}
                 </div>
               </div>
 
@@ -431,8 +427,8 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-800 text-xs text-gray-400">
-                  <span>VIP Upgrade Conversion Rate: <strong className="text-emerald-400 font-bold">{vipConversionRate}%</strong></span>
-                  <span>Total Registered Accounts: <strong className="text-sky-400 font-bold">{users.length} Users</strong></span>
+                  <span>Registration trend — last 7 days</span>
+                  <span>Account profiles: <strong className="font-bold text-sky-300">{users.length}</strong></span>
                 </div>
               </div>
             </div>
