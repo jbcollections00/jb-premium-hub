@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { CreditCard, LogOut, MessageCircle } from 'lucide-react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { CreditCard, Home, LogOut, MessageCircle, UserRound } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 
 // STEP 307B: Header preserves profile, admin-announcement unread count,
@@ -112,52 +112,66 @@ export default function Header() {
     }
   };
 
-  const navClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-2.5 py-2 text-sm font-semibold text-slate-300 transition-colors hover:border-slate-700 hover:bg-white/5 hover:text-white sm:px-3';
+
+  const navClass = ({ isActive }) =>
+    'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors sm:px-3 sm:text-sm ' +
+    (isActive
+      ? 'bg-indigo-500/15 text-indigo-200 ring-1 ring-indigo-400/25'
+      : 'text-slate-300 hover:bg-white/5 hover:text-white');
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/95 px-3 py-3 text-white shadow-lg backdrop-blur-xl sm:px-5">
-      <Link to="/home" className="flex min-w-0 items-center gap-3" aria-label="JB Premium Hub Home">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 p-0.5">
-          <span className="flex h-full w-full items-center justify-center rounded-[10px] bg-slate-900 p-1.5">
-            <img src="/logo.png" alt="JB Premium Hub" className="h-full w-full object-contain" />
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0a1120]/90 text-white shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-3 sm:px-6">
+        <Link to="/home" className="group flex min-w-0 items-center gap-2.5" aria-label="JB Premium Hub home">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-400/20 bg-slate-900/80 p-1 shadow-[0_0_24px_rgba(99,102,241,0.12)]">
+            <img src="/logo.png" alt="" className="h-full w-full object-contain" />
           </span>
-        </span>
-        <span className="hidden min-w-0 flex-col sm:flex">
-          <span className="text-lg font-extrabold tracking-tight">
-            <span className="text-blue-400">JB</span> PREMIUM <span className="text-purple-400">HUB</span>
+          <span className="hidden flex-col sm:flex">
+            <span className="text-sm font-black tracking-[.11em] text-slate-100 md:text-base">
+              JB <span className="text-indigo-300">PREMIUM</span> HUB
+            </span>
+            <span className="text-[10px] font-medium tracking-[.08em] text-slate-400">
+              Your media. Your membership.
+            </span>
           </span>
-          <span className="text-[10px] font-medium uppercase tracking-widest text-slate-400">Media Gallery & Memberships</span>
-        </span>
-      </Link>
-
-      <nav className="flex shrink-0 items-center gap-0.5 sm:gap-2" aria-label="User navigation">
-        <Link to="/profile" className={navClass} title="Profile" aria-label="Profile">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-xs font-extrabold text-white">{userInitial}</span>
-          <span className="hidden md:inline">Profile</span>
         </Link>
 
-        <Link to="/subscribe" className={navClass} title="Membership plans" aria-label="Membership plans">
-          <CreditCard size={19} aria-hidden="true" />
-          <span className="hidden md:inline">Plans</span>
-        </Link>
-
-        <Link to="/messages" className={navClass} title="Messages" aria-label={`Messages${messageCount ? `, ${messageCount} unread` : ''}`}>
-          <span className="relative inline-flex">
-            <MessageCircle size={20} aria-hidden="true" />
-            {messageCount > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-slate-950 bg-red-600 px-0.5 text-[9px] font-bold text-white">
-                {messageCount > 99 ? '99+' : messageCount}
-              </span>
-            )}
-          </span>
-          <span className="hidden md:inline">Messages</span>
-        </Link>
-
-        <button type="button" disabled={loggingOut} onClick={handleLogout} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-600 hover:text-white disabled:opacity-50 sm:px-3" title="Logout" aria-label="Logout">
-          <LogOut size={19} aria-hidden="true" />
-          <span className="hidden md:inline">Logout</span>
-        </button>
-      </nav>
+        <nav className="flex min-w-0 items-center gap-0.5 sm:gap-1" aria-label="Main navigation">
+          <NavLink to="/home" className={navClass} title="Home" aria-label="Home">
+            <Home size={18} aria-hidden="true" />
+            <span className="hidden lg:inline">Home</span>
+          </NavLink>
+          <NavLink to="/subscribe" className={navClass} title="Plans" aria-label="Plans">
+            <CreditCard size={18} aria-hidden="true" />
+            <span className="hidden lg:inline">Plans</span>
+          </NavLink>
+          <NavLink to="/messages" className={navClass}
+            title="Messages" aria-label={messageCount ? `Messages, ${messageCount} unread` : 'Messages'}>
+            <span className="relative inline-flex">
+              <MessageCircle size={19} aria-hidden="true" />
+              {messageCount > 0 && (
+                <span className="absolute -right-2.5 -top-2.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-[#0a1120] bg-indigo-500 px-1 text-[9px] font-bold text-white">
+                  {messageCount > 99 ? '99+' : messageCount}
+                </span>
+              )}
+            </span>
+            <span className="hidden lg:inline">Messages</span>
+          </NavLink>
+          <NavLink to="/profile" className={navClass} title="My account" aria-label="My account">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/15 text-xs font-bold text-indigo-200">
+              {userInitial || <UserRound size={16} aria-hidden="true" />}
+            </span>
+            <span className="hidden lg:inline">Account</span>
+          </NavLink>
+          <span className="mx-1 hidden h-6 w-px bg-white/10 sm:block" aria-hidden="true" />
+          <button type="button" disabled={loggingOut} onClick={handleLogout}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50 sm:px-3"
+            title="Sign out" aria-label="Sign out">
+            <LogOut size={18} aria-hidden="true" />
+            <span className="hidden lg:inline text-sm font-semibold">Sign out</span>
+          </button>
+        </nav>
+      </div>
     </header>
   );
 }
