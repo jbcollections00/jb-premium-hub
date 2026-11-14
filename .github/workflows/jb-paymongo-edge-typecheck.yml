@@ -30,6 +30,14 @@ jobs:
         with:
           deno-version: v2.x
 
+      - name: Verify checkout browser CORS preflight allow-list
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "'access-control-allow-headers': 'authorization, apikey, content-type, x-client-info" \
+            supabase/functions/jb-paymongo-checkout-live/index.ts
+          echo "PASS: browser SDK x-client-info header is allowed by checkout preflight"
+
       - name: Validate all LIVE functions
         shell: bash
         run: |
