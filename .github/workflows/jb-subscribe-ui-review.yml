@@ -12,6 +12,7 @@ on:
       - 'src/pages/public/Subscribe.jsx'
       - 'src/pages/public/BuyVip.jsx'
       - 'src/pages/public/Profile.jsx'
+      - 'src/pages/admin/AdminDashboard.jsx'
       - 'supabase/migrations/20261114190000_jb_billing_my_history_v1.sql'
       - 'package-lock.json'
       - '.github/workflows/jb-subscribe-ui-review.yml'
@@ -74,7 +75,15 @@ jobs:
           assert.match(legacy, /\/subscribe/);
           assert.doesNotMatch(legacy, /support_tickets|Ownbank_QR|handleSubmitPayment/);
           assert.match(profile, /navigate\(\s*"\/subscribe"/);
-          const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
+          // Admin visual redesign must keep the existing admin navigation and auth guards.
+          const admin = readFileSync('src/pages/admin/AdminDashboard.jsx', 'utf8');
+          for (const id of ['dashboard','events','tickets','users','messages','chat-reports','chat-analytics','codes','upload']) {
+            assert.ok(admin.includes("id: '" + id + "'"), 'Missing admin tab: ' + id);
+          }
+          assert.match(admin,/onClick=\{handleAdminLogout\}/);
+          assert.match(admin,/isAdminAuthenticated/);
+          assert.match(admin,/activeTab === 'dashboard'/);
+                    const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
           const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
           assert.match(guard, /state=\{\{ from: location\.pathname/);
           assert.match(login, /location\.state\?\.from/);
