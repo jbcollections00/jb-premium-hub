@@ -13,6 +13,8 @@ on:
       - 'src/pages/public/BuyVip.jsx'
       - 'src/pages/public/Profile.jsx'
       - 'src/pages/admin/AdminDashboard.jsx'
+      - 'src/pages/admin/AdminBillingTab.jsx'
+      - 'supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql'
       - 'src/pages/admin/AdminLogin.jsx'
       - 'src/pages/admin/AdminMembershipModal.jsx'
       - 'src/pages/admin/AdminUsersTab.jsx'
@@ -85,7 +87,7 @@ jobs:
           assert.match(profile, /navigate\(\s*"\/subscribe"/);
           // Admin visual redesign must keep the existing admin navigation and auth guards.
           const admin = readFileSync('src/pages/admin/AdminDashboard.jsx', 'utf8');
-          for (const id of ['dashboard','tickets','users','messages','codes','upload']) {
+          for (const id of ['dashboard','users','billing','messages','tickets','codes','upload']) {
             assert.ok(admin.includes("id: '" + id + "'"), 'Missing visible admin tab: ' + id);
           }
           for (const id of ['events','chat-reports','chat-analytics']) {
@@ -96,7 +98,10 @@ jobs:
           assert.match(admin,/activeTab === 'chat-reports'/);
           assert.match(admin,/activeTab === 'chat-analytics'/);
           assert.match(admin,/onClick=\{handleAdminLogout\}/);
-          assert.match(admin,/isAdminAuthenticated/);
+          assert.match(admin,/supabase\.auth\.signOut\(\)/);
+          assert.doesNotMatch(admin,/const isAdmin = localStorage\.getItem/);
+          assert.match(admin,/import AdminBillingTab from/);
+          assert.match(admin,/activeTab === 'billing'/);
           assert.match(admin,/activeTab === 'dashboard'/);
           assert.match(admin,/const profileCounts = users.reduce/);
           assert.match(admin,/Registered account categories/);
@@ -136,6 +141,25 @@ jobs:
           assert.match(support,/handleSendReply/);
           const messages = readFileSync('src/pages/admin/AdminMessagesTab.jsx','utf8');
           assert.match(messages,/handleSendMessage/);
+          const billing = readFileSync('src/pages/admin/AdminBillingTab.jsx','utf8');
+          const billingSql = readFileSync('supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql','utf8');
+          assert.match(billing,/jb_billing_admin_overview_v1/);
+          assert.match(billing,/data\.read_only !== true/);
+          assert.match(billing,/paid_gross_centavos/);
+          assert.match(billing,/pending_checkouts/);
+          assert.match(billing,/members\.available === true/);
+          assert.doesNotMatch(billing,/\.from\('jb_billing_orders'\)/);
+          assert.match(billingSql,/SECURITY DEFINER/);
+          assert.match(billingSql,/SET search_path = ''/);
+          assert.match(billingSql,/public\.is_current_user_admin\(\)/);
+          assert.match(billingSql,/auth\.uid\(\)/);
+          assert.match(billingSql,/REVOKE ALL ON FUNCTION.*FROM PUBLIC/);
+          assert.match(billingSql,/GRANT EXECUTE ON FUNCTION.*TO authenticated/);
+          assert.match(billingSql,/o\.provider_environment = 'live'/);
+          assert.match(billingSql,/o\.status = 'paid' AND o\.paymongo_payment_id IS NOT NULL/);
+          assert.match(billingSql,/coverage\.dated_link_count = coverage\.paid_count/);
+          assert.doesNotMatch(billingSql,/SUPABASE_SERVICE_ROLE_KEY|PAYMONGO_SECRET_KEY/);
+
                     const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
           const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
           assert.match(guard, /state=\{\{ from: location\.pathname/);
@@ -209,6 +233,8 @@ jobs:
             public/jb-logo.png \
             src/pages/admin/adminWorkspace.css \
             src/pages/admin/AdminDashboard.jsx \
+            src/pages/admin/AdminBillingTab.jsx \
+            supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql \
             src/pages/admin/AdminUsersTab.jsx \
             src/pages/admin/AdminMessagesTab.jsx \
             src/pages/admin/SupportTicketsTab.jsx \
