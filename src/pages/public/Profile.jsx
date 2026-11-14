@@ -1542,7 +1542,7 @@ export default function Profile() {
     "";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10 font-sans">
+    <div className="jbh-page min-h-screen text-white">
       <div className="max-w-5xl mx-auto space-y-8">
 
         {/* =================================================
@@ -1550,8 +1550,8 @@ export default function Profile() {
         ================================================= */}
 
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            Account Dashboard
+          <h1 className="jbh-title">
+            My account
           </h1>
 
           <p className="text-slate-400 text-sm mt-1">
@@ -1578,9 +1578,9 @@ export default function Profile() {
                 PROFILE CARD
             ================================================= */}
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-xl relative overflow-hidden">
+            <div className="jbh-surface relative overflow-hidden p-6 text-center">
 
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-600 via-amber-500 to-amber-300" />
+              <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-indigo-500 via-violet-400 to-sky-400" />
 
               <div className="w-24 h-24 mx-auto bg-slate-800 rounded-full flex items-center justify-center border-4 border-slate-950 shadow-inner my-3 relative overflow-visible">
 
@@ -1660,9 +1660,9 @@ export default function Profile() {
                     "/subscribe"
                   )
                 }
-                className="w-full mt-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 px-4 rounded-xl shadow-lg shadow-amber-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider"
+                className="jbh-btn mt-4 w-full text-sm"
               >
-                {isPaidMember ? "👑 View / Renew Membership" : "👑 Choose STANDARD / VIP Plan"}
+                {isPaidMember ? "Manage membership" : "Explore membership plans"}
               </button>
 
               {/* VIP COUNTDOWN */}
