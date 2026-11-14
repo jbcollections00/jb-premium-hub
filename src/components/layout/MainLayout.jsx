@@ -127,7 +127,7 @@ export default function MainLayout() {
 
   // Standard site layout; chat-specific layout is intentionally excluded.
   return (
-    <div className="flex min-h-screen flex-col justify-between bg-slate-950">
+    <div className="jbh-app flex min-h-screen flex-col justify-between text-slate-100">
       {showSocialBar ===
         true && (
         <SocialBar
@@ -138,7 +138,7 @@ export default function MainLayout() {
       <div>
         <Header />
 
-        <main className="w-full">
+        <main className="w-full min-w-0 flex-1">
           <Outlet />
         </main>
       </div>
