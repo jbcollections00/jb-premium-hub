@@ -8,13 +8,13 @@ const PLANS = [
     code: 'standard',
     label: 'STANDARD',
     price: 50,
-    benefits: ['One month of access', 'Advertisements included', 'Downloads unavailable'],
+    benefits: ['Full media library access', 'Advertisements included', 'Streaming only'],
   },
   {
     code: 'vip',
     label: 'VIP',
     price: 150,
-    benefits: ['One month of access', 'No advertisements', 'Downloads enabled'],
+    benefits: ['Full media library access', 'Ad-free experience', 'Downloads included'],
   },
 ];
 
@@ -117,7 +117,7 @@ export default function Subscribe() {
   const outcome = params.get('checkout');
   // Read-only support diagnostics. Shows pass/fail booleans only; never displays
   // Supabase user IDs, configured tester IDs, auth tokens or payment secrets.
-  const showCheckoutDiagnostics = params.get('checkout_debug') === '1';
+  const showTestCheckout = params.get('qa_checkout') === '1';
   const [plan, setPlan] = useState('vip');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -334,147 +334,180 @@ export default function Subscribe() {
     }
   };
 
+
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10 text-slate-100">
-      <div className="mb-8">
-        <p className="text-xs font-semibold tracking-widest text-blue-400 uppercase">JB Premium Hub</p>
-        <h1 className="mt-2 text-3xl font-extrabold">Choose your membership</h1>
-        <p className="mt-2 text-slate-400">One-month access plans. Payment confirmation is verified by the server, never by a browser redirect.</p>
-      </div>
-
-      {outcome === 'returned' && (
-        <div role="status" aria-live="polite" className="mb-6 rounded-xl border border-amber-600/40 bg-amber-950/30 p-4 text-sm text-amber-200">
-          {returnStatus === 'updated'
-            ? 'Your LIVE membership information has been updated by the server. See your current plan and expiration below.'
-            : returnStatus === 'timed_out'
-              ? 'No new LIVE membership update was confirmed within two minutes. This does not mean payment failed. Please contact support before paying again.'
-              : returnStatus === 'login_required'
-                ? 'Sign in to check your LIVE membership. Returning from checkout does not confirm payment.'
-                : 'Returned from checkout. Checking your LIVE membership automatically every 5 seconds for up to 2 minutes. Do not make another payment while confirmation is pending.'}
-        </div>
-      )}
-      {outcome === 'test-return' && (
-        <div role="status" className="mb-6 rounded-xl border border-cyan-600/40 bg-cyan-950/30 p-4 text-sm text-cyan-200">
-          Returned from PayMongo TEST checkout. This is not proof of payment. TEST transactions do not activate production membership; verify the TEST order and entitlement in Supabase.
-        </div>
-      )}
-      {outcome === 'test-cancel' && (
-        <div role="status" className="mb-6 rounded-xl border border-slate-600 bg-slate-900 p-4 text-sm text-slate-300">
-          TEST checkout was cancelled. No membership is granted by a redirect.
-        </div>
-      )}
-      {outcome === 'cancelled' && (
-        <div role="status" className="mb-6 rounded-xl border border-slate-600 bg-slate-900 p-4 text-sm text-slate-300">
-          Checkout was cancelled. No membership is granted from this redirect.
-        </div>
-      )}
-
-      {showCheckoutDiagnostics && (
-        <section aria-label="Read-only checkout diagnostics" className="mb-6 rounded-xl border border-amber-600/40 bg-slate-900 p-4 text-sm text-slate-200">
-          <h2 className="font-bold text-amber-200">Checkout diagnostics (read-only)</h2>
-          <p className="mt-1 text-xs text-slate-400">This panel does not initiate payments or display account IDs or secrets.</p>
-          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-            {[
-              ['Production build', import.meta.env.PROD === true],
-              ['Correct website origin', window.location.origin === SITE_ORIGIN],
-              ['LIVE checkout UI flag', import.meta.env.VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true'],
-              ['Tester-only UI mode', CHECKOUT_UI_MODE === 'tester'],
-              ['Valid tester UUID configured', VALID_TESTER_UI_ID],
-              ['Signed-in session loaded', !checking && Boolean(user?.id)],
-              ['Signed-in account matches tester', !checking && VALID_TESTER_UI_ID && Boolean(user?.id) && user.id.toLowerCase() === TESTER_UI_USER_ID],
-            ].map(([name, passed]) => (
-              <div key={name} className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 px-3 py-2">
-                <dt>{name}</dt>
-                <dd className={passed ? 'font-semibold text-emerald-300' : 'font-semibold text-amber-300'}>
-                  {checking && String(name).startsWith('Signed-in') ? 'CHECKING' : passed ? 'PASS' : 'BLOCKED'}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-3 text-xs text-slate-400">Server-side checkout authorization is a separate control; this only diagnoses the visible button.</p>
-        </section>
-      )}
-
-      {!checkoutUiEnabled && (
-        <div role="status" className="mb-6 rounded-xl border border-blue-700/40 bg-blue-950/30 p-4 text-sm text-blue-200">
-          Payment checkout is not enabled yet. This page is available for preview and validation only; no LIVE payment can be started here.
-        </div>
-      )}
-
-      <div className="grid gap-5 md:grid-cols-2">
-        {PLANS.map((item) => (
-          <button key={item.code} type="button" onClick={() => setPlan(item.code)}
-            aria-pressed={plan === item.code}
-            className={`rounded-2xl border p-6 text-left transition-colors ${plan === item.code ? 'border-blue-500 bg-blue-950/40' : 'border-slate-700 bg-slate-900 hover:border-slate-500'}`}>
-            <span className="text-sm font-bold tracking-wider">{item.label}</span>
-            <div className="my-3 text-3xl font-black">₱{item.price}<span className="text-sm font-medium text-slate-400"> / month</span></div>
-            <div className="space-y-2">
-              {item.benefits.map((feature) => (
-                <div className="flex items-center gap-2 text-sm text-slate-300" key={feature}>
-                  <CheckCircle2 className="h-4 w-4 flex-none text-emerald-400" /> {feature}
-                </div>
-              ))}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <section className="mt-8 rounded-2xl border border-slate-700 bg-slate-900 p-6">
-        <h2 className="flex items-center gap-2 text-lg font-bold"><CreditCard className="h-5 w-5" /> Checkout</h2>
-        <p className="mt-3 text-sm text-slate-300">Selected: <strong>{selected.label} — ₱{selected.price}</strong> for one month.</p>
-        <p className="mt-2 text-xs text-slate-400">Payment method planned: PayMongo QR Ph. A successful checkout return is not proof of payment.</p>
-        {message && <p role="alert" className="mt-4 rounded-lg border border-amber-600/40 p-3 text-sm text-amber-300">{message}</p>}
-        {attemptedOrder && <p className="mt-2 break-all text-xs text-slate-400">Order for support: {attemptedOrder}</p>}
-        <button type="button" onClick={beginCheckout} disabled={!checkoutUiEnabled || !user || checking || busy}
-          className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">
-          {busy ? 'Opening secure checkout...' : checkoutUiEnabled ? `Pay ₱${selected.price} via PayMongo` : 'LIVE checkout disabled'}
-        </button>
-        {testCheckoutUiEnabled && (
-          <div className="mt-5 rounded-xl border border-cyan-700/50 bg-cyan-950/20 p-4">
-            <p className="text-sm font-semibold text-cyan-200">QA ONLY — PayMongo TEST checkout</p>
-            <p className="mt-1 text-xs text-cyan-100/80">TEST transactions do not grant production access. Use only the PayMongo TEST flow; do not send real money.</p>
-            <button type="button" onClick={beginTestCheckout} disabled={!user || checking || busy}
-              className="mt-3 w-full rounded-lg border border-cyan-500 px-4 py-3 text-sm font-semibold text-cyan-100 hover:bg-cyan-900/40 disabled:opacity-50">
-              {busy ? 'Opening TEST checkout...' : `TEST ₱${selected.price} ${selected.label} checkout`}
-            </button>
-          </div>
-        )}
-        {!user && !checking && <p className="mt-3 text-sm text-slate-400">Sign in to buy a membership. <Link className="text-blue-400 underline" to="/login">Log in</Link></p>}
-        <p className="mt-4 flex items-center gap-2 text-xs text-slate-400"><LockKeyhole className="h-4 w-4" /> Membership activates only after server-side payment verification.</p>
-      </section>
-
-      <section className="mt-5 rounded-2xl border border-slate-700 bg-slate-900 p-6">
-        <h2 className="flex items-center gap-2 font-semibold"><ShieldCheck className="h-5 w-5 text-emerald-400" /> Membership status</h2>
-        <p className="mt-2 text-sm text-slate-400">The current entitlement is provided by the authenticated billing RPC. No access is granted by this page.</p>
-        {accessError && <p className="mt-3 text-sm text-amber-300" role="alert">{accessError}</p>}
-        {access !== null && !entitlement && (
-          <p role="status" className="mt-3 rounded-lg border border-amber-700/50 bg-amber-950/20 p-3 text-sm text-amber-200">
-            Unable to interpret membership status. No access changes have been made. Please contact support.
+    <main className="jbh-page text-slate-100">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-9 text-center sm:mb-12">
+          <p className="jbh-eyebrow">Membership</p>
+          <h1 className="jbh-title mt-3">Choose your experience.</h1>
+          <p className="jbh-muted mx-auto mt-4 max-w-xl text-sm sm:text-base">
+            Simple, one-month access. Choose Standard for streaming or VIP for more flexibility.
           </p>
-        )}
-        {entitlement && (
-          <div className="mt-4 rounded-xl bg-slate-950 p-4" aria-live="polite">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm text-slate-400">Your plan</span>
-              <span className="rounded-full border border-blue-600/40 bg-blue-950/50 px-3 py-1 text-sm font-bold text-blue-200">
-                {entitlement.tier}
-              </span>
-            </div>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div><dt className="text-slate-400">Album access</dt><dd className="font-semibold">{entitlement.canViewAlbums ? 'Available' : 'Not included'}</dd></div>
-              <div><dt className="text-slate-400">Downloads</dt><dd className="font-semibold">{entitlement.canDownload ? 'Enabled' : 'Disabled'}</dd></div>
-              <div><dt className="text-slate-400">Advertisements</dt><dd className="font-semibold">{entitlement.tier === 'FREE' ? 'Not applicable — no album access' : entitlement.showAds ? 'Included' : 'Ad-free'}</dd></div>
-              <div><dt className="text-slate-400">Access expiration</dt><dd className="font-semibold">{entitlement.expiry || 'No paid expiry available'}</dd></div>
-            </dl>
-            {entitlement.tier === 'FREE' && <p className="mt-4 text-xs text-slate-400">Your account currently has no paid membership. Choose a plan when checkout becomes available.</p>}
+        </div>
+
+        {outcome === 'returned' && (
+          <div role="status" aria-live="polite" className="mb-6 rounded-2xl border border-indigo-400/25 bg-indigo-500/10 p-4 text-sm text-indigo-100">
+            {returnStatus === 'updated'
+              ? 'Your membership is updated. Enjoy your access.'
+              : returnStatus === 'timed_out'
+                ? 'Confirmation is taking longer than expected. Please contact support before paying again.'
+                : returnStatus === 'login_required'
+                  ? 'Please sign in to check your membership.'
+                  : 'Checking your payment confirmation. Please do not pay again while we check.'}
           </div>
         )}
-        <button type="button" onClick={refreshMembership} disabled={!user || checking}
-          className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-50">
-          <RefreshCw className="h-4 w-4" /> Refresh status
-        </button>
-        <div className="mt-4 text-xs text-slate-500">For payment issues, use the <Link to="/support" className="text-blue-400 underline">Support page</Link>. Do not submit multiple payments if checkout status is uncertain.</div>
-      </section>
+        {outcome === 'cancelled' && (
+          <div role="status" className="mb-6 rounded-2xl border border-white/10 bg-slate-800/60 p-4 text-sm text-slate-200">
+            Checkout was cancelled. Your membership was not changed.
+          </div>
+        )}
+        {outcome === 'test-return' && showTestCheckout && (
+          <div role="status" className="mb-6 rounded-2xl border border-cyan-400/30 bg-cyan-500/10 p-4 text-sm text-cyan-200">
+            Test checkout returned. Confirm test results in the dashboard.
+          </div>
+        )}
+        {outcome === 'test-cancel' && showTestCheckout && (
+          <div role="status" className="mb-6 rounded-2xl border border-white/10 bg-slate-800/60 p-4 text-sm text-slate-200">
+            Test checkout cancelled.
+          </div>
+        )}
+        {!checkoutUiEnabled && (
+          <div role="status" className="mb-6 rounded-2xl border border-white/10 bg-slate-800/60 p-4 text-sm text-slate-300">
+            Checkout is temporarily unavailable. Please check back soon.
+          </div>
+        )}
+
+        <div className="grid gap-5 md:grid-cols-2" aria-label="Membership plans">
+          {PLANS.map((item) => {
+            const selectedPlan = plan === item.code;
+            const vipPlan = item.code === 'vip';
+            return (
+              <button key={item.code} type="button" onClick={() => setPlan(item.code)}
+                aria-pressed={selectedPlan}
+                className={'group relative flex min-h-[258px] flex-col rounded-3xl border p-6 text-left transition-all duration-200 sm:p-7 ' +
+                  (selectedPlan
+                    ? 'border-indigo-400/70 bg-gradient-to-br from-indigo-500/20 via-slate-900 to-slate-900 shadow-[0_16px_40px_rgba(55,48,163,0.18)]'
+                    : 'border-white/10 bg-slate-900/65 hover:-translate-y-0.5 hover:border-indigo-400/40')}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold tracking-[.15em] text-slate-200">{item.label}</span>
+                  {vipPlan && <span className="rounded-full bg-indigo-400/15 px-3 py-1 text-[11px] font-semibold text-indigo-200">More benefits</span>}
+                  {!vipPlan && selectedPlan && <CheckCircle2 className="h-5 w-5 text-indigo-300" aria-hidden="true" />}
+                </div>
+                <div className="mt-6">
+                  <span className="text-4xl font-black tracking-tight text-white">₱{item.price}</span>
+                  <span className="ml-2 text-sm text-slate-400">for one month</span>
+                </div>
+                <ul className="mt-6 space-y-3">
+                  {item.benefits.map((benefit) => (
+                    <li key={benefit} className="flex items-center gap-2.5 text-sm text-slate-300">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-indigo-300" aria-hidden="true" />
+                      {benefit}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-auto pt-6 text-xs font-semibold text-indigo-200">
+                  {selectedPlan ? 'Selected plan' : 'Select plan'}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-7 grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
+          <section className="jbh-surface p-6 sm:p-7" aria-labelledby="checkout-heading">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-400/15 text-indigo-200">
+                <CreditCard className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 id="checkout-heading" className="text-lg font-bold text-white">Secure checkout</h2>
+                <p className="mt-0.5 text-xs text-slate-400">Powered by PayMongo · QR Ph</p>
+              </div>
+            </div>
+
+            <div className="jbh-surface-soft mt-6 flex items-center justify-between gap-4 px-4 py-4">
+              <div>
+                <p className="text-xs text-slate-400">Your selection</p>
+                <p className="mt-1 text-sm font-bold text-white">{selected.label}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-extrabold text-white">₱{selected.price}</p>
+                <p className="text-[11px] text-slate-400">One-time payment</p>
+              </div>
+            </div>
+
+            {message && <p role="alert" className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-sm text-amber-100">{message}</p>}
+            {message && attemptedOrder && <p className="mt-2 break-all text-xs text-slate-400">Support reference: {attemptedOrder}</p>}
+
+            <button type="button" onClick={beginCheckout}
+              disabled={!checkoutUiEnabled || !user || checking || busy}
+              className="jbh-btn mt-5 w-full">
+              {busy ? 'Opening checkout…' : checkoutUiEnabled ? <>Continue to PayMongo · ₱{selected.price}</> : 'Checkout unavailable'}
+            </button>
+
+            {testCheckoutUiEnabled && showTestCheckout && (
+              <div className="mt-4 rounded-xl border border-cyan-500/25 bg-cyan-500/10 p-4">
+                <p className="text-xs font-semibold text-cyan-200">Test checkout</p>
+                <p className="mt-1 text-xs text-cyan-100/75">Test payments do not activate live memberships.</p>
+                <button type="button" onClick={beginTestCheckout} disabled={!user || checking || busy}
+                  className="jbh-btn-quiet mt-3 w-full text-sm">
+                  {busy ? 'Opening test checkout…' : <>Open test checkout · ₱{selected.price}</>}
+                </button>
+              </div>
+            )}
+
+            {!user && !checking && (
+              <p className="mt-4 text-sm text-slate-400">
+                <Link to="/login" className="font-semibold text-indigo-300 hover:text-white">Sign in</Link> to continue.
+              </p>
+            )}
+            <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-slate-400">
+              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-indigo-300" aria-hidden="true" />
+              Access starts after payment confirmation. No automatic monthly charges.
+            </p>
+          </section>
+
+          <section className="jbh-surface p-6 sm:p-7" aria-labelledby="membership-heading">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300">
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 id="membership-heading" className="text-lg font-bold text-white">My membership</h2>
+                <p className="mt-0.5 text-xs text-slate-400">Your current access</p>
+              </div>
+            </div>
+            {accessError && <p className="mt-5 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200" role="alert">{accessError}</p>}
+            {access !== null && !entitlement && (
+              <p role="status" className="mt-5 text-sm text-amber-200">Membership details are unavailable. Please contact support.</p>
+            )}
+            {entitlement && (
+              <div className="mt-6" aria-live="polite">
+                <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
+                  <span className="text-sm text-slate-400">Current plan</span>
+                  <span className="rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-bold text-indigo-200">{entitlement.tier}</span>
+                </div>
+                <dl className="mt-4 space-y-4 text-sm">
+                  <div className="flex justify-between gap-3"><dt className="text-slate-400">Media access</dt><dd className="font-semibold">{entitlement.canViewAlbums ? 'Included' : 'Not active'}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-slate-400">Downloads</dt><dd className="font-semibold">{entitlement.canDownload ? 'Included' : 'Not included'}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-slate-400">Ads</dt><dd className="font-semibold">{entitlement.tier === 'FREE' ? '—' : entitlement.showAds ? 'Included' : 'Ad-free'}</dd></div>
+                  <div className="border-t border-white/10 pt-4"><dt className="text-slate-400">Valid until</dt><dd className="mt-1 font-semibold">{entitlement.expiry || 'No active paid period'}</dd></div>
+                </dl>
+              </div>
+            )}
+            <button type="button" onClick={refreshMembership} disabled={!user || checking}
+              className="jbh-btn-quiet mt-6 w-full text-sm">
+              <RefreshCw className="h-4 w-4" aria-hidden="true" /> Refresh membership
+            </button>
+          </section>
+        </div>
+
+        <p className="mt-8 text-center text-xs leading-relaxed text-slate-500">
+          Questions about a payment? <Link to="/support" className="font-semibold text-indigo-300 hover:text-white">Contact support</Link>.
+          Please avoid paying twice if confirmation is delayed.
+        </p>
+      </div>
     </main>
   );
 }
