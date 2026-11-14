@@ -200,3 +200,27 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build
         run: npm run build
+      - name: Package complete Admin replacement files
+        run: |
+          mkdir -p delivery
+          zip -q delivery/JB_Premium_Hub_Admin_Phase313B_Full_Replacement.zip \
+            docs/PHASE_313B_ADMIN_PREMIUM_README.md \
+            src/index.css \
+            public/jb-logo.png \
+            src/pages/admin/adminWorkspace.css \
+            src/pages/admin/AdminDashboard.jsx \
+            src/pages/admin/AdminUsersTab.jsx \
+            src/pages/admin/AdminMessagesTab.jsx \
+            src/pages/admin/SupportTicketsTab.jsx \
+            src/pages/admin/AccessCodesTab.jsx \
+            src/pages/admin/AdminMediaTab.jsx \
+            src/pages/admin/AdminMembershipModal.jsx \
+            src/pages/admin/AdminLogin.jsx
+          unzip -t delivery/JB_Premium_Hub_Admin_Phase313B_Full_Replacement.zip
+      - name: Upload complete admin code ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JB-Premium-Admin-Phase313B-Full-Replacement
+          path: delivery/JB_Premium_Hub_Admin_Phase313B_Full_Replacement.zip
+          if-no-files-found: error
+          retention-days: 30
