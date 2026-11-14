@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
+import './adminWorkspace.css';
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('');
@@ -78,18 +79,18 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <div className="bg-gray-900 border border-red-900/50 p-8 rounded-2xl max-w-md w-full shadow-2xl text-center">
-        <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl border border-red-500/30">
-          🛡️
+    <div className="jbh-admin jbh-admin-login-shell flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="jbh-admin-login-card jbh-admin-page w-full max-w-md rounded-3xl p-7 text-center shadow-2xl sm:p-10">
+        <div className="jbh-admin-brand-mark mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[22px] p-2">
+          <img src="/jb-logo.png" alt="JB Collections" className="h-full w-full object-contain" />
         </div>
 
         <h2 className="text-2xl font-bold text-white mb-1">
-          Admin Security Portal
+          Admin sign in
         </h2>
 
         <p className="text-gray-400 text-xs mb-6">
-          Restricted Access • Registered Admin Accounts Only
+          Secure administration for authorized team members.
         </p>
 
         {error && (
@@ -119,7 +120,7 @@ export default function AdminLogin() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
               disabled={loading}
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-red-500 disabled:opacity-60"
+              className="jbh-admin-input w-full px-4 py-3 text-sm disabled:opacity-60"
             />
           </div>
 
@@ -140,14 +141,14 @@ export default function AdminLogin() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter admin password"
               disabled={loading}
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-red-500 disabled:opacity-60"
+              className="jbh-admin-input w-full px-4 py-3 text-sm disabled:opacity-60"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            className="jbh-admin-primary w-full disabled:opacity-60"
           >
             {loading ? 'Authenticating...' : 'Authenticate Admin'}
           </button>
