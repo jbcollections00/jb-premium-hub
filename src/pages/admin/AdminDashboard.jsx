@@ -240,9 +240,9 @@ export default function AdminDashboard() {
 
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
-    { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'users', icon: Users, label: 'Users', count: registeredProfileCount },
     { id: 'messages', icon: MessageSquare, label: 'Messages' },
+    { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'codes', icon: KeyRound, label: 'Access codes' },
     { id: 'upload', icon: Clapperboard, label: 'Media manager' },
   ];
