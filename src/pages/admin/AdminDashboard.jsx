@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Activity, BarChart3, CalendarDays, Clapperboard, Flag, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Users } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -241,90 +242,93 @@ export default function AdminDashboard() {
     : 0;
 
   const navItems = [
-    { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-    { id: 'events', icon: '🏆', label: 'Contest & Events' },
-    { id: 'tickets', icon: '🎧', label: 'Support Tickets', badge: pendingTicketsCount },
-    { id: 'users', icon: '👥', label: 'Users', count: users.length },
-    { id: 'messages', icon: '💬', label: 'Send Messages' },
-    { id: 'chat-reports', icon: '🚩', label: 'Chat Reports' },
-    { id: 'chat-analytics', icon: '📈', label: 'Chat Analytics' },
-    { id: 'codes', icon: '🔑', label: 'Access Codes' },
-    { id: 'upload', icon: '📤', label: 'Bulk Upload & Media' },
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
+    { id: 'events', icon: CalendarDays, label: 'Events' },
+    { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
+    { id: 'users', icon: Users, label: 'Users', count: users.length },
+    { id: 'messages', icon: MessageSquare, label: 'Messages' },
+    { id: 'chat-reports', icon: Flag, label: 'Chat reports' },
+    { id: 'chat-analytics', icon: BarChart3, label: 'Chat analytics' },
+    { id: 'codes', icon: KeyRound, label: 'Access codes' },
+    { id: 'upload', icon: Clapperboard, label: 'Media manager' },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex">
-      <aside className="w-16 md:w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between p-2 md:p-4 shrink-0 transition-all duration-300">
-        <div>
-          <div className="flex items-center justify-center md:justify-start gap-2 mb-8 px-1 md:px-2">
-            <span className="text-2xl shrink-0">🛡️</span>
-            <div className="hidden md:block overflow-hidden">
-              <h2 className="font-bold text-base text-red-500 leading-tight truncate">Vault Control</h2>
-              <p className="text-[10px] text-gray-500 truncate">Admin Portal v2.0</p>
+    <div className="jbh-app jbh-admin flex min-h-screen flex-col text-slate-100 lg:flex-row">
+      <aside className="z-20 flex w-full flex-shrink-0 flex-col gap-5 border-b border-white/10 bg-[#0b1323]/95 px-4 py-4 backdrop-blur-xl sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:justify-between lg:gap-8 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-5 lg:py-7">
+        <div className="min-w-0">
+          <div className="mb-5 flex items-center gap-3 px-1 lg:mb-8">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-indigo-400/25 bg-indigo-400/10 text-indigo-200">
+              <ShieldCheck size={22} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-extrabold tracking-[.08em] text-white">JB PREMIUM HUB</h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-400">Admin workspace</p>
             </div>
           </div>
-
-          <nav className="flex flex-col gap-1.5">
+          <p className="hidden px-3 pb-2 text-[11px] font-semibold uppercase tracking-[.16em] text-slate-500 lg:block">Workspace</p>
+          <nav className="flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0" aria-label="Admin workspace navigation">
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
+              const Icon = item.icon;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => setActiveTab(item.id)}
-                  title={`${item.label}${item.count !== undefined ? ` (${item.count})` : ''}`}
-                  className={`p-3 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center md:justify-between relative ${
+                  title={item.label}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`group relative flex min-h-11 shrink-0 items-center justify-between gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-colors sm:text-sm lg:w-full ${
                     isActive
-                      ? 'bg-red-600 text-white font-bold shadow-lg shadow-red-600/20'
-                      : 'text-gray-400 hover:bg-gray-800/80 hover:text-white'
+                      ? 'border-indigo-400/25 bg-indigo-400/15 text-indigo-100'
+                      : 'border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-white'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <span className="text-lg shrink-0">{item.icon}</span>
-                    <span className="hidden md:inline truncate">
-                      {item.label} {item.count !== undefined ? `(${item.count})` : ''}
-                    </span>
-                  </div>
-
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <Icon size={18} className={isActive ? 'text-indigo-300' : 'text-slate-400'} aria-hidden="true" />
+                    <span className="whitespace-nowrap lg:truncate">{item.label}</span>
+                  </span>
                   {item.badge > 0 && (
-                    <>
-                      <span className="hidden md:inline bg-amber-500 text-black font-black text-[10px] px-2 py-0.5 rounded-full ml-1 shrink-0">
-                        {item.badge}
-                      </span>
-                      <span className="md:hidden absolute top-1 right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-gray-900"></span>
-                    </>
+                    <span className="rounded-full border border-indigo-400/25 bg-indigo-400/15 px-2 py-0.5 text-[10px] font-bold text-indigo-200">
+                      {item.badge}
+                    </span>
                   )}
                 </button>
               );
             })}
           </nav>
         </div>
-
         <button
+          type="button"
           onClick={handleAdminLogout}
-          title="Admin Logout"
-          className="bg-gray-800 hover:bg-red-600/20 hover:text-red-400 p-3 rounded-xl text-xs font-bold text-gray-400 transition-all cursor-pointer border border-gray-700/50 flex items-center justify-center gap-2"
+          title="Sign out of admin"
+          className="jbh-btn-quiet hidden w-full items-center justify-center gap-2 text-sm font-semibold lg:inline-flex"
         >
-          <span className="text-base shrink-0">🚪</span>
-          <span className="hidden md:inline truncate">Admin Logout</span>
+          <LogOut size={17} aria-hidden="true" />
+          Sign out
+        </button>
+        <button type="button" onClick={handleAdminLogout}
+          className="jbh-btn-quiet inline-flex w-fit items-center gap-2 self-end text-xs lg:hidden">
+          <LogOut size={16} aria-hidden="true" /> Sign out
         </button>
       </aside>
 
-      <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
+      <main className="min-w-0 flex-1 px-4 py-7 sm:px-6 lg:px-9 lg:py-10">
         {activeTab === 'dashboard' && (
-          <div className="space-y-6 max-w-7xl">
+          <div className="mx-auto max-w-7xl space-y-7">
             <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">System Dashboard & Analytics</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Real-time overview of users, growth metrics, and vault stats.</p>
+              <h1 className="jbh-title">Workspace overview</h1>
+              <p className="jbh-muted mt-2 text-sm">Activity, memberships and content at a glance.</p>
             </div>
 
             {/* 7 Metric Cards Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+              <div className="jbh-surface-soft p-4">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Total Users</p>
                 <p className="text-2xl font-black text-purple-400 mt-1">{users.length}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+              <div className="jbh-surface-soft p-4">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Online Now</p>
                 <p className="text-2xl font-black text-emerald-400 mt-1 flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -332,34 +336,34 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+              <div className="jbh-surface-soft p-4">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">VIP Members</p>
                 <p className="text-2xl font-black text-emerald-400 mt-1">{vipUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+              <div className="jbh-surface-soft p-4">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Standard Users</p>
                 <p className="text-2xl font-black text-blue-400 mt-1">{standardUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+              <div className="jbh-surface-soft p-4">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Guest Users</p>
                 <p className="text-2xl font-black text-amber-400 mt-1">{guestUsersCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl">
-                <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Vault Videos</p>
+              <div className="jbh-surface-soft p-4">
+                <p className="text-slate-400 text-[11px] font-semibold uppercase tracking-wider">Media items</p>
                 <p className="text-2xl font-black text-sky-400 mt-1">{totalMediaCount}</p>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-4 rounded-2xl col-span-2 sm:col-span-1">
+              <div className="jbh-surface-soft col-span-2 p-4 sm:col-span-1">
                 <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider">Pending Tickets</p>
                 <p className="text-2xl font-black text-rose-400 mt-1">{pendingTicketsCount}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col justify-between">
+              <div className="jbh-surface flex flex-col justify-between p-5">
                 <div>
                   <h3 className="text-sm font-bold text-white mb-1">User Tier Distribution</h3>
                   <p className="text-[11px] text-gray-400">Ratio of VIP vs Standard vs Guest Users</p>
@@ -406,7 +410,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 p-5 rounded-2xl lg:col-span-2 flex flex-col justify-between">
+              <div className="jbh-surface flex flex-col justify-between p-5 lg:col-span-2">
                 <div>
                   <h3 className="text-sm font-bold text-white mb-1">Weekly Registration & Guest Activity</h3>
                   <p className="text-[11px] text-gray-400">New user signups and guest logins over the last 7 days</p>
