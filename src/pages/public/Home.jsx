@@ -1056,16 +1056,16 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10">
+    <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
-        <div className="mb-10 bg-slate-900/80 border border-slate-800 rounded-3xl p-4 md:p-6 shadow-2xl backdrop-blur-md relative overflow-hidden">
-          <div className="absolute -top-20 -left-20 w-60 h-60 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
-          <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
+          <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
+          <div className="pointer-events-none absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl"></div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 relative z-10">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-2xl shadow-lg shadow-red-600/30 border border-amber-400/30">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-400/25 bg-indigo-500/15 text-xl text-indigo-200">
                 🔥
               </div>
               <div>
@@ -1073,12 +1073,12 @@ export default function Home() {
                   <h2 className="text-xl md:text-2xl font-black text-white tracking-wide">
                     Most Watched
                   </h2>
-                  <span className="bg-gradient-to-r from-red-600 to-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow-md">
-                    TOP TRENDING
+                  <span className="rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
+                    Popular
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Ang pinakapinapanood na mga video sa komunidad
+                  Most played by the community
                 </p>
               </div>
             </div>
@@ -1100,16 +1100,16 @@ export default function Home() {
                 <>
                   <Link
                     to="/subscribe"
-                    className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5 border border-amber-400/30 active:scale-95"
+                    className="jbh-btn text-xs"
                   >
-                    💳 Upgrade Membership
+                    Explore plans
                   </Link>
                   <button
                     type="button"
                     onClick={() => setShowRedeemModal(true)}
                     className="text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 bg-slate-900/80 text-xs font-semibold px-3 py-2.5 rounded-xl transition-colors"
                   >
-                    🔑 Redeem Code
+                    Redeem code
                   </button>
                 </>
               )}
@@ -1214,7 +1214,7 @@ export default function Home() {
 
         {/* VAULT MEDIA LIST HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl md:text-2xl font-bold text-white">Vault Media</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-white">Media library</h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
             Showing {mediaList.length} of <strong className="text-red-500">{totalCount}</strong> Videos
           </span>
