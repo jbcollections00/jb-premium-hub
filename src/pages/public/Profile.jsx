@@ -28,6 +28,10 @@ export default function Profile() {
   // An RPC failure must not be mistaken for a free or standard membership.
   const [liveMembership, setLiveMembership] = useState(null);
   const [liveMembershipError, setLiveMembershipError] = useState(false);
+  // Payment history comes from an auth-scoped, read-only billing RPC.
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(true);
+  const [paymentHistoryError, setPaymentHistoryError] = useState(false);
 
   const [
     expirationDate,
@@ -194,6 +198,45 @@ export default function Profile() {
 
   useEffect(() => {
     fetchUserData();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPaymentHistory = async () => {
+      if (active) {
+        setPaymentHistoryLoading(true);
+        setPaymentHistoryError(false);
+      }
+
+      try {
+        const { data, error } = await supabase.rpc("jb_billing_my_history_v1");
+        if (error) throw error;
+        if (!Array.isArray(data)) throw new Error("Payment history response unavailable.");
+
+        if (active) {
+          setPaymentHistory(data);
+          setPaymentHistoryError(false);
+        }
+      } catch (error) {
+        console.error("Could not load payment history:", error);
+        if (active) {
+          setPaymentHistory([]);
+          setPaymentHistoryError(true);
+        }
+      } finally {
+        if (active) setPaymentHistoryLoading(false);
+      }
+    };
+
+    void loadPaymentHistory();
+
+    // Refresh after returning from the PayMongo checkout or switching tabs.
+    window.addEventListener("focus", loadPaymentHistory);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", loadPaymentHistory);
+    };
   }, []);
 
   /* =========================================================
@@ -1514,21 +1557,21 @@ export default function Profile() {
         "How do I activate or extend my VIP membership?",
 
       a:
-        "Enter your purchased Access Code in the 'Redeem Access Code' section above. Extra days automatically stack onto your current subscription expiration.",
+        "Choose a plan to pay securely with PayMongo, or redeem a valid access code in your account.",
     },
     {
       q:
         "What happens when my VIP status expires?",
 
       a:
-        "Your account reverts to Standard status until renewed.",
+        "Your paid access ends at expiry unless another active entitlement applies. You can renew from the Plans page.",
     },
     {
       q:
         "How can I buy an Access Code?",
 
       a:
-        "Use the account's purchase page or contact Admin Support.",
+        "Choose a membership plan on the Plans page, or contact support about access codes.",
     },
   ];
 
@@ -1556,9 +1599,8 @@ export default function Profile() {
 
           <p className="text-slate-400 text-sm mt-1">
             Manage your profile,
-            active subscription
-            status, and security
-            settings.
+            membership, payment history,
+            and security settings.
           </p>
         </div>
 
@@ -2357,6 +2399,93 @@ export default function Profile() {
           </div>
         </div>
 
+
+        {/* =================================================
+            PAYMENT & CHECKOUT HISTORY
+            Auth-scoped RPC: current user's LIVE orders only.
+        ================================================= */}
+        <section className="jbh-surface p-6 sm:p-7" aria-labelledby="payment-history-heading">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 id="payment-history-heading" className="text-xl font-extrabold tracking-tight text-white">
+                Subscription & payment history
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Your PayMongo purchases and recent checkout activity.
+              </p>
+            </div>
+            <button type="button" onClick={() => navigate("/subscribe")}
+              className="jbh-btn-quiet text-xs font-semibold">
+              View plans
+            </button>
+          </div>
+
+          {paymentHistoryLoading ? (
+            <div role="status" className="mt-6 rounded-2xl border border-white/10 bg-slate-950/50 p-6 text-sm text-slate-400">
+              Loading your payment history…
+            </div>
+          ) : paymentHistoryError ? (
+            <div role="alert" className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-sm text-amber-200">
+              We couldn’t load your payment history right now. Please refresh or contact support.
+            </div>
+          ) : paymentHistory.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/50 p-6 text-sm text-slate-400">
+              You have no PayMongo checkout history yet.
+            </div>
+          ) : (
+            <div className="mt-6 space-y-3">
+              {paymentHistory.map((entry) => {
+                const status = String(entry.status || "pending").toLowerCase();
+                const statusLabel = status === "paid" ? "Paid" :
+                  status === "pending" ? "Pending payment" :
+                  status === "cancelled" ? "Cancelled" :
+                  status === "refunded" ? "Refunded" :
+                  status === "failed" ? "Failed" : status.replaceAll("_", " ");
+                const statusClass = status === "paid"
+                  ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300"
+                  : status === "pending"
+                    ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+                    : "border-white/10 bg-white/5 text-slate-300";
+                const amount = Number(entry.amount_centavos);
+                const price = Number.isFinite(amount)
+                  ? new Intl.NumberFormat("en-PH", {
+                      style: "currency",
+                      currency: "PHP",
+                    }).format(amount / 100)
+                  : "—";
+                const orderedAt = entry.created_at && !Number.isNaN(new Date(entry.created_at).getTime())
+                  ? new Date(entry.created_at).toLocaleString("en-PH", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })
+                  : "Date unavailable";
+
+                return (
+                  <article key={entry.order_id} className="jbh-surface-soft flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold tracking-wide text-white">
+                        {String(entry.plan_code || "Membership").toUpperCase()} membership
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Checkout date: {orderedAt}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Reference: {String(entry.order_id || "").slice(0, 8).toUpperCase()}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className={"rounded-full border px-3 py-1 text-xs font-semibold " + statusClass}>
+                        {statusLabel}
+                      </span>
+                      <strong className="text-base text-white">{price}</strong>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {/* =================================================
             SUBSCRIPTION HISTORY
         ================================================= */}
@@ -2364,13 +2493,11 @@ export default function Profile() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
 
           <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-            📜 Subscription Code
-            History
+            Access code history
           </h3>
 
           <p className="text-xs text-slate-400 mb-4">
-            Record of all codes you
-            have successfully redeemed.
+            Your redeemed access codes are listed separately from online payments.
           </p>
 
           <div className="overflow-x-auto">
