@@ -19,7 +19,7 @@ export default function DmcaPage() {
         {/* Content Box */}
         <div className="jbh-surface space-y-6 p-6 text-sm leading-relaxed text-slate-300 sm:p-8">
           <p>
-            Iinirerespeto ng **JB Collections** ang intellectual property rights ng iba. Kung naniniwala ka na ang iyong copyrighted material ay naisama o naisulat sa aming gallery o vault nang walang kaukulang pahintulot, agad magpadala ng notisya sa aming copyright team.
+            Iinirerespeto ng JB Collections ang intellectual property rights ng iba. Kung naniniwala ka na ang iyong copyrighted material ay naisama o naisulat sa aming gallery nang walang kaukulang pahintulot, agad magpadala ng notisya sa aming copyright team.
           </p>
 
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-300 space-y-2">
