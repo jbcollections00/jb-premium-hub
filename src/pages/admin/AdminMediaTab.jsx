@@ -316,55 +316,43 @@ export default function AdminMediaTab() {
 
   const fetchMedia =
     async () => {
+      const batchSize = 1000;
       try {
-        const {
-          data: mediaData,
-          count: mediaCount,
-          error,
-        } =
-          await supabase
-            .from("media")
-            .select(
-              "*",
-              {
-                count:
-                  "exact",
-              }
-            )
-            .order(
-              "created_at",
-              {
-                ascending:
-                  false,
-              }
-            );
+        const allMedia = [];
+        let total = null;
+        let offset = 0;
 
-        if (error) {
-          throw error;
+        // Supabase's default PostgREST row cap is 1,000. Fetch the complete
+        // library in pages so filters, duplicate review, and cover counts
+        // are based on all records rather than only the first page.
+        for (;;) {
+          const { data, count, error } = await supabase
+            .from("media")
+            .select("*", { count: offset === 0 ? "exact" : undefined })
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(offset, offset + batchSize - 1);
+
+          if (error) throw error;
+          if (offset === 0) total = count;
+
+          const rows = data || [];
+          allMedia.push(...rows);
+          offset += rows.length;
+
+          if (rows.length < batchSize || (total !== null && offset >= total)) {
+            break;
+          }
         }
 
-        setMediaList(
-          mediaData ||
-            []
-        );
-
-        setTotalMediaCount(
-          mediaCount ||
-            0
-        );
+        setMediaList(allMedia);
+        setTotalMediaCount(total ?? allMedia.length);
       } catch (error) {
-        console.error(
-          "Failed to fetch media:",
-          error
-        );
-
-        setMediaList(
-          []
-        );
-
-        setTotalMediaCount(
-          0
-        );
+        console.error("Failed to load complete media library:", error);
+        // Do not imply that a partial load represents the complete catalog.
+        setMediaList([]);
+        setTotalMediaCount(0);
+        window.alert("Could not load the media library. Please refresh and try again.");
       }
     };
 
@@ -1674,39 +1662,6 @@ export default function AdminMediaTab() {
     };
 
   /* =========================================================
-     DELETE ALL
-  ========================================================= */
-
-  const handleDeleteAllMedia =
-    async () => {
-      if (
-        !window.confirm(
-          "⚠️ BABALA: Sigurado ka bang gusto mong burahin ang LAHAT ng videos?"
-        )
-      ) {
-        return;
-      }
-
-      const {
-        error,
-      } =
-        await supabase
-          .from(
-            "media"
-          )
-          .delete()
-          .not(
-            "id",
-            "is",
-            null
-          );
-
-      if (!error) {
-        fetchMedia();
-      }
-    };
-
-  /* =========================================================
      COPY LINK
   ========================================================= */
 
@@ -1914,7 +1869,7 @@ export default function AdminMediaTab() {
             />
           </svg>
 
-          Media library ({filteredMedia.length})
+          Media library ({filteredMedia.length.toLocaleString()} of {totalMediaCount.toLocaleString()})
 
         </button>
 
@@ -2438,18 +2393,6 @@ export default function AdminMediaTab() {
                 : `Generate Covers (${missingThumbnailCount})`}
             </button>
 
-            {mediaList.length >
-              0 && (
-              <button
-                type="button"
-                onClick={
-                  handleDeleteAllMedia
-                }
-                className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
-              >
-                Delete All Videos
-              </button>
-            )}
 
           </div>
 
@@ -2638,8 +2581,8 @@ export default function AdminMediaTab() {
                                   "JB Media"
                               )
                             }
-                            alt=""
-                            className="w-full h-full object-cover"
+                            alt={item.title ? `Thumbnail for ${item.title}` : "Media thumbnail"}
+                            className="h-full w-full object-contain p-2"
                             loading="lazy"
                           />
 
@@ -2895,7 +2838,7 @@ export default function AdminMediaTab() {
                     <strong className="text-white">
                       {totalPages}
                     </strong>{" "}
-                    ({filteredMedia.length} Total Items)
+                    ({filteredMedia.length.toLocaleString()} matching · {totalMediaCount.toLocaleString()} in library)
                   </span>
 
                   <div className="flex items-center gap-2">
