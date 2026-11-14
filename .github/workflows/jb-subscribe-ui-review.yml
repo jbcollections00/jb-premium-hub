@@ -46,6 +46,10 @@ jobs:
           assert.match(page, /CHECKOUT_UI_MODE === 'tester'/);
           assert.match(page, /user\?\.id\?\.toLowerCase\(\) === TESTER_UI_USER_ID/);
           assert.match(page, /CHECKOUT_UI_MODE === 'public'/);
+          assert.match(page, /params\.get\('checkout_debug'\) === '1'/);
+          assert.match(page, /Read-only checkout diagnostics/);
+          assert.match(page, /Valid tester UUID configured/);
+          assert.match(page, /Signed-in account matches tester/);
           assert.match(page, /const SITE_ORIGIN = 'https:\/\/www\.jb-premium-hub\.vip'/);
           assert.match(page, /window\.location\.origin === SITE_ORIGIN/);
           assert.match(page, /disabled=\{!checkoutUiEnabled/);
