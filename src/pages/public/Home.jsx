@@ -6,6 +6,7 @@ import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
+import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -1265,13 +1266,8 @@ export default function Home() {
 
                         {item.thumbnail_url ? (
                           <img
-                            src={getCdnUrl(item.thumbnail_url)}
-                            onError={(event) => {
-                              // Private cutover may retire old public-CDN covers.
-                              // Preserve a clean gallery with the local JB logo.
-                              event.currentTarget.onerror = null;
-                              event.currentTarget.src = "/jb-logo.png";
-                            }}
+                            src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                            onError={handleThumbnailLoadError}
                             alt={item.title}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
@@ -1286,7 +1282,7 @@ export default function Home() {
                           />
                         ) : (
                           <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                            {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
+                            {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                           </div>
                         )}
 
@@ -1410,13 +1406,8 @@ export default function Home() {
                   <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
                     {item.thumbnail_url ? (
                       <img
-                        src={getCdnUrl(item.thumbnail_url)}
-                            onError={(event) => {
-                              // Private cutover may retire old public-CDN covers.
-                              // Preserve a clean gallery with the local JB logo.
-                              event.currentTarget.onerror = null;
-                              event.currentTarget.src = "/jb-logo.png";
-                            }}
+                        src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                            onError={handleThumbnailLoadError}
                         alt={item.title}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
@@ -1431,7 +1422,7 @@ export default function Home() {
                       />
                     ) : (
                       <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                        {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
+                        {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                       </div>
                     )}
                     <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
