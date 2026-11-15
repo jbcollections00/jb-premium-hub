@@ -13,7 +13,7 @@
  * node scripts/thumbnails/preflight-next-50.mjs --csv="C:\...\JB_317G_titles.csv"
  *
  * Output contains IDs and review states ONLY, NEVER video titles.
- * A title is not a reliable content-safety classifier: no item is
+ * Title heuristics are incomplete, especially across languages. No item is
  * automatically approved for image publication.
  */
 import path from "node:path";
@@ -28,12 +28,14 @@ const OFFSET = 30;
 const LIMIT = 50;
 const EXPECTED_MEDIA = 4647;
 
-// Previously identified concerning records. Keep these IDs held even
-// if their titles are renamed: title edits are not content verification.
-const KNOWN_SAFETY_HOLD_IDS = new Set([
-  "01540f6d-ca3a-4a78-9971-e4d6b075b303",
-  "01938c60-a0e4-4055-9136-bb48eb36808e",
-]);
+// Conservative metadata triage. Never classify unflagged titles as SAFE:
+// all candidate videos still require independent qualified content review.
+// No sensitive source IDs are embedded in this repository.
+function concerningTitle(title) {
+  const ageContext = /\\b(?:underage|minor|child|schoolgirl|schoolboy|\\d{1,2}\\s*(?:year|yr)s?\\s*old)\\b/i;
+  const sexualContext = /\\b(?:sexual|porn|striptease|striptease|nude|sex|xxx)\\b/i;
+  return ageContext.test(title) && sexualContext.test(title);
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function parseCsv(src) {
@@ -100,8 +102,8 @@ export function buildReviewQueue(selected, titles) {
     const id = String(row.media_id).toLowerCase();
     if (!titles.has(id)) throw new Error("Missing exact title-export entry for matching video.");
     let state = "PENDING_QUALIFIED_CONTENT_REVIEW";
-    if (KNOWN_SAFETY_HOLD_IDS.has(id)) state = "HOLD_KNOWN_SAFETY_CONCERN";
-    else if (!titles.get(id)?.trim()) state = "HOLD_MISSING_TITLE";
+    if (!titles.get(id)?.trim()) state = "HOLD_MISSING_TITLE";
+    else if (concerningTitle(titles.get(id))) state = "HOLD_CONCERNING_TITLE";
     return {
       queue_offset: OFFSET + i,
       media_id: id,
@@ -126,7 +128,7 @@ async function main() {
   const items = buildReviewQueue(batch.selected, titles);
   const counts = {
     candidates: items.length,
-    known_safety_holds: items.filter(x => x.content_review === "HOLD_KNOWN_SAFETY_CONCERN").length,
+    concerning_title_holds: items.filter(x => x.content_review === "HOLD_CONCERNING_TITLE").length,
     missing_title_holds: items.filter(x => x.content_review === "HOLD_MISSING_TITLE").length,
     pending_moderator_review: items.filter(x => x.content_review === "PENDING_QUALIFIED_CONTENT_REVIEW").length,
     approved_to_publish: 0
