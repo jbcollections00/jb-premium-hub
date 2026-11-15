@@ -18,9 +18,9 @@
  *   JB_PRIVATE_MEDIA_HMAC_SECRET (same as deployed Worker; length >=48).
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { signTicket, privateKeyFromMediaUrl } from './ticket.ts';
 
 const WORKER_ORIGIN = 'https://jb-premium-private-media-v1.jbnetproxy.workers.dev';
-const MEDIA_ORIGIN = 'https://cdn.jb-premium-hub.vip';
 const ALLOWED_ORIGINS = new Set([
   'https://www.jb-premium-hub.vip',
   'https://jb-premium-hub.vip',
@@ -29,7 +29,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[a-f0-
 // The Worker accepts tickets with a lifetime up to 1800s.
 const PLAY_TTL_SECONDS = 900;
 const MAX_BODY_BYTES = 1024;
-const encoder = new TextEncoder();
 
 function allowedOrigin(request: Request): string | null {
   const origin = request.headers.get('origin');
@@ -61,40 +60,6 @@ function respond(status: number, body: Record<string, unknown>, origin: string |
   return new Response(JSON.stringify(body), { status, headers: headers(origin) });
 }
 
-function base64url(value: Uint8Array): string {
-  let binary = '';
-  for (const byte of value) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-// Matches deployed Worker verifyTicket(): HMAC-SHA256 over the ASCII
-// base64url-encoded JSON body, NOT the raw JSON itself.
-async function signTicket(
-  secret: string,
-  payload: Record<string, unknown>,
-): Promise<string> {
-  const body = base64url(encoder.encode(JSON.stringify(payload)));
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-  );
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(body)));
-  return body + '.' + base64url(signature);
-}
-
-function privateKeyFromMediaUrl(raw: unknown): string | null {
-  if (typeof raw !== 'string' || raw.length > 2048) return null;
-  let parsed: URL;
-  try { parsed = new URL(raw); } catch { return null; }
-  if (parsed.origin !== MEDIA_ORIGIN || parsed.protocol !== 'https:' ||
-      parsed.username || parsed.password || parsed.search || parsed.hash) return null;
-
-  let path: string;
-  try { path = decodeURIComponent(parsed.pathname.replace(/^\/+/, '')); } catch { return null; }
-  const isRoot = /^[A-Za-z0-9_-]+\.mp4$/i.test(path);
-  const isFolder = /^videos\/[A-Za-z0-9._/-]+\.mp4$/i.test(path) &&
-    !path.split('/').some((piece) => !piece || piece === '.' || piece === '..');
-  return isRoot || isFolder ? path : null;
-}
 
 Deno.serve(async (request: Request): Promise<Response> => {
   const origin = allowedOrigin(request);
