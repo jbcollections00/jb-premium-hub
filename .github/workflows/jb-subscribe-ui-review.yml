@@ -6,6 +6,8 @@ on:
       - 'src/components/layout/ProtectedRoute.jsx'
       - 'src/pages/public/Login.jsx'
       - 'src/pages/public/Home.jsx'
+      - 'src/services/thumbnailDisplay.js'
+      - '.github/tests/thumbnail-display.test.mjs'
       - 'src/services/freePreview.js'
       - 'supabase/functions/jb-free-preview-ticket/**'
       - '.github/tests/free-preview-worker-contract.test.ts'
@@ -55,6 +57,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Verify reuse of thumbnail URLs and logo fallbacks
+        run: node --test .github/tests/thumbnail-display.test.mjs
       - name: Check route and default-off checkout
         run: |
           node --input-type=module <<'NODE'
