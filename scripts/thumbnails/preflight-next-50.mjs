@@ -31,9 +31,9 @@ const EXPECTED_MEDIA = 4647;
 // Conservative metadata triage. Never classify unflagged titles as SAFE:
 // all candidate videos still require independent qualified content review.
 // No sensitive source IDs are embedded in this repository.
-function concerningTitle(title) {
-  const ageContext = /\\b(?:underage|minor|child|schoolgirl|schoolboy|\\d{1,2}\\s*(?:year|yr)s?\\s*old)\\b/i;
-  const sexualContext = /\\b(?:sexual|porn|striptease|striptease|nude|sex|xxx)\\b/i;
+export function concerningTitle(title) {
+  const ageContext = /\b(?:underage|minor|child|schoolgirl|schoolboy|\d{1,2}\s*(?:years?|yrs?)\s*old)\b/i;
+  const sexualContext = /\b(?:sexual|porn|striptease|nude|sex|xxx)\b/i;
   return ageContext.test(title) && sexualContext.test(title);
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
