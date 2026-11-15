@@ -8,6 +8,7 @@ on:
       - 'src/pages/public/Home.jsx'
       - 'src/services/freePreview.js'
       - 'api/free-preview-url.js'
+      - '.github/tests/free-preview-route-guards.mjs'
       - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
       - 'src/components/VIPVideoPlayer.jsx'
       - 'src/components/AdSlot.jsx'
@@ -298,6 +299,8 @@ jobs:
           NODE
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Verify free-preview signing is safely disabled by default
+        run: node .github/tests/free-preview-route-guards.mjs
       - name: Build
         run: npm run build
       - name: Package complete Admin replacement files
