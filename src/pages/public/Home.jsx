@@ -1103,7 +1103,7 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        {billingReady && !membership.canViewAlbums && userProfile?.id && (
+        {PRIVATE_MEDIA_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
               <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
@@ -1300,6 +1300,7 @@ export default function Home() {
           >
             <span>🔥</span> All Videos
           </button>
+          {PRIVATE_MEDIA_UI_ENABLED && (
           <button
             onClick={() => handleCategoryChange("free")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
@@ -1310,6 +1311,7 @@ export default function Home() {
           >
             <span>▶</span> Free to Watch
           </button>
+          )}
           <button
             onClick={() => handleCategoryChange("pinay_asian")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
