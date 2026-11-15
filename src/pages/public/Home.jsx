@@ -9,7 +9,7 @@ import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
-const POPUNDER_EVERY_N_VIDEOS = 5;
+const POPUNDER_EVERY_N_VIDEOS = 3;
 const POPUNDER_COUNTER_KEY = "jb_standard_video_play_count";
 
 // Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
