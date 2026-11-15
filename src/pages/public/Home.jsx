@@ -1215,6 +1215,12 @@ export default function Home() {
                         {item.thumbnail_url ? (
                           <img
                             src={getCdnUrl(item.thumbnail_url)}
+                            onError={(event) => {
+                              // Private cutover may retire old public-CDN covers.
+                              // Preserve a clean gallery with the local JB logo.
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.src = "/jb-logo.png";
+                            }}
                             alt={item.title}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
@@ -1349,6 +1355,12 @@ export default function Home() {
                     {item.thumbnail_url ? (
                       <img
                         src={getCdnUrl(item.thumbnail_url)}
+                            onError={(event) => {
+                              // Private cutover may retire old public-CDN covers.
+                              // Preserve a clean gallery with the local JB logo.
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.src = "/jb-logo.png";
+                            }}
                         alt={item.title}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
