@@ -1,80 +1,51 @@
-# JB PREMIUM HUB — Phase 315: Free to Watch
+# JB PREMIUM HUB — Phase 315 production cutover
+**User-approved settings:** maximum **20** admin-selected Free to Watch videos; **unlimited repeat views**; no free downloads. Zero videos selected by default.
 
-## Approved settings
+## Existing infrastructure — reuse, not rebuild
+- Cloudflare Worker: `jb-premium-private-media-v1`, at `https://jb-premium-private-media-v1.jbnetproxy.workers.dev`
+- R2 binding: `VIDEO_BUCKET` → `jb-collections-hub`
+- Cloudflare Worker flags: `PRIVATE_MEDIA_ENABLED` (exactly `true` unlocks streaming)
+- Shared secret: `JB_PRIVATE_MEDIA_HMAC_SECRET` (same secret in ticket issuer and Worker, keep private)
+- Supabase paid issuer: `jb-private-media-ticket` — **unchanged**
+- Supabase new free issuer: `jb-free-preview-ticket` — play-only; uses the SAME Worker HMAC and path format
+- Vercel frontend gate: `VITE_JB_PRIVATE_MEDIA_UI_ENABLED=true` at **build time** (rebuild/redeploy is required after changing this)
+- Supabase free issuer gate: BOTH `JB_FREE_PREVIEW_TICKETS_ENABLED=true` and `JB_FREE_PREVIEW_PRIVATE_CDN_CONFIRMED=true` (only AFTER the CDN is closed)
 
-- Administrator selects **at most 20** video records.
-- Initially **0** selected: existing media stays members-only.
-- Registered Free users may watch an approved video **unlimited times**.
-- Free users never gain download rights, full-library rights or member billing entitlements.
-- Standard/VIP keep their pre-existing access and PayMongo behavior.
-- Admin can remove or replace selections at any time.
-- Events and checkout, webhook, settlement, and subscriber SQL are unaffected.
+## Code and safety state
+- Database migration `supabase/migrations/20261115120000_jb_free_preview_v1.sql` was already installed by owner; verified counts: **0/4646 free**, trigger=1, admin RPC=1.
+- `src/pages/admin/AdminMediaTab.jsx`: admin-managed Free selection, 0–20 counter, RPC + database cap.
+- `src/pages/public/Home.jsx`: Free to Watch category, video cards, locked upgrade CTA. The free category is hidden until the private UI build flag is enabled.
+- `src/services/freePreview.js`: the free client invokes `jb-free-preview-ticket` and requires the expected private Worker URL. No direct R2/presigned S3 links.
+- `supabase/functions/jb-free-preview-ticket/index.ts` and `ticket.ts`: independently verify signed-in Supabase user, read media row's `is_free_preview=true`, restrict action to `play`, parse video key, and sign a **15-minute PLAY-only HMAC ticket** accepted by the existing Worker. Disabled by default.
+- `supabase/config.toml`: `verify_jwt=true` for the new issuer.
+- Tests: PostgreSQL cap/role checks, TypeScript Edge function typecheck, original Worker fixture + HMAC/Range contract, frontend production build, and payment/ad regressions.
+- The extra Vercel R2 signing endpoint was **removed** from the draft. No extra video streaming gateway is created.
 
-## Complete replacement / new files
+## IMPORTANT: Current verified security gap (November 15, 2026)
+A members-only video was accessible in an anonymous/InPrivate browser. Cloudflare R2 `jb-collections-hub` has BOTH:
+- `cdn.jb-premium-hub.vip` custom domain: **Active / Access Enabled**
+- `pub-...r2.dev`: public development URL **Enabled**.
 
-- `supabase/migrations/20261115120000_jb_free_preview_v1.sql` — immutable default false, admin selection RPC, 20-slot DB trigger, read-only IDs discovery
-- `src/pages/admin/AdminMediaTab.jsx` — admin toggle, 20-slot counter, confirmation and unavailable-state behavior
-- `src/pages/public/Home.jsx` — Free to Watch filter, video badges, locked-video upgrade prompt and signed free playback
-- `src/services/freePreview.js` — authenticated one-time request for short-lived video URL
-- `api/free-preview-url.js` — secure authorization, private R2 GET signer and fail-closed switches
-- `src/components/VIPVideoPlayer.jsx` — prevents signed URL referer leak
-- `.github/tests/free-preview-fixture.sql` and `.github/tests/free-preview-assertions.sql` — automated privilege and cap regression
-- `.github/workflows/jb-free-preview-security.yml` — PostgreSQL 16 tests, NO DEPLOY
-- `.github/workflows/jb-subscribe-ui-review.yml` — Vite build, existing paid/ads regression and new guard assertions
+**Disabling only one does not secure the bucket.** The Worker binding is not equivalent to public domain access; when both public URLs are disabled, the R2 binding continues to serve objects to the Worker.
 
-## Why separate private authorization is required
+### Do not change these settings prematurely
+If `PRIVATE_MEDIA_ENABLED` remains `false`, Worker returns `503`. If `VITE_JB_PRIVATE_MEDIA_UI_ENABLED` remains `false`, Home can still use direct CDN URLs. Enabling the private UI while Worker is locked will stop playback. Closing both public entry points before protected player tests may also stop paid playback. Do not reveal HMAC secrets, JWTs, or signed video tickets in screenshots.
 
-The React badge/toggle is **never** the permission boundary. `/api/free-preview-url` independently:
+### Controlled LIVE cutover, with rollback
+1. **Server first:** Confirm the existing `jb-private-media-ticket` is deployed with Verify JWT enabled. Enable `PRIVATE_MEDIA_ENABLED=true` on the existing Cloudflare Worker only, leaving both public CDN routes intact for now. Check no-ticket Worker GET → **403** (when unlocked; previously **503** when locked), and the authorized test ticket delivers video Range → **206**. Previously tested: FREE 403, Standard play 200/download 403, VIP/Admin 200/200. Reconfirm current deployed environment.
+2. **Build-time frontend:** Set Vercel Production `VITE_JB_PRIVATE_MEDIA_UI_ENABLED=true` and redeploy the exact approved commit. Validate Standard and VIP video playback/seek/download permissions and FREE denial. The Home source has NO direct CDN fallback when this flag is true.
+3. **Thumbnails audit:** Some existing `thumbnail_url` values may still point to the video CDN. Verify public-assets thumbnails (or local `/jb-logo.png` fallback) before public access is disabled. Public assets must use a separate public bucket/domain. Do not let a thumbnail test hold private videos hostage.
+4. **Close BOTH public R2 entry points:** Cloudflare bucket `jb-collections-hub` → Settings → disable **Public Development URL**, then disable **Custom Domain Access** for `cdn.jb-premium-hub.vip`. Do NOT delete any bucket, object, Worker, or DNS record. Test anonymous direct video GET → denied and private Worker authorized playback → 206. If protected playback breaks, restore public access temporarily only as an emergency rollback and diagnose while avoiding sharing private URLs.
+5. **Deploy free Edge issuer:** After staging and LIVE Worker verification, from a secure terminal using the existing Supabase CLI:
+   ```powershell
+   supabase functions deploy jb-free-preview-ticket --project-ref kwazrebdlzdkwdhrintr
+   ```
+   The shared `JB_PRIVATE_MEDIA_HMAC_SECRET` must be present in the Supabase project's Edge secrets (same value already used by paid tickets). Do not paste it into chat or frontend.
+6. **Free preview activation, LAST:** After anonymous direct-CDN denial and authenticated paid playback pass, set Supabase Edge secrets `JB_FREE_PREVIEW_TICKETS_ENABLED=true` and `JB_FREE_PREVIEW_PRIVATE_CDN_CONFIRMED=true`. If any check fails, leave them unset/false. Neither switch grants download access.
+7. **One-video test:** Select ONE sample video using Admin → Media Manager → **Make free**. FREE signed-in user plays and replays it using private Worker, an unselected video stays locked, FREE download remains disabled, Standard/VIP can still watch all content and VIP has zero ads. Remove the free selection if a problem arises. Add up to 20 only after validation.
 
-1. Requires a matching same-site Origin and logged-in Supabase JWT.
-2. Calls `auth.getUser()` server-side.
-3. Reads the requested `media` row using the server-only Supabase key, and requires `type='video'` and `is_free_preview=true`.
-4. Parses only a trusted R2 CDN URL rooted at `videos/` and signs **GET**, never PUT or DELETE.
-5. Requests one anonymous CDN byte (`Range: bytes=0-0`) and refuses to sign unless the CDN denies anonymous access (`401/403/404`). This is defense-in-depth, not a substitute for testing the public CDN from a browser.
-6. Returns a signed R2 URL expiring in 900 seconds, with `Cache-Control: no-store`.
-6. Has no watch-count restriction. A new short-lived link is requested when the user reopens the video.
-
-The backend is **OFF BY DEFAULT**. The two flags below must intentionally be enabled.
-
-### CRITICAL: current CDN may be public
-
-This GitHub repository does **not** contain the deployed `jb-private-media-ticket` Edge Function or the Cloudflare private R2 Worker implementation. Current Home media records include CDN URLs and may be played directly when private-media UI is disabled.
-
-If `cdn.jb-premium-hub.vip/videos/<key>` or a public `r2.dev` URL can be opened anonymously and returns media bytes, **the full library is not protected by a paywall**, even if React hides it. Neither the database flag nor the new signer changes that.
-
-**Do not call the feature secure or merge to production until the video bucket is verified private, unauthenticated direct CDN GET is denied, and existing Standard/VIP users continue to play through an authenticated ticket mechanism.**
-
-### Backend environment configuration (Vercel)
-
-These environment variables are read **only on the server**. Never prefix server secrets with `VITE_`.
-
-| Variable | Requirement |
-|---|---|
-| `SUPABASE_URL` | Existing Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Existing Vercel server-only Supabase key |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 credentials authorized for **GET on the private video bucket** |
-| `R2_PUBLIC_URL` | Canonical metadata URL/host for stored `media_url` values, used only for key parsing |
-| `R2_FREE_PREVIEW_BUCKET_NAME` | Explicit **private video bucket** whose object keys match `videos/<key>`. There is no implicit fallback to the public upload bucket |
-| `JB_FREE_PREVIEW_ENABLED` | Must be exactly `true` when ready |
-| `JB_FREE_PREVIEW_PRIVATE_STORAGE_CONFIRMED` | Must be exactly `true` only after private storage and direct URL checks |
-
-The key must exist in the private bucket with the same `videos/...` path referenced by `media.media_url`. If migrating to a different bucket, copy/repoint files **without exposing the private bucket publicly**. The existing public-asset bucket for thumbnails should remain separate.
-
-### Deploy order — do not skip
-
-1. Inspect Supabase media schema and policies (the migration assumes `public.media.id` is UUID, `type` is text, `media_url` is text, and `public.is_current_user_admin()` exists).
-2. Review the full SQL; apply it in Supabase SQL Editor. It adds a column and trigger/RPC but **does not select any video**.
-3. Confirm the SQL fixture tests pass for a fresh PostgreSQL database. Test admin selection and non-admin rejection on the real project after migration.
-4. Confirm the video objects are on **private** R2 and direct anonymous CDN URLs cannot fetch paid videos. Confirm current paid membership playback still works.
-5. Configure `R2_FREE_PREVIEW_BUCKET_NAME` for that private bucket and test cross-origin video playback/Range (including seeking).
-6. On a protected preview environment, enable both flags and test a single sample video.
-7. Check: Free can watch the approved video repeatedly; unapproved media gets 403; Free cannot download; Standard/VIP see the same paid features and VIP remains ad-free.
-8. Select up to 20 as admin; verify the 21st selection is rejected both by RPC and raw SQL. Remove a free video to free a slot.
-9. After tests and owner approval, merge and deploy with explicit rollout. Do not change PayMongo settings.
-
-### Caveats
-
-- A short-lived signed URL can be used until it expires. Removing the free flag blocks new tickets but cannot revoke a previously issued URL immediately.
-- R2 GET and CORS configuration must support video Range requests. On a long video, a new ticket may be required after the 15-minute URL expiration if the browser performs a late seek.
-- Free playback deliberately does not collect a watch count for monetization or billing. The existing player view-logging behavior remains unchanged.
-- The server never accepts a client-supplied R2 URL, signing key, subscription level or video file key.
+## Deployment constraints
+- The GitHub connector can commit/merge frontend code. It CANNOT itself change the live Cloudflare Worker flag, disable R2 public access, set Vercel Production environment variables, or deploy this Supabase Edge Function because those applications are not connected to this chat.
+- Merging the code **does not switch** the Worker, private frontend, or free issuer on.
+- Keep rollback path: Vercel previous deployment + `VITE_JB_PRIVATE_MEDIA_UI_ENABLED=false` if the Worker flow fails; do not call the site secured until both CDN public routes are closed.
+- Existing PayMongo checkout, payment settlement, membership entitlements and Standard/VIP authorization RPC are untouched.
