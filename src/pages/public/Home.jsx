@@ -1535,7 +1535,7 @@ export default function Home() {
                       <p className="max-w-md text-sm leading-relaxed text-slate-300">
                         This video is for members. Watch selected Free to Watch videos or choose a plan to access the full collection.
                       </p>
-                      <Link to="/subscribe" onClick={handleCloseMedia} className="jbh-btn">Explore membership plans</Link>
+                      <Link to="/subscribe" onClick={() => setSelectedMedia(null)} className="jbh-btn">Explore membership plans</Link>
                     </div>
                   ) : ((isSelectedFreePreview && freePlayback.id === selectedMedia.id && freePlayback.url) ||
                     (!isSelectedFreePreview && (!PRIVATE_MEDIA_UI_ENABLED ||
@@ -1571,7 +1571,7 @@ export default function Home() {
                     <p className="text-sm font-bold text-white">Enjoying Free to Watch?</p>
                     <p className="mt-1 text-xs text-slate-300">Replay selected free videos whenever you like, or unlock the full library.</p>
                   </div>
-                  <Link to="/subscribe" onClick={handleCloseMedia} className="jbh-btn text-sm">See membership plans</Link>
+                  <Link to="/subscribe" onClick={() => setSelectedMedia(null)} className="jbh-btn text-sm">See membership plans</Link>
                 </div>
               )}
               <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
