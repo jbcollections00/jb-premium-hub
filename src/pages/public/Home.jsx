@@ -42,6 +42,8 @@ const formatDuration = (duration) => {
 export default function Home() {
   const [mediaList, setMediaList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [mediaError, setMediaError] = useState("");
+  const mediaFetchSerialRef = useRef(0);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
@@ -223,9 +225,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!billingReady) return;
+    // Refresh the gallery when the authenticated user's entitlement resolves.
+    // An initially signed-in FREE user must not rely on full media-table RLS.
+    if (FREE_PREVIEW_UI_ENABLED && !userProfile?.id) {
+      ++mediaFetchSerialRef.current;
+      setMediaList([]);
+      setTotalCount(0);
+      setMostWatched([]);
+      setMostWatchedLoading(false);
+      setLoading(false);
+      return;
+    }
     fetchMedia(currentPage, activeCategory);
-    fetchMostWatched();
-  }, [currentPage, activeCategory]);
+    if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
+      // Do not query the paid-library 'most watched' records for FREE accounts.
+      setMostWatched([]);
+      setMostWatchedLoading(false);
+    } else {
+      fetchMostWatched();
+    }
+  }, [currentPage, activeCategory, billingReady, membership.canViewAlbums, userProfile?.id]);
 
   useEffect(() => {
     const allIds = [
@@ -372,33 +392,64 @@ export default function Home() {
   };
 
   const fetchMedia = async (page = 1, category = "all") => {
+    const requestId = ++mediaFetchSerialRef.current;
     setLoading(true);
+    setMediaError("");
     const from = (page - 1) * ITEMS_PER_PAGE;
     const to = from + ITEMS_PER_PAGE - 1;
 
-    let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
-
-    if (category === "free") query = query.eq("is_free_preview", true);
-
-    if (category === "pinay_asian") {
-      query = query.or(
-        "category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%"
-      );
-    }
-
     try {
+      // FREE users receive only the public-facing details of the <=20 selected
+      // preview videos. A SECURITY DEFINER RPC enforces that limit despite
+      // intentionally restrictive membership RLS on the full media table.
+      // It never returns media_url; the separate Edge issuer alone authorizes
+      // playback of an approved video through the private Cloudflare Worker.
+      if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
+        const { data, error } = await supabase.rpc("jb_free_preview_catalog_v1");
+        if (error) throw error;
+        if (!Array.isArray(data)) throw new Error("Invalid Free to Watch catalog");
+
+        let approved = data.filter((item) =>
+          item && typeof item.id === "string" &&
+          typeof item.title === "string" &&
+          item.type === "video" &&
+          item.is_free_preview === true &&
+          !Object.prototype.hasOwnProperty.call(item, "media_url")
+        );
+        if (category === "pinay_asian") {
+          approved = approved.filter((item) =>
+            /pinay|asian/i.test(`${item.category || ""} ${item.title || ""}`)
+          );
+        }
+        if (requestId !== mediaFetchSerialRef.current) return;
+        setMediaList(approved.slice(from, to + 1));
+        setTotalCount(approved.length);
+        return;
+      }
+
+      // Paid members retain the existing full-library query and privileges.
+      let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
+      if (category === "free") query = query.eq("is_free_preview", true);
+      if (category === "pinay_asian") {
+        query = query.or(
+          "category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%"
+        );
+      }
       const { data, count, error } = await query
         .order("created_at", { ascending: false })
         .range(from, to);
-
       if (error) throw error;
-
+      if (requestId !== mediaFetchSerialRef.current) return;
       setMediaList(data || []);
-      if (count !== null) setTotalCount(count);
+      setTotalCount(count ?? 0);
     } catch (err) {
-      console.error("Fetch media error:", err);
+      if (requestId !== mediaFetchSerialRef.current) return;
+      console.error("Fetch media error:", err?.code || "UNAVAILABLE");
+      setMediaList([]);
+      setTotalCount(0);
+      setMediaError("Could not load the video catalog. Please refresh or try again.");
     } finally {
-      setLoading(false);
+      if (requestId === mediaFetchSerialRef.current) setLoading(false);
     }
   };
 
@@ -1337,9 +1388,14 @@ export default function Home() {
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
           </div>
+        ) : mediaError ? (
+          <div role="alert" className="text-center py-16 bg-slate-900/40 rounded-2xl border border-rose-400/30">
+            <p className="font-semibold text-rose-200">{mediaError}</p>
+            <button type="button" onClick={() => fetchMedia(currentPage, activeCategory)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
+          </div>
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-            <p className="text-slate-400">Wala pang available na videos sa kategoryang ito.</p>
+            <p className="text-slate-400">{FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums ? "Wala pang napiling Free to Watch videos sa kategoryang ito." : "Wala pang available na videos sa kategoryang ito."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
