@@ -1295,7 +1295,7 @@ export default function Home() {
                 : "bg-slate-900 border border-emerald-500/25 text-emerald-200 hover:bg-emerald-500/10"
             }`}
           >
-            <span>▶</span> Free to Watch <span className="text-[10px] opacity-75">Max 20</span>
+            <span>▶</span> Free to Watch
           </button>
           <button
             onClick={() => handleCategoryChange("pinay_asian")}
