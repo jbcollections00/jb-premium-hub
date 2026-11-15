@@ -18,10 +18,12 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { captureTimes, portraitOrientation } from "./batch-rules.mjs";
+import { prepareMatchedQueue } from "./matched-queue.mjs";
 
 const ROOT = path.resolve(process.env.JB_THUMBNAIL_OUTPUT_DIR || path.join(".local", "thumbnail-batch-317d"));
 const INVENTORY_FILE = path.join(ROOT, "inventory.json");
 const PROGRESS_FILE = path.join(ROOT, "progress.json");
+const MATCHED_REPORT_FILE = path.join(ROOT, "media-r2-matching-audit.json");
 const VIDEO_PREFIX = "videos/";
 const EXTENSION_RE = /\.(?:mp4|m4v|mov|webm|mkv)$/i;
 const BUCKET =
@@ -39,8 +41,10 @@ const wantGenerate = process.argv.includes("--generate");
 const refresh = process.argv.includes("--refresh");
 const retryFailed = process.argv.includes("--retry-failed");
 const showHelp = process.argv.includes("--help");
+const useMatched = process.argv.includes("--matched");
 const limit = Number(option("--limit", "25"));
 const offset = Number(option("--offset", "0"));
+const expectedRows = Number(option("--require-count", "4647"));
 
 function fail(message) {
   throw new Error(message);
@@ -62,6 +66,12 @@ function validateArgs() {
   }
   if (retryFailed && !wantGenerate) {
     fail("--retry-failed may only be used with --generate.");
+  }
+  if (useMatched && !wantGenerate) {
+    fail("--matched is only supported with --generate.");
+  }
+  if (useMatched && (!Number.isInteger(expectedRows) || expectedRows < 1)) {
+    fail("--require-count must be a positive integer.");
   }
 }
 
@@ -294,17 +304,29 @@ async function createPreview(client, video, digest) {
 }
 
 async function generate(client) {
-  const snapshot = await readJson(INVENTORY_FILE);
-  if (!snapshot || !Array.isArray(snapshot.items)) {
-    fail("No inventory.json. Run --inventory first.");
-  }
-  if (snapshot.bucket !== BUCKET || snapshot.prefix !== VIDEO_PREFIX) {
-    fail("Inventory bucket/prefix differs from current source. Check settings.");
+  let items;
+  if (useMatched) {
+    const report = await readJson(MATCHED_REPORT_FILE);
+    const queue = prepareMatchedQueue(report, BUCKET, expectedRows);
+    items = queue.selected;
+    console.log("Full report verified:", queue.total, "exact matches.");
+    console.log("Preserved existing thumbnails:", queue.preserved);
+    console.log("Eligible missing/default-logo records:", queue.eligible);
+    console.log("Mode: MATCHED-ONLY; no public upload or database update.");
+  } else {
+    const snapshot = await readJson(INVENTORY_FILE);
+    if (!snapshot || !Array.isArray(snapshot.items)) {
+      fail("No inventory.json. Run --inventory first.");
+    }
+    if (snapshot.bucket !== BUCKET || snapshot.prefix !== VIDEO_PREFIX) {
+      fail("Inventory bucket/prefix differs from current source. Check settings.");
+    }
+    items = snapshot.items;
   }
 
-  const end = Math.min(offset + limit, snapshot.items.length);
-  const selected = snapshot.items.slice(offset, end);
-  console.log("Batch:", offset, "through", end - 1, "of", snapshot.items.length);
+  const end = Math.min(offset + limit, items.length);
+  const selected = items.slice(offset, end);
+  console.log("Batch:", offset, "through", end - 1, "of", items.length);
 
   if (selected.length === 0) {
     console.log("No videos at this offset. Nothing changed.");
@@ -331,10 +353,19 @@ async function generate(client) {
     const previousImage = previous?.filename ? path.join(ROOT, previous.filename) : "";
     if (previous?.status === "REVIEW_REQUIRED" &&
       previous.private_video_key === video.key &&
+      (!previous.media_id || !video.media_id || previous.media_id === video.media_id) &&
       previousImage && (await fileSize(previousImage))) {
+      if (video.media_id && !previous.media_id) {
+        previous.media_id = video.media_id;
+        state.updated_at = new Date().toISOString();
+        await saveJson(PROGRESS_FILE, state);
+      }
       summary.already_completed++;
       console.log("Item", index + 1, "/", selected.length, "- existing preview kept.");
       continue;
+    }
+    if (previous?.media_id && video.media_id && previous.media_id !== video.media_id) {
+      fail("A video key was previously assigned to a different media ID. Stopping batch.");
     }
     if (previous?.status === "SKIPPED_SHORT") {
       summary.skipped_short++;
@@ -349,6 +380,7 @@ async function generate(client) {
       const item = await createPreview(client, video, digest);
       state.results[digest] = {
         private_video_key: video.key,
+        ...(video.media_id ? { media_id: video.media_id } : {}),
         ...item,
         processed_at: new Date().toISOString(),
       };
@@ -359,6 +391,7 @@ async function generate(client) {
     } catch (error) {
       state.results[digest] = {
         private_video_key: video.key,
+        ...(video.media_id ? { media_id: video.media_id } : {}),
         status: "FAILED",
         error: error?.message || "Unknown local generation error.",
         processed_at: new Date().toISOString(),
@@ -379,7 +412,7 @@ async function generate(client) {
 async function main() {
   validateArgs();
   if (showHelp) {
-    console.log("Use --inventory [--refresh] OR --generate [--limit=25] [--offset=0] [--retry-failed].");
+    console.log("Use --inventory [--refresh] OR --generate [--matched --require-count=4647] [--limit=25] [--offset=0] [--retry-failed].");
     console.log("All outputs remain local and private; nothing is uploaded.");
     return;
   }
