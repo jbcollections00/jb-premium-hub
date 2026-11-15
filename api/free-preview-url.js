@@ -62,9 +62,9 @@ export default async function handler(req, res) {
 
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
     R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-    R2_BUCKET_NAME, R2_PUBLIC_URL } = process.env;
+    R2_FREE_PREVIEW_BUCKET_NAME, R2_PUBLIC_URL } = process.env;
   if (![SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
-    R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL].every(Boolean))
+    R2_SECRET_ACCESS_KEY, R2_FREE_PREVIEW_BUCKET_NAME, R2_PUBLIC_URL].every(Boolean))
     return res.status(503).json({ error: "Free-preview service is not configured" });
 
   const tokenMatch = /^Bearer ([A-Za-z0-9._~-]+)$/i.exec(req.headers.authorization || "");
@@ -98,7 +98,7 @@ export default async function handler(req, res) {
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY }
     });
     const url = await getSignedUrl(s3,
-      new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }),
+      new GetObjectCommand({ Bucket: R2_FREE_PREVIEW_BUCKET_NAME, Key: key }),
       { expiresIn: EXPIRES_SECONDS }
     );
     // Signed media URLs must never be logged, cached or stored.
