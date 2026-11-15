@@ -120,7 +120,7 @@ jobs:
           const mediaAdmin = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
           assert.match(mediaAdmin,/jb_set_media_free_preview_v1/);
           assert.match(mediaAdmin,/FREE_PREVIEW_MAX = 20/);
-          assert.match(mediaAdmin,/!PRIVATE_MEDIA_UI_ENABLED \|\| Boolean\(freePreviewUpdatingId\)/);
+          assert.match(mediaAdmin,/!FREE_PREVIEW_UI_ENABLED \|\| Boolean\(freePreviewUpdatingId\)/);
           assert.match(mediaAdmin,/Make free/);
           assert.match(homePage,/handleCategoryChange\("free"\)/);
           assert.match(homePage,/query\.eq\("is_free_preview", true\)/);
@@ -129,6 +129,9 @@ jobs:
           assert.match(homePage,/!selectedCanPlay \?/);
           assert.match(homePage,/item\.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership\.canViewAlbums/);
           assert.ok(freeService.includes('PRIVATE_MEDIA_UI_ENABLED'));
+          assert.ok(freeService.includes('VITE_JB_FREE_PREVIEW_UI_ENABLED'));
+          assert.match(homePage,/FREE_PREVIEW_UI_ENABLED && billingReady/);
+          assert.match(homePage,/FREE_PREVIEW_UI_ENABLED && \(/);
           assert.ok(freeService.includes('jb-free-preview-ticket'));
           assert.ok(freeService.includes('"/v/"') || freeService.includes('"/v/" + mediaId'));
           assert.ok(freeService.includes('PRIVATE_WORKER_ORIGIN'));
