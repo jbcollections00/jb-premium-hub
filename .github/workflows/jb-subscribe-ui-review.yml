@@ -120,6 +120,7 @@ jobs:
           const mediaAdmin = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
           assert.match(mediaAdmin,/jb_set_media_free_preview_v1/);
           assert.match(mediaAdmin,/FREE_PREVIEW_MAX = 20/);
+          assert.match(mediaAdmin,/!PRIVATE_MEDIA_UI_ENABLED \|\| Boolean\(freePreviewUpdatingId\)/);
           assert.match(mediaAdmin,/Make free/);
           assert.match(homePage,/handleCategoryChange\("free"\)/);
           assert.match(homePage,/query\.eq\("is_free_preview", true\)/);
@@ -328,8 +329,10 @@ jobs:
             src/pages/public/Home.jsx \
             src/services/freePreview.js \
             src/components/VIPVideoPlayer.jsx \
+            supabase/config.toml \
             supabase/functions/jb-free-preview-ticket/index.ts \
-            supabase/functions/jb-free-preview-ticket/ticket.ts
+            supabase/functions/jb-free-preview-ticket/ticket.ts \
+            .github/tests/free-preview-worker-contract.test.ts
           unzip -t delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
       - name: Upload Phase 315 source ZIP
         uses: actions/upload-artifact@v4
