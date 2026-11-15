@@ -1,48 +1,58 @@
 import { supabase } from "./supabaseClient";
+import { PRIVATE_MEDIA_UI_ENABLED } from "./privateMedia";
 
-// Approved Free to Watch videos are served by a separate server-side access
-// decision. No user, media URL, free flag, or signing secret is trusted here.
-const R2_ORIGIN_SUFFIX = ".r2.cloudflarestorage.com";
+// Phase 315 reuses the SAME authenticated private R2 Worker as paid playback.
+// Only the ticket issuer differs: jb-free-preview-ticket permits PLAY for
+// videos explicitly selected by admins (maximum 20, checked server-side).
+const PRIVATE_WORKER_ORIGIN =
+  "https://jb-premium-private-media-v1.jbnetproxy.workers.dev";
+
+const MEDIA_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function requestFreePreviewUrl(mediaId) {
-  if (!/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(String(mediaId || "")))
+  if (!PRIVATE_MEDIA_UI_ENABLED) {
+    throw new Error("Secure video playback is not enabled yet");
+  }
+  if (!MEDIA_ID_PATTERN.test(String(mediaId || ""))) {
     throw new Error("Invalid video ID");
-
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !session?.access_token) throw new Error("Please sign in to watch");
-
-  const result = await fetch("/api/free-preview-url", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ media_id: mediaId }),
-    cache: "no-store",
-    referrerPolicy: "no-referrer",
-  });
-
-  if (!result.ok) {
-    if (result.status === 401) throw new Error("Please sign in again to continue");
-    if (result.status === 403) throw new Error("This video requires a membership");
-    throw new Error("Free playback is temporarily unavailable");
   }
 
-  const data = await result.json();
+  // supabase-js attaches the authenticated user token to this Edge Function.
+  // The issuer re-verifies auth and media.is_free_preview in Supabase and signs
+  // a short-lived PLAY-only Worker ticket. No R2 keys or URLs are client input.
+  const { data, error } = await supabase.functions.invoke(
+    "jb-free-preview-ticket",
+    { body: { media_id: mediaId, action: "play" } },
+  );
+
+  if (error) {
+    throw new Error("Free playback authorization is temporarily unavailable");
+  }
   if (data?.status !== "issued" || typeof data.url !== "string") {
-    throw new Error("Video playback authorization unavailable");
+    throw new Error("Free playback authorization was not issued");
   }
 
-  let signed;
-  try { signed = new URL(data.url); } catch { throw new Error("Invalid playback destination"); }
-  if (signed.protocol !== "https:" ||
-      !signed.hostname.endsWith(R2_ORIGIN_SUFFIX) ||
-      signed.username || signed.password || signed.hash ||
-      !signed.searchParams.has("X-Amz-Signature") ||
-      !signed.searchParams.has("X-Amz-Expires")) {
-    throw new Error("Unexpected playback destination");
+  let url;
+  try {
+    url = new URL(data.url);
+  } catch {
+    throw new Error("Invalid private playback URL");
   }
 
-  // Never log or persist the signed URL: keep it in React memory only.
-  return signed.href;
+  const expectedPath = "/v/" + mediaId + "/play";
+  if (
+    url.origin !== PRIVATE_WORKER_ORIGIN ||
+    url.username ||
+    url.password ||
+    url.pathname.toLowerCase() !== expectedPath.toLowerCase() ||
+    !url.searchParams.get("ticket") ||
+    url.hash
+  ) {
+    throw new Error("Unexpected private playback destination");
+  }
+
+  // NEVER log or persist the signed ticket URL.
+  // Reopening a video requests a fresh URL; there is no replay-count limit.
+  return url.href;
 }
