@@ -13,6 +13,8 @@ import {
   uploadFileToR2,
 } from "../../services/r2Client";
 
+import { PRIVATE_MEDIA_UI_ENABLED } from "../../services/privateMedia";
+
 export default function AdminMediaTab() {
   const [
     activeTab,
@@ -364,7 +366,7 @@ export default function AdminMediaTab() {
   // Admin-controlled free videos. Database RPC + trigger enforce the
   // 20-video maximum atomically, even across multiple concurrent admins.
   const handleToggleFreePreview = async (item) => {
-    if (!item?.id || freePreviewUpdatingId) return;
+    if (!PRIVATE_MEDIA_UI_ENABLED || !item?.id || freePreviewUpdatingId) return;
     const enabled = item.is_free_preview !== true;
     setFreePreviewUpdatingId(item.id);
     setFreePreviewMessage("");
@@ -2755,14 +2757,18 @@ export default function AdminMediaTab() {
                             <div>
                               <p className="text-xs font-bold text-white">Free to Watch</p>
                               <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
-                                {item.is_free_preview ? "Available to signed-in free viewers." : "Members only · Admin can add up to 20."}
+                                {!PRIVATE_MEDIA_UI_ENABLED
+                                  ? "Secure playback activation pending"
+                                  : item.is_free_preview
+                                    ? "Available to signed-in free viewers."
+                                    : "Members only · Admin can add up to 20."}
                               </p>
                             </div>
                             <button
                               type="button"
                               aria-pressed={item.is_free_preview === true}
                               onClick={() => handleToggleFreePreview(item)}
-                              disabled={Boolean(freePreviewUpdatingId) || (selectedFreeCount >= FREE_PREVIEW_MAX && !item.is_free_preview)}
+                              disabled={!PRIVATE_MEDIA_UI_ENABLED || Boolean(freePreviewUpdatingId) || (selectedFreeCount >= FREE_PREVIEW_MAX && !item.is_free_preview)}
                               className={`min-h-9 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
                                 item.is_free_preview
                                   ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/25"
