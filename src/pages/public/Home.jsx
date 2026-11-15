@@ -835,6 +835,7 @@ export default function Home() {
     const targetY = scrollPosRef.current;
     setSelectedMedia(null);
     setPrivatePlayback({ id: "", url: "", status: "idle", error: "" });
+    setFreePlayback({ id: "", url: "", status: "idle", error: "" });
     setAutoPlay(false);
     setHasRecordedCurrentView(false);
     viewRecordedRef.current = false;
@@ -1187,6 +1188,9 @@ export default function Home() {
                   >
                     <div>
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
+                        {item.is_free_preview && (
+                          <span className="absolute right-2 top-2 z-10 rounded-lg bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-white">FREE</span>
+                        )}
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
                           #{rank} {rank === 1 ? "🔥" : ""}
                         </div>
@@ -1216,7 +1220,14 @@ export default function Home() {
                           </div>
                         )}
 
-                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                        <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
+                      item.is_free_preview
+                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
+                        : "border-white/10 bg-black/75 text-slate-200"
+                    }`}>
+                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                    </span>
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
                             <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
                               <path d="M8 5v14l11-7z" />
@@ -1340,6 +1351,13 @@ export default function Home() {
                         {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                       </div>
                     )}
+                    <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
+                      item.is_free_preview
+                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
+                        : "border-white/10 bg-black/75 text-slate-200"
+                    }`}>
+                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                    </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                         <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
@@ -1510,13 +1528,23 @@ export default function Home() {
                 )}
 
                 <div className="flex h-full w-full max-w-4xl items-center justify-center [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
-                  {(!PRIVATE_MEDIA_UI_ENABLED ||
-                    (privatePlayback.id === selectedMedia.id && privatePlayback.url)) ? (
+                  {!selectedCanPlay ? (
+                    <div className="flex w-full flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-slate-950 p-8 text-center text-slate-100">
+                      <span className="text-4xl" aria-hidden="true">🔒</span>
+                      <h3 className="text-xl font-bold">Unlock the full media library</h3>
+                      <p className="max-w-md text-sm leading-relaxed text-slate-300">
+                        This video is for members. Watch selected Free to Watch videos or choose a plan to access the full collection.
+                      </p>
+                      <Link to="/subscribe" onClick={handleCloseMedia} className="jbh-btn">Explore membership plans</Link>
+                    </div>
+                  ) : ((isSelectedFreePreview && freePlayback.id === selectedMedia.id && freePlayback.url) ||
+                    (!isSelectedFreePreview && (!PRIVATE_MEDIA_UI_ENABLED ||
+                      (privatePlayback.id === selectedMedia.id && privatePlayback.url)))) ? (
                   <VIPVideoPlayer
                     key={selectedMedia.id}
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
-                    mainVideoUrl={PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
+                    mainVideoUrl={isSelectedFreePreview ? freePlayback.url : PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
                     isAdFree={billingReady ? !membership.showAds : false}
                     accountType={userProfile?.account_type}
                     vipUntil={userProfile?.vip_until}
@@ -1527,14 +1555,25 @@ export default function Home() {
                   />
                   ) : (
                     <div role="status" className="w-full min-h-64 flex items-center justify-center p-6 text-center text-sm text-slate-300" aria-live="polite">
-                      {privatePlayback.id === selectedMedia.id && privatePlayback.error
-                        ? privatePlayback.error
-                        : "Checking your private video access..."}
+                      {isSelectedFreePreview
+                        ? (freePlayback.id === selectedMedia.id && freePlayback.error
+                          ? freePlayback.error : "Authorizing Free to Watch playback...")
+                        : (privatePlayback.id === selectedMedia.id && privatePlayback.error
+                          ? privatePlayback.error : "Checking private video access...")}
                     </div>
                   )}
                 </div>
               </div>
 
+              {isSelectedFreePreview && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-indigo-400/20 bg-indigo-500/10 px-4 py-4 md:px-6">
+                  <div>
+                    <p className="text-sm font-bold text-white">Enjoying Free to Watch?</p>
+                    <p className="mt-1 text-xs text-slate-300">Replay selected free videos whenever you like, or unlock the full library.</p>
+                  </div>
+                  <Link to="/subscribe" onClick={handleCloseMedia} className="jbh-btn text-sm">See membership plans</Link>
+                </div>
+              )}
               <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span
