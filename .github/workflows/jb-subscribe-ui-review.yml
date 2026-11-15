@@ -6,6 +6,9 @@ on:
       - 'src/components/layout/ProtectedRoute.jsx'
       - 'src/pages/public/Login.jsx'
       - 'src/pages/public/Home.jsx'
+      - 'src/services/freePreview.js'
+      - 'api/free-preview-url.js'
+      - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
       - 'src/components/VIPVideoPlayer.jsx'
       - 'src/components/AdSlot.jsx'
       - 'src/components/SocialBar.jsx'
@@ -108,7 +111,34 @@ jobs:
           assert.match(homePage,/membership\.showAds !== true/);
           assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 3/);
           assert.doesNotMatch(homePage,/triggerPopunderEveryFiveVideos/);
-          const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
+          // Phase 315: selection limit and server-authorized free playback.
+          const freeService = readFileSync('src/services/freePreview.js','utf8');
+          const freeSigner = readFileSync('api/free-preview-url.js','utf8');
+          const freeSql = readFileSync('supabase/migrations/20261115120000_jb_free_preview_v1.sql','utf8');
+          const mediaAdmin = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
+          assert.match(mediaAdmin,/jb_set_media_free_preview_v1/);
+          assert.match(mediaAdmin,/FREE_PREVIEW_MAX = 20/);
+          assert.match(mediaAdmin,/Make free/);
+          assert.match(homePage,/handleCategoryChange\("free"\)/);
+          assert.match(homePage,/query\.eq\("is_free_preview", true\)/);
+          assert.match(homePage,/requestFreePreviewUrl\(id\)/);
+          assert.match(homePage,/Unlock the full media library/);
+          assert.match(homePage,/!selectedCanPlay \?/);
+          assert.match(homePage,/item\.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership\.canViewAlbums/);
+          assert.match(freeService,/Authorization: `Bearer \$\{session\.access_token\}`/);
+          assert.match(freeSigner,/db\.auth\.getUser\(tokenMatch\[1\]\)/);
+          assert.match(freeSigner,/media\.is_free_preview !== true/);
+          assert.match(freeSigner,/JB_FREE_PREVIEW_ENABLED !== "true"/);
+          assert.match(freeSigner,/JB_FREE_PREVIEW_PRIVATE_STORAGE_CONFIRMED !== "true"/);
+          assert.match(freeSigner,/R2_FREE_PREVIEW_BUCKET_NAME/);
+          assert.match(freeSigner,/new GetObjectCommand/);
+          assert.doesNotMatch(freeSigner,/res\.status\(200\)\.json\(\{.*R2_SECRET_ACCESS_KEY/);
+          assert.match(freeSql,/ADD COLUMN IF NOT EXISTS is_free_preview boolean NOT NULL DEFAULT false/);
+          assert.match(freeSql,/pg_advisory_xact_lock\(315, 20\)/);
+          assert.match(freeSql,/v_count >= 20/);
+          assert.match(freeSql,/public\.is_current_user_admin\(\)/);
+          assert.match(freeSql,/REVOKE ALL ON FUNCTION public\.jb_set_media_free_preview_v1/);
+                    const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
           const socialAd = readFileSync('src/components/SocialBar.jsx','utf8');
           const mainLayout = readFileSync('src/components/layout/MainLayout.jsx','utf8');
           assert.match(nativeAd,/sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
