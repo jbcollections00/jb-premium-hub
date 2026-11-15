@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
+      - 'supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql'
+      - '.github/tests/free-preview-catalog-assertions.sql'
       - '.github/tests/free-preview-fixture.sql'
       - '.github/tests/free-preview-assertions.sql'
       - '.github/workflows/jb-free-preview-security.yml'
@@ -41,3 +43,7 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261115120000_jb_free_preview_v1.sql
       - name: Verify 20-slot cap and roles
         run: psql -v ON_ERROR_STOP=1 -f .github/tests/free-preview-assertions.sql
+      - name: Apply authenticated Free preview catalog migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql
+      - name: Verify metadata only, FREE discovery and anon denial
+        run: psql -v ON_ERROR_STOP=1 -f .github/tests/free-preview-catalog-assertions.sql
