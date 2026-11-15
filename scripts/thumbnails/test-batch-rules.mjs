@@ -10,7 +10,7 @@ test("landscape captures once, strictly after the 22-second intro", () => {
 });
 
 test("portrait merges three well-spaced post-intro timestamps", () => {
-  assert.deepEqual(captureTimes(67.767, true), [23, 44.134, 66.267]);
+  assert.deepEqual(captureTimes(67.767, true), [23, 44.633, 66.267]);
 });
 
 test("short videos skip rather than expose intro frames", () => {
