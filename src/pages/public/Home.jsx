@@ -1508,7 +1508,7 @@ export default function Home() {
               <div className="relative flex w-full min-h-[220px] items-center justify-center bg-black p-2 sm:p-3 md:min-h-[340px]">
                 
                 {/* STEP 2 CLICK-TO-PLAY OVERLAY FOR AD-SUPPORTED USERS */}
-                {!isAdFree && !autoPlay && (
+                {!isAdFree && !autoPlay && selectedCanPlay && (
                   <div
                     onClick={handleStartPlayback}
                     className="absolute inset-0 z-30 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center cursor-pointer group transition-all p-4 text-center"
