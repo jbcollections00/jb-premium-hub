@@ -19,7 +19,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { captureTimes, portraitOrientation } from "./batch-rules.mjs";
 
-const ROOT = path.resolve(".local", "thumbnail-batch-317d");
+const ROOT = path.resolve(process.env.JB_THUMBNAIL_OUTPUT_DIR || path.join(".local", "thumbnail-batch-317d"));
 const INVENTORY_FILE = path.join(ROOT, "inventory.json");
 const PROGRESS_FILE = path.join(ROOT, "progress.json");
 const VIDEO_PREFIX = "videos/";
