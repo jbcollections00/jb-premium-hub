@@ -12,3 +12,7 @@ verify_jwt = false
 
 [functions.jb-paymongo-settle-live]
 verify_jwt = true
+
+# Phase 315: Supabase checks JWT at gateway; issuer checks auth again.
+[functions.jb-free-preview-ticket]
+verify_jwt = true

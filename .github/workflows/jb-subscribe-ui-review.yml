@@ -6,6 +6,10 @@ on:
       - 'src/components/layout/ProtectedRoute.jsx'
       - 'src/pages/public/Login.jsx'
       - 'src/pages/public/Home.jsx'
+      - 'src/services/freePreview.js'
+      - 'supabase/functions/jb-free-preview-ticket/**'
+      - '.github/tests/free-preview-worker-contract.test.ts'
+      - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
       - 'src/components/VIPVideoPlayer.jsx'
       - 'src/components/AdSlot.jsx'
       - 'src/components/SocialBar.jsx'
@@ -108,7 +112,47 @@ jobs:
           assert.match(homePage,/membership\.showAds !== true/);
           assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 3/);
           assert.doesNotMatch(homePage,/triggerPopunderEveryFiveVideos/);
-          const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
+          // Phase 315: selection limit and server-authorized free playback.
+          const freeService = readFileSync('src/services/freePreview.js','utf8');
+          const freeIssuer = readFileSync('supabase/functions/jb-free-preview-ticket/index.ts','utf8');
+          const ticketCode = readFileSync('supabase/functions/jb-free-preview-ticket/ticket.ts','utf8');
+          const freeSql = readFileSync('supabase/migrations/20261115120000_jb_free_preview_v1.sql','utf8');
+          const mediaAdmin = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
+          assert.match(mediaAdmin,/jb_set_media_free_preview_v1/);
+          assert.match(mediaAdmin,/FREE_PREVIEW_MAX = 20/);
+          assert.match(mediaAdmin,/!FREE_PREVIEW_UI_ENABLED \|\| Boolean\(freePreviewUpdatingId\)/);
+          assert.match(mediaAdmin,/Make free/);
+          assert.match(homePage,/handleCategoryChange\("free"\)/);
+          assert.match(homePage,/query\.eq\("is_free_preview", true\)/);
+          assert.match(homePage,/requestFreePreviewUrl\(id\)/);
+          assert.match(homePage,/Unlock the full media library/);
+          assert.match(homePage,/!selectedCanPlay \?/);
+          assert.match(homePage,/item\.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership\.canViewAlbums/);
+          assert.ok(freeService.includes('PRIVATE_MEDIA_UI_ENABLED'));
+          assert.ok(freeService.includes('VITE_JB_FREE_PREVIEW_UI_ENABLED'));
+          assert.match(homePage,/FREE_PREVIEW_UI_ENABLED && billingReady/);
+          assert.match(homePage,/FREE_PREVIEW_UI_ENABLED && \(/);
+          assert.ok(freeService.includes('jb-free-preview-ticket'));
+          assert.ok(freeService.includes('"/v/"') || freeService.includes('"/v/" + mediaId'));
+          assert.ok(freeService.includes('PRIVATE_WORKER_ORIGIN'));
+          assert.ok(freeIssuer.includes("JB_FREE_PREVIEW_TICKETS_ENABLED"));
+          assert.ok(freeIssuer.includes("JB_FREE_PREVIEW_PRIVATE_CDN_CONFIRMED"));
+          assert.ok(freeIssuer.includes("JB_PRIVATE_MEDIA_HMAC_SECRET"));
+          assert.ok(freeIssuer.includes('admin.auth.getUser(bearer[1])'));
+          assert.ok(freeIssuer.includes("video.is_free_preview !== true"));
+          assert.ok(freeIssuer.includes("data.action !== 'play'"));
+          assert.ok(freeIssuer.includes("signTicket(signingSecret"));
+          assert.ok(freeIssuer.includes("'/v/' + mediaId + '/play'"));
+          assert.ok(!freeIssuer.includes("GetObjectCommand"));
+          assert.ok(!freeIssuer.includes("R2_SECRET_ACCESS_KEY"));
+          assert.ok(ticketCode.includes("crypto.subtle.sign('HMAC'"));
+          assert.ok(ticketCode.includes("encoder.encode(body)"));
+          assert.match(freeSql,/ADD COLUMN IF NOT EXISTS is_free_preview boolean NOT NULL DEFAULT false/);
+          assert.match(freeSql,/pg_advisory_xact_lock\(315, 20\)/);
+          assert.match(freeSql,/v_count >= 20/);
+          assert.match(freeSql,/public\.is_current_user_admin\(\)/);
+          assert.match(freeSql,/REVOKE ALL ON FUNCTION public\.jb_set_media_free_preview_v1/);
+                    const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
           const socialAd = readFileSync('src/components/SocialBar.jsx','utf8');
           const mainLayout = readFileSync('src/components/layout/MainLayout.jsx','utf8');
           assert.match(nativeAd,/sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
@@ -268,8 +312,38 @@ jobs:
           NODE
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Set up Deno for private ticket compatibility tests
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck Free to Watch Supabase Edge Function
+        run: deno check --no-config supabase/functions/jb-free-preview-ticket/index.ts
+      - name: Test HMAC tickets against original Cloudflare Worker
+        run: deno test --no-config --no-check .github/tests/free-preview-worker-contract.test.ts
       - name: Build
         run: npm run build
+      - name: Package Phase 315 complete replacement files
+        run: |
+          mkdir -p delivery
+          zip -q delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip \
+            docs/PHASE_315_FREE_TO_WATCH.md \
+            supabase/migrations/20261115120000_jb_free_preview_v1.sql \
+            src/pages/admin/AdminMediaTab.jsx \
+            src/pages/public/Home.jsx \
+            src/services/freePreview.js \
+            src/components/VIPVideoPlayer.jsx \
+            supabase/config.toml \
+            supabase/functions/jb-free-preview-ticket/index.ts \
+            supabase/functions/jb-free-preview-ticket/ticket.ts \
+            .github/tests/free-preview-worker-contract.test.ts
+          unzip -t delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
+      - name: Upload Phase 315 source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JB-Phase315-Free-to-Watch-Full-Replacement
+          path: delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Package complete Admin replacement files
         run: |
           mkdir -p delivery

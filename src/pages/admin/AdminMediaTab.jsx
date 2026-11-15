@@ -13,6 +13,8 @@ import {
   uploadFileToR2,
 } from "../../services/r2Client";
 
+import { FREE_PREVIEW_UI_ENABLED } from "../../services/freePreview";
+
 export default function AdminMediaTab() {
   const [
     activeTab,
@@ -28,6 +30,11 @@ export default function AdminMediaTab() {
     totalMediaCount,
     setTotalMediaCount,
   ] = useState(0);
+
+  const [freePreviewUpdatingId, setFreePreviewUpdatingId] = useState(null);
+  const [freePreviewMessage, setFreePreviewMessage] = useState("");
+  const selectedFreeCount = mediaList.filter((item) => item.is_free_preview === true).length;
+  const FREE_PREVIEW_MAX = 20;
 
   /* =========================================================
      FILE UPLOAD STATES
@@ -355,6 +362,37 @@ export default function AdminMediaTab() {
         window.alert("Could not load the media library. Please refresh and try again.");
       }
     };
+
+  // Admin-controlled free videos. Database RPC + trigger enforce the
+  // 20-video maximum atomically, even across multiple concurrent admins.
+  const handleToggleFreePreview = async (item) => {
+    if (!FREE_PREVIEW_UI_ENABLED || !item?.id || freePreviewUpdatingId) return;
+    const enabled = item.is_free_preview !== true;
+    setFreePreviewUpdatingId(item.id);
+    setFreePreviewMessage("");
+    try {
+      const { data, error } = await supabase.rpc("jb_set_media_free_preview_v1", {
+        p_media_id: item.id, p_enabled: enabled,
+      });
+      if (error) throw error;
+      if (!data || data.id !== item.id || data.is_free_preview !== enabled) {
+        throw new Error("Unable to confirm Free to Watch selection");
+      }
+      setMediaList((prev) => prev.map((row) =>
+        row.id === item.id ? { ...row, is_free_preview: enabled } : row
+      ));
+      setFreePreviewMessage(
+        enabled ? `Added "${item.title}" to Free to Watch.` : `Removed "${item.title}" from Free to Watch.`
+      );
+    } catch (error) {
+      console.error("Free-preview selection unavailable:", error?.code || "ERROR");
+      setFreePreviewMessage(error?.message?.includes("Maximum of 20")
+        ? "The maximum of 20 free videos has been reached. Remove one before adding another."
+        : "Could not change Free to Watch selection. Please check administrator permissions and setup.");
+    } finally {
+      setFreePreviewUpdatingId(null);
+    }
+  };
 
   /* =========================================================
      FORMAT BYTES
@@ -1772,7 +1810,7 @@ export default function AdminMediaTab() {
 
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
 
           <div className="jbh-admin-stat flex items-center gap-4 p-4">
 
@@ -1830,9 +1868,17 @@ export default function AdminMediaTab() {
 
           </div>
 
+          <div className="jbh-admin-stat col-span-2 flex items-center gap-4 p-4 sm:col-span-1">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-300/25 bg-emerald-400/10 text-xl text-emerald-200">▶</div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Free to Watch</p>
+              <p className="mt-0.5 text-2xl font-black text-white">{selectedFreeCount} <span className="text-sm font-semibold text-slate-300">/ 20</span></p>
+            </div>
+          </div>
         </div>
 
       </header>
+      {freePreviewMessage && <div role="status" className="jbh-admin-panel rounded-xl p-4 text-sm text-sky-100">{freePreviewMessage}</div>}
 
       {/* =====================================================
           NAVIGATION
@@ -2586,6 +2632,11 @@ export default function AdminMediaTab() {
                             loading="lazy"
                           />
 
+                          {item.is_free_preview && (
+                            <span className="absolute right-2 top-2 rounded-lg border border-emerald-300/30 bg-emerald-600/90 px-2.5 py-1 text-[10px] font-bold text-white">
+                              FREE TO WATCH
+                            </span>
+                          )}
                           <div className="absolute top-2 left-2">
 
                             <span className="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-700/70 text-[9px] font-bold uppercase tracking-wider text-slate-300">
@@ -2700,6 +2751,33 @@ export default function AdminMediaTab() {
                             </div>
 
                           )}
+
+                          {/* FREE TO WATCH SELECTION */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-400/5 p-3">
+                            <div>
+                              <p className="text-xs font-bold text-white">Free to Watch</p>
+                              <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                                {!FREE_PREVIEW_UI_ENABLED
+                                  ? "Secure playback activation pending"
+                                  : item.is_free_preview
+                                    ? "Available to signed-in free viewers."
+                                    : "Members only · Admin can add up to 20."}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              aria-pressed={item.is_free_preview === true}
+                              onClick={() => handleToggleFreePreview(item)}
+                              disabled={!FREE_PREVIEW_UI_ENABLED || Boolean(freePreviewUpdatingId) || (selectedFreeCount >= FREE_PREVIEW_MAX && !item.is_free_preview)}
+                              className={`min-h-9 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                                item.is_free_preview
+                                  ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/25"
+                                  : "border-indigo-300/40 bg-indigo-500/15 text-indigo-100 hover:bg-indigo-500/25"
+                              }`}
+                            >
+                              {freePreviewUpdatingId === item.id ? "Saving…" : item.is_free_preview ? "✓ Free · Remove" : "Make free"}
+                            </button>
+                          </div>
 
                           {/* THUMBNAIL ACTIONS */}
 

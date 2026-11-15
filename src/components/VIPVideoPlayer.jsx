@@ -367,6 +367,7 @@ export default function VIPVideoPlayer({
               if (!effectiveIsAdFree) e.preventDefault();
             }}
             playsInline
+            referrerPolicy="no-referrer"
             onLoadedMetadata={handleLoadedMetadata}
             onDurationChange={(event) => {
               const duration = event.currentTarget.duration;

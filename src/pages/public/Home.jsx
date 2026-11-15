@@ -5,6 +5,7 @@ import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
+import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -46,6 +47,7 @@ export default function Home() {
   const [downloadBusy, setDownloadBusy] = useState(false);
   const downloadLockRef = useRef(false);
   const [privatePlayback, setPrivatePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
+  const [freePlayback, setFreePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
 
   // AutoPlay state para sa Step 2 Play Trigger
   const [autoPlay, setAutoPlay] = useState(() => {
@@ -117,6 +119,9 @@ export default function Home() {
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
   const canDownload = billingReady && membership.canDownload;
+  const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
+  const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
+    (membership.canViewAlbums || (FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true));
 
   useEffect(() => {
     let cancelled = false;
@@ -145,7 +150,8 @@ export default function Home() {
   // Private playback is strictly opt-in. When enabled, NEVER fall back to a public media URL.
   // The ticket endpoint authorizes the current user and exact video on the server.
   useEffect(() => {
-    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id) return;
+    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id ||
+        (selectedMedia.is_free_preview === true && !membership.canViewAlbums)) return;
     const id = String(selectedMedia.id);
     let cancelled = false;
     setPrivatePlayback({ id, url: "", status: "loading", error: "" });
@@ -165,6 +171,27 @@ export default function Home() {
       });
     return () => { cancelled = true; };
   }, [selectedMedia?.id, billingReady, membership.canViewAlbums, membership.tier, userProfile?.id]);
+
+  // FREE accounts receive a newly signed R2 URL on every video opening.
+  // The server independently authorizes every request; replays are unlimited.
+  useEffect(() => {
+    if (!FREE_PREVIEW_UI_ENABLED || !selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
+      setFreePlayback({ id: "", url: "", status: "idle", error: "" });
+      return;
+    }
+    const id = String(selectedMedia.id);
+    let cancelled = false;
+    setFreePlayback({ id, url: "", status: "loading", error: "" });
+    if (!billingReady || !userProfile?.id) return () => { cancelled = true; };
+    requestFreePreviewUrl(id)
+      .then((url) => { if (!cancelled) setFreePlayback({ id, url, status: "ready", error: "" }); })
+      .catch((error) => {
+        if (!cancelled) setFreePlayback({ id, url: "", status: "error",
+          error: error?.message || "Free playback is temporarily unavailable." });
+      });
+    return () => { cancelled = true; };
+  }, [selectedMedia?.id, selectedMedia?.is_free_preview,
+      billingReady, membership.canViewAlbums, userProfile?.id]);
 
   // Body scroll management
   useEffect(() => {
@@ -350,6 +377,8 @@ export default function Home() {
     const to = from + ITEMS_PER_PAGE - 1;
 
     let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
+
+    if (category === "free") query = query.eq("is_free_preview", true);
 
     if (category === "pinay_asian") {
       query = query.or(
@@ -806,6 +835,7 @@ export default function Home() {
     const targetY = scrollPosRef.current;
     setSelectedMedia(null);
     setPrivatePlayback({ id: "", url: "", status: "idle", error: "" });
+    setFreePlayback({ id: "", url: "", status: "idle", error: "" });
     setAutoPlay(false);
     setHasRecordedCurrentView(false);
     viewRecordedRef.current = false;
@@ -1073,6 +1103,19 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
+        {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
+          <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
+            <div className="max-w-xl">
+              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
+              <h2 className="mt-2 text-xl font-extrabold text-white sm:text-2xl">Watch selected videos for free.</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">Watch these videos as often as you like. Explore membership options whenever you're ready for the full collection.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={() => handleCategoryChange("free")} className="jbh-btn">Explore free videos</button>
+              <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
+            </div>
+          </section>
+        )}
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
@@ -1158,6 +1201,9 @@ export default function Home() {
                   >
                     <div>
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
+                        {item.is_free_preview && (
+                          <span className="absolute right-2 top-2 z-10 rounded-lg bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-white">FREE</span>
+                        )}
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
                           #{rank} {rank === 1 ? "🔥" : ""}
                         </div>
@@ -1169,11 +1215,17 @@ export default function Home() {
                         {item.thumbnail_url ? (
                           <img
                             src={getCdnUrl(item.thumbnail_url)}
+                            onError={(event) => {
+                              // Private cutover may retire old public-CDN covers.
+                              // Preserve a clean gallery with the local JB logo.
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.src = "/jb-logo.png";
+                            }}
                             alt={item.title}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
                           />
-                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED ? (
+                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
                           <video
                             src={`${getCdnUrl(item.media_url)}#t=1`}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
@@ -1187,7 +1239,14 @@ export default function Home() {
                           </div>
                         )}
 
-                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                        <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
+                      item.is_free_preview
+                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
+                        : "border-white/10 bg-black/75 text-slate-200"
+                    }`}>
+                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                    </span>
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
                             <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
                               <path d="M8 5v14l11-7z" />
@@ -1247,6 +1306,18 @@ export default function Home() {
           >
             <span>🔥</span> All Videos
           </button>
+          {FREE_PREVIEW_UI_ENABLED && (
+          <button
+            onClick={() => handleCategoryChange("free")}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeCategory === "free"
+                ? "bg-emerald-600 text-white"
+                : "bg-slate-900 border border-emerald-500/25 text-emerald-200 hover:bg-emerald-500/10"
+            }`}
+          >
+            <span>▶</span> Free to Watch
+          </button>
+          )}
           <button
             onClick={() => handleCategoryChange("pinay_asian")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
@@ -1284,11 +1355,17 @@ export default function Home() {
                     {item.thumbnail_url ? (
                       <img
                         src={getCdnUrl(item.thumbnail_url)}
+                            onError={(event) => {
+                              // Private cutover may retire old public-CDN covers.
+                              // Preserve a clean gallery with the local JB logo.
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.src = "/jb-logo.png";
+                            }}
                         alt={item.title}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                       />
-                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED ? (
+                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
                       <video
                         src={`${getCdnUrl(item.media_url)}#t=1`}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
@@ -1301,6 +1378,13 @@ export default function Home() {
                         {PRIVATE_MEDIA_UI_ENABLED ? <img src="/jb-logo.png" alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                       </div>
                     )}
+                    <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
+                      item.is_free_preview
+                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
+                        : "border-white/10 bg-black/75 text-slate-200"
+                    }`}>
+                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                    </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                         <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
@@ -1451,7 +1535,7 @@ export default function Home() {
               <div className="relative flex w-full min-h-[220px] items-center justify-center bg-black p-2 sm:p-3 md:min-h-[340px]">
                 
                 {/* STEP 2 CLICK-TO-PLAY OVERLAY FOR AD-SUPPORTED USERS */}
-                {!isAdFree && !autoPlay && (
+                {!isAdFree && !autoPlay && selectedCanPlay && (
                   <div
                     onClick={handleStartPlayback}
                     className="absolute inset-0 z-30 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center cursor-pointer group transition-all p-4 text-center"
@@ -1471,13 +1555,23 @@ export default function Home() {
                 )}
 
                 <div className="flex h-full w-full max-w-4xl items-center justify-center [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
-                  {(!PRIVATE_MEDIA_UI_ENABLED ||
-                    (privatePlayback.id === selectedMedia.id && privatePlayback.url)) ? (
+                  {!selectedCanPlay ? (
+                    <div className="flex w-full flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-slate-950 p-8 text-center text-slate-100">
+                      <span className="text-4xl" aria-hidden="true">🔒</span>
+                      <h3 className="text-xl font-bold">Unlock the full media library</h3>
+                      <p className="max-w-md text-sm leading-relaxed text-slate-300">
+                        This video is for members. Watch selected Free to Watch videos or choose a plan to access the full collection.
+                      </p>
+                      <Link to="/subscribe" onClick={() => setSelectedMedia(null)} className="jbh-btn">Explore membership plans</Link>
+                    </div>
+                  ) : ((isSelectedFreePreview && freePlayback.id === selectedMedia.id && freePlayback.url) ||
+                    (!isSelectedFreePreview && (!PRIVATE_MEDIA_UI_ENABLED ||
+                      (privatePlayback.id === selectedMedia.id && privatePlayback.url)))) ? (
                   <VIPVideoPlayer
                     key={selectedMedia.id}
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
-                    mainVideoUrl={PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
+                    mainVideoUrl={isSelectedFreePreview ? freePlayback.url : PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
                     isAdFree={billingReady ? !membership.showAds : false}
                     accountType={userProfile?.account_type}
                     vipUntil={userProfile?.vip_until}
@@ -1488,14 +1582,25 @@ export default function Home() {
                   />
                   ) : (
                     <div role="status" className="w-full min-h-64 flex items-center justify-center p-6 text-center text-sm text-slate-300" aria-live="polite">
-                      {privatePlayback.id === selectedMedia.id && privatePlayback.error
-                        ? privatePlayback.error
-                        : "Checking your private video access..."}
+                      {isSelectedFreePreview
+                        ? (freePlayback.id === selectedMedia.id && freePlayback.error
+                          ? freePlayback.error : "Authorizing Free to Watch playback...")
+                        : (privatePlayback.id === selectedMedia.id && privatePlayback.error
+                          ? privatePlayback.error : "Checking private video access...")}
                     </div>
                   )}
                 </div>
               </div>
 
+              {isSelectedFreePreview && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-indigo-400/20 bg-indigo-500/10 px-4 py-4 md:px-6">
+                  <div>
+                    <p className="text-sm font-bold text-white">Enjoying Free to Watch?</p>
+                    <p className="mt-1 text-xs text-slate-300">Replay selected free videos whenever you like, or unlock the full library.</p>
+                  </div>
+                  <Link to="/subscribe" onClick={() => setSelectedMedia(null)} className="jbh-btn text-sm">See membership plans</Link>
+                </div>
+              )}
               <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span
