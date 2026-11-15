@@ -133,6 +133,8 @@ jobs:
           assert.match(freeSigner,/JB_FREE_PREVIEW_PRIVATE_STORAGE_CONFIRMED !== "true"/);
           assert.match(freeSigner,/R2_FREE_PREVIEW_BUCKET_NAME/);
           assert.match(freeSigner,/new GetObjectCommand/);
+          assert.match(freeSigner,/anonymousResponse\.status/);
+          assert.match(freeSigner,/Range: "bytes=0-0"/);
           assert.doesNotMatch(freeSigner,/res\.status\(200\)\.json\(\{.*R2_SECRET_ACCESS_KEY/);
           assert.match(freeSql,/ADD COLUMN IF NOT EXISTS is_free_preview boolean NOT NULL DEFAULT false/);
           assert.match(freeSql,/pg_advisory_xact_lock\(315, 20\)/);
