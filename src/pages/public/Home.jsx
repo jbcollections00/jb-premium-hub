@@ -1103,6 +1103,19 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
+        {billingReady && !membership.canViewAlbums && userProfile?.id && (
+          <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
+            <div className="max-w-xl">
+              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
+              <h2 className="mt-2 text-xl font-extrabold text-white sm:text-2xl">Watch selected videos for free.</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">Watch these videos as often as you like. Explore membership options whenever you're ready for the full collection.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={() => handleCategoryChange("free")} className="jbh-btn">Explore free videos</button>
+              <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
+            </div>
+          </section>
+        )}
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
