@@ -10,6 +10,7 @@ on:
       - 'supabase/functions/jb-free-preview-ticket/**'
       - '.github/tests/free-preview-worker-contract.test.ts'
       - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
+      - 'supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql'
       - 'src/components/VIPVideoPlayer.jsx'
       - 'src/components/AdSlot.jsx'
       - 'src/components/SocialBar.jsx'
@@ -125,6 +126,14 @@ jobs:
           assert.match(homePage,/handleCategoryChange\("free"\)/);
           assert.match(homePage,/query\.eq\("is_free_preview", true\)/);
           assert.match(homePage,/requestFreePreviewUrl\(id\)/);
+          const catalogSql = readFileSync('supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql','utf8');
+          assert.match(catalogSql,/SECURITY DEFINER/);
+          assert.match(catalogSql,/m\.is_free_preview IS TRUE/);
+          assert.match(catalogSql,/REVOKE ALL ON FUNCTION public\.jb_free_preview_catalog_v1\(\) FROM PUBLIC, anon/);
+          assert.match(homePage,/supabase\.rpc\("jb_free_preview_catalog_v1"\)/);
+          assert.match(homePage,/!membership\.canViewAlbums/);
+          assert.match(homePage,/!Object\.prototype\.hasOwnProperty\.call\(item, "media_url"\)/);
+          assert.match(homePage,/setMediaError\("Could not load the video catalog/);
           assert.match(homePage,/Unlock the full media library/);
           assert.match(homePage,/!selectedCanPlay \?/);
           assert.match(homePage,/item\.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership\.canViewAlbums/);
