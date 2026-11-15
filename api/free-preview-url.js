@@ -92,6 +92,26 @@ export default async function handler(req, res) {
     const key = objectKeyFromMediaUrl(media.media_url, R2_PUBLIC_URL);
     if (!key) return res.status(503).json({ error: "Private video source not configured" });
 
+    // Fail closed if an anonymous CDN request can read any video bytes.
+    // Only the first byte is requested and the response body is cancelled.
+    // This is defense-in-depth, NOT a substitute for private-bucket checks.
+    let anonymousResponse;
+    try {
+      anonymousResponse = await fetch(media.media_url, {
+        method: "GET",
+        headers: { Range: "bytes=0-0" },
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(4000),
+      });
+      await anonymousResponse.body?.cancel();
+    } catch {
+      return res.status(503).json({ error: "Private CDN access could not be verified" });
+    }
+    if (![401, 403, 404].includes(anonymousResponse.status)) {
+      return res.status(503).json({ error: "Private CDN protection could not be verified" });
+    }
+
     const s3 = new S3Client({
       region: "auto",
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
