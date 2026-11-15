@@ -95,7 +95,7 @@ jobs:
           assert.match(homePage,/triggerPopunderForStandard/);
           assert.match(homePage,/membership\.tier !== "standard"/);
           assert.match(homePage,/membership\.showAds !== true/);
-          assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 5/);
+          assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 3/);
           assert.doesNotMatch(homePage,/triggerPopunderEveryFiveVideos/);
           const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
           const socialAd = readFileSync('src/components/SocialBar.jsx','utf8');
