@@ -30,7 +30,8 @@ The React badge/toggle is **never** the permission boundary. `/api/free-preview-
 2. Calls `auth.getUser()` server-side.
 3. Reads the requested `media` row using the server-only Supabase key, and requires `type='video'` and `is_free_preview=true`.
 4. Parses only a trusted R2 CDN URL rooted at `videos/` and signs **GET**, never PUT or DELETE.
-5. Returns a signed R2 URL expiring in 900 seconds, with `Cache-Control: no-store`.
+5. Requests one anonymous CDN byte (`Range: bytes=0-0`) and refuses to sign unless the CDN denies anonymous access (`401/403/404`). This is defense-in-depth, not a substitute for testing the public CDN from a browser.
+6. Returns a signed R2 URL expiring in 900 seconds, with `Cache-Control: no-store`.
 6. Has no watch-count restriction. A new short-lived link is requested when the user reopens the video.
 
 The backend is **OFF BY DEFAULT**. The two flags below must intentionally be enabled.
