@@ -14,6 +14,7 @@ import {
 } from "../../services/r2Client";
 
 import { FREE_PREVIEW_UI_ENABLED } from "../../services/freePreview";
+import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 export default function AdminMediaTab() {
   const [
@@ -54,11 +55,6 @@ export default function AdminMediaTab() {
     notifyUsers,
     setNotifyUsers,
   ] = useState(false); // Opt in to mass announcements; never auto-send by default.
-
-  const [
-    thumbnailBackfillLoading,
-    setThumbnailBackfillLoading,
-  ] = useState(false);
 
   const [
     thumbnailUploadingId,
@@ -136,157 +132,6 @@ export default function AdminMediaTab() {
       /pub-[a-f0-9]+\.r2\.dev/g,
       "cdn.jb-premium-hub.vip"
     );
-  };
-
-  /* =========================================================
-     NEUTRAL THUMBNAIL
-  ========================================================= */
-
-  const createNeutralThumbnailDataUrl = (
-    category = "JB Media"
-  ) => {
-    const cleanCategory =
-      String(
-        category ||
-          "JB Media"
-      )
-        .replace(
-          /[<>&"'`]/g,
-          ""
-        )
-        .slice(
-          0,
-          28
-        );
-
-    const svg = `
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="1280"
-        height="720"
-        viewBox="0 0 1280 720"
-      >
-        <defs>
-          <linearGradient
-            id="bg"
-            x1="0"
-            y1="0"
-            x2="1"
-            y2="1"
-          >
-            <stop
-              offset="0%"
-              stop-color="#020617"
-            />
-            <stop
-              offset="55%"
-              stop-color="#0f172a"
-            />
-            <stop
-              offset="100%"
-              stop-color="#2e1065"
-            />
-          </linearGradient>
-
-          <radialGradient
-            id="glow"
-            cx="50%"
-            cy="42%"
-            r="55%"
-          >
-            <stop
-              offset="0%"
-              stop-color="#7c3aed"
-              stop-opacity="0.34"
-            />
-            <stop
-              offset="100%"
-              stop-color="#7c3aed"
-              stop-opacity="0"
-            />
-          </radialGradient>
-        </defs>
-
-        <rect
-          width="1280"
-          height="720"
-          fill="url(#bg)"
-        />
-
-        <rect
-          width="1280"
-          height="720"
-          fill="url(#glow)"
-        />
-
-        <g transform="translate(640 300)">
-          <rect
-            x="-78"
-            y="-78"
-            width="156"
-            height="156"
-            rx="34"
-            fill="#8b5cf6"
-            fill-opacity="0.12"
-            stroke="#a78bfa"
-            stroke-opacity="0.45"
-            stroke-width="3"
-          />
-
-          <path
-            d="M0 -44L12 -10L46 2L12 14L0 48L-12 14L-46 2L-12 -10Z"
-            fill="none"
-            stroke="#c4b5fd"
-            stroke-width="7"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </g>
-
-        <text
-          x="640"
-          y="430"
-          text-anchor="middle"
-          fill="#f8fafc"
-          font-family="Arial, Helvetica, sans-serif"
-          font-size="46"
-          font-weight="800"
-          letter-spacing="5"
-        >
-          JB PREMIUM HUB
-        </text>
-
-        <text
-          x="640"
-          y="486"
-          text-anchor="middle"
-          fill="#a78bfa"
-          font-family="Arial, Helvetica, sans-serif"
-          font-size="24"
-          font-weight="700"
-          letter-spacing="7"
-        >
-          ${cleanCategory.toUpperCase()}
-        </text>
-
-        <text
-          x="640"
-          y="545"
-          text-anchor="middle"
-          fill="#64748b"
-          font-family="Arial, Helvetica, sans-serif"
-          font-size="18"
-          font-weight="600"
-          letter-spacing="3"
-        >
-          PRIVATE MEDIA LIBRARY
-        </text>
-      </svg>
-    `;
-
-    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-      svg
-    )}`;
   };
 
   /* =========================================================
@@ -944,100 +789,6 @@ export default function AdminMediaTab() {
       ]
     );
 
-  const handleGenerateMissingThumbnails =
-    async () => {
-      const missingItems =
-        mediaList.filter(
-          (item) =>
-            !item.thumbnail_url
-        );
-
-      if (
-        missingItems.length ===
-        0
-      ) {
-        alert(
-          "All media already have a thumbnail."
-        );
-
-        return;
-      }
-
-      if (
-        !window.confirm(
-          `Generate neutral covers for ${missingItems.length} media item(s) with missing thumbnails?`
-        )
-      ) {
-        return;
-      }
-
-      setThumbnailBackfillLoading(
-        true
-      );
-
-      try {
-        const updates =
-          missingItems.map(
-            async (
-              item
-            ) => {
-              const thumbnailUrl =
-                createNeutralThumbnailDataUrl(
-                  item.category ||
-                    "JB Media"
-                );
-
-              const {
-                error,
-              } =
-                await supabase
-                  .from(
-                    "media"
-                  )
-                  .update({
-                    thumbnail_url:
-                      thumbnailUrl,
-                  })
-                  .eq(
-                    "id",
-                    item.id
-                  );
-
-              if (error) {
-                throw error;
-              }
-            }
-          );
-
-        await Promise.all(
-          updates
-        );
-
-        await fetchMedia();
-
-        alert(
-          `Generated ${missingItems.length} neutral thumbnail cover(s).`
-        );
-      } catch (error) {
-        console.error(
-          "Thumbnail backfill failed:",
-          error
-        );
-
-        alert(
-          "Failed to generate missing thumbnail covers: " +
-            (
-              error?.message ||
-              "Unknown error"
-            )
-        );
-      } finally {
-        setThumbnailBackfillLoading(
-          false
-        );
-      }
-    };
-
   /* =========================================================
      BULK R2 UPLOAD
   ========================================================= */
@@ -1170,10 +921,8 @@ export default function AdminMediaTab() {
                   ""
                 );
 
-              let thumbnailUrl =
-                createNeutralThumbnailDataUrl(
-                  "JB Media"
-                );
+              // UI-only default; no placeholder record updates.
+              let thumbnailUrl = null;
 
               /* =============================================
                  3. OPTIONAL THUMBNAIL
@@ -1501,11 +1250,7 @@ export default function AdminMediaTab() {
               "media"
             )
             .update({
-              thumbnail_url:
-                createNeutralThumbnailDataUrl(
-                  item.category ||
-                    "JB Media"
-                ),
+              thumbnail_url: null,
             })
             .eq(
               "id",
@@ -1857,7 +1602,7 @@ export default function AdminMediaTab() {
             <div>
 
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Missing Covers
+                Using Default Cover
               </p>
 
               <p className="text-2xl font-black text-white font-mono mt-0.5">
@@ -2185,11 +1930,8 @@ export default function AdminMediaTab() {
                                 />
                               ) : (
                                 <img
-                                  src={
-                                    createNeutralThumbnailDataUrl(
-                                      "JB Media"
-                                    )
-                                  }
+                                  src={DEFAULT_THUMBNAIL_URL}
+                                  onError={handleThumbnailLoadError}
                                   alt=""
                                   className="w-full h-full object-cover"
                                 />
@@ -2421,23 +2163,9 @@ export default function AdminMediaTab() {
 
             </div>
 
-            <button
-              type="button"
-              onClick={
-                handleGenerateMissingThumbnails
-              }
-              disabled={
-                thumbnailBackfillLoading ||
-                missingThumbnailCount ===
-                  0
-              }
-              className="px-3 py-2 bg-violet-500/10 hover:bg-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-violet-300 border border-violet-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
-            >
-              ✨{" "}
-              {thumbnailBackfillLoading
-                ? "Generating Covers..."
-                : `Generate Covers (${missingThumbnailCount})`}
-            </button>
+            <span className="px-3 py-2 bg-slate-800/50 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold shrink-0">
+              {missingThumbnailCount} using default JB Collections logo automatically
+            </span>
 
 
           </div>
@@ -2620,13 +2348,8 @@ export default function AdminMediaTab() {
                         <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-800/80">
 
                           <img
-                            src={
-                              item.thumbnail_url ||
-                              createNeutralThumbnailDataUrl(
-                                item.category ||
-                                  "JB Media"
-                              )
-                            }
+                            src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                            onError={handleThumbnailLoadError}
                             alt={item.title ? `Thumbnail for ${item.title}` : "Media thumbnail"}
                             className="h-full w-full object-contain p-2"
                             loading="lazy"
@@ -2641,8 +2364,8 @@ export default function AdminMediaTab() {
 
                             <span className="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-700/70 text-[9px] font-bold uppercase tracking-wider text-slate-300">
                               {item.thumbnail_url
-                                ? "Thumbnail Ready"
-                                : "Fallback Cover"}
+                                ? "Existing Thumbnail"
+                                : "Default JB Logo"}
                             </span>
 
                           </div>
@@ -2797,8 +2520,8 @@ export default function AdminMediaTab() {
                                 }`}
                               >
                                 {item.thumbnail_url
-                                  ? "Approved"
-                                  : "Missing"}
+                                  ? "Saved"
+                                  : "Using Default"}
                               </span>
 
                             </div>
