@@ -5,6 +5,7 @@ import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
+import { requestFreePreviewUrl } from "../../services/freePreview";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -46,6 +47,7 @@ export default function Home() {
   const [downloadBusy, setDownloadBusy] = useState(false);
   const downloadLockRef = useRef(false);
   const [privatePlayback, setPrivatePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
+  const [freePlayback, setFreePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
 
   // AutoPlay state para sa Step 2 Play Trigger
   const [autoPlay, setAutoPlay] = useState(() => {
@@ -117,6 +119,9 @@ export default function Home() {
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
   const canDownload = billingReady && membership.canDownload;
+  const isSelectedFreePreview = selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
+  const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
+    (membership.canViewAlbums || selectedMedia?.is_free_preview === true);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,7 +150,8 @@ export default function Home() {
   // Private playback is strictly opt-in. When enabled, NEVER fall back to a public media URL.
   // The ticket endpoint authorizes the current user and exact video on the server.
   useEffect(() => {
-    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id) return;
+    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id ||
+        (selectedMedia.is_free_preview === true && !membership.canViewAlbums)) return;
     const id = String(selectedMedia.id);
     let cancelled = false;
     setPrivatePlayback({ id, url: "", status: "loading", error: "" });
@@ -165,6 +171,27 @@ export default function Home() {
       });
     return () => { cancelled = true; };
   }, [selectedMedia?.id, billingReady, membership.canViewAlbums, membership.tier, userProfile?.id]);
+
+  // FREE accounts receive a newly signed R2 URL on every video opening.
+  // The server independently authorizes every request; replays are unlimited.
+  useEffect(() => {
+    if (!selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
+      setFreePlayback({ id: "", url: "", status: "idle", error: "" });
+      return;
+    }
+    const id = String(selectedMedia.id);
+    let cancelled = false;
+    setFreePlayback({ id, url: "", status: "loading", error: "" });
+    if (!billingReady || !userProfile?.id) return () => { cancelled = true; };
+    requestFreePreviewUrl(id)
+      .then((url) => { if (!cancelled) setFreePlayback({ id, url, status: "ready", error: "" }); })
+      .catch((error) => {
+        if (!cancelled) setFreePlayback({ id, url: "", status: "error",
+          error: error?.message || "Free playback is temporarily unavailable." });
+      });
+    return () => { cancelled = true; };
+  }, [selectedMedia?.id, selectedMedia?.is_free_preview,
+      billingReady, membership.canViewAlbums, userProfile?.id]);
 
   // Body scroll management
   useEffect(() => {
@@ -350,6 +377,8 @@ export default function Home() {
     const to = from + ITEMS_PER_PAGE - 1;
 
     let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
+
+    if (category === "free") query = query.eq("is_free_preview", true);
 
     if (category === "pinay_asian") {
       query = query.or(
@@ -1173,7 +1202,7 @@ export default function Home() {
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
                           />
-                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED ? (
+                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
                           <video
                             src={`${getCdnUrl(item.media_url)}#t=1`}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
@@ -1248,6 +1277,16 @@ export default function Home() {
             <span>🔥</span> All Videos
           </button>
           <button
+            onClick={() => handleCategoryChange("free")}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeCategory === "free"
+                ? "bg-emerald-600 text-white"
+                : "bg-slate-900 border border-emerald-500/25 text-emerald-200 hover:bg-emerald-500/10"
+            }`}
+          >
+            <span>▶</span> Free to Watch <span className="text-[10px] opacity-75">Max 20</span>
+          </button>
+          <button
             onClick={() => handleCategoryChange("pinay_asian")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
               activeCategory === "pinay_asian"
@@ -1288,7 +1327,7 @@ export default function Home() {
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                       />
-                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED ? (
+                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
                       <video
                         src={`${getCdnUrl(item.media_url)}#t=1`}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
