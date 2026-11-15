@@ -1447,8 +1447,8 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
-              <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px] relative">
+            <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#6366f1_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-indigo-500 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-indigo-400">
+              <div className="relative flex w-full min-h-[220px] items-center justify-center bg-black p-2 sm:p-3 md:min-h-[340px]">
                 
                 {/* STEP 2 CLICK-TO-PLAY OVERLAY FOR AD-SUPPORTED USERS */}
                 {!isAdFree && !autoPlay && (
@@ -1470,7 +1470,7 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
+                <div className="flex h-full w-full max-w-4xl items-center justify-center [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
                   {(!PRIVATE_MEDIA_UI_ENABLED ||
                     (privatePlayback.id === selectedMedia.id && privatePlayback.url)) ? (
                   <VIPVideoPlayer
