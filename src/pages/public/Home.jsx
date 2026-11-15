@@ -5,7 +5,7 @@ import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
-import { requestFreePreviewUrl } from "../../services/freePreview";
+import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -119,9 +119,9 @@ export default function Home() {
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
   const canDownload = billingReady && membership.canDownload;
-  const isSelectedFreePreview = selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
+  const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
   const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
-    (membership.canViewAlbums || selectedMedia?.is_free_preview === true);
+    (membership.canViewAlbums || (FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true));
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +175,7 @@ export default function Home() {
   // FREE accounts receive a newly signed R2 URL on every video opening.
   // The server independently authorizes every request; replays are unlimited.
   useEffect(() => {
-    if (!selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
+    if (!FREE_PREVIEW_UI_ENABLED || !selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
       setFreePlayback({ id: "", url: "", status: "idle", error: "" });
       return;
     }
@@ -1103,7 +1103,7 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        {PRIVATE_MEDIA_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
+        {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
               <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
@@ -1306,7 +1306,7 @@ export default function Home() {
           >
             <span>🔥</span> All Videos
           </button>
-          {PRIVATE_MEDIA_UI_ENABLED && (
+          {FREE_PREVIEW_UI_ENABLED && (
           <button
             onClick={() => handleCategoryChange("free")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
