@@ -25,6 +25,11 @@ export async function signTicket(
 
 export function privateKeyFromMediaUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length > 2048) return null;
+  // Reject traversal before URL parsing, which otherwise normalizes .. away.
+  if (!raw.startsWith(MEDIA_ORIGIN + '/')) return null;
+  const unparsedPath = raw.slice(MEDIA_ORIGIN.length + 1);
+  if (/(^|\/)\.{1,2}(\/|$)/.test(unparsedPath) ||
+      /%2e|%2f|%5c/i.test(unparsedPath)) return null;
   let parsed: URL;
   try { parsed = new URL(raw); } catch { return null; }
   if (parsed.origin !== MEDIA_ORIGIN || parsed.protocol !== 'https:' ||
