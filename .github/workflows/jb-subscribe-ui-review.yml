@@ -305,6 +305,25 @@ jobs:
         run: node .github/tests/free-preview-route-guards.mjs
       - name: Build
         run: npm run build
+      - name: Package Phase 315 complete replacement files
+        run: |
+          mkdir -p delivery
+          zip -q delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip \
+            docs/PHASE_315_FREE_TO_WATCH.md \
+            supabase/migrations/20261115120000_jb_free_preview_v1.sql \
+            src/pages/admin/AdminMediaTab.jsx \
+            src/pages/public/Home.jsx \
+            src/services/freePreview.js \
+            src/components/VIPVideoPlayer.jsx \
+            api/free-preview-url.js
+          unzip -t delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
+      - name: Upload Phase 315 source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JB-Phase315-Free-to-Watch-Full-Replacement
+          path: delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Package complete Admin replacement files
         run: |
           mkdir -p delivery
