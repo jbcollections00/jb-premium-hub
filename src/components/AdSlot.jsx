@@ -41,9 +41,11 @@ export default function AdSlot({ position = "top", enabled = true }) {
         event.source === iframeRef.current.contentWindow &&
         event.data &&
         event.data.type === "AD_RESIZE" &&
-        event.data.height
+        typeof event.data.height === "number" &&
+        Number.isFinite(event.data.height) &&
+        event.data.height > 0
       ) {
-        setAdHeight(event.data.height);
+        setAdHeight(Math.min(Math.max(event.data.height, 100), 284));
       }
     };
 
@@ -140,7 +142,7 @@ export default function AdSlot({ position = "top", enabled = true }) {
         className="border-0 transition-all duration-300 ease-out"
         scrolling="no"
         title={`Advertisement - ${position}`}
-        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer-when-downgrade"
       />
     </div>

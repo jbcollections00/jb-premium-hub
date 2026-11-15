@@ -19,6 +19,8 @@ export default function VIPVideoPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isSeekReady, setIsSeekReady] = useState(false);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
   const [showSeekOverlay, setShowSeekOverlay] = useState(true);
   const overlayTimerRef = useRef(null);
   const mainVideoRef = useRef(null);
@@ -85,6 +87,8 @@ export default function VIPVideoPlayer({
     setIsPlaying(false);
     setHasStarted(false);
     setIsSeekReady(false);
+    setPlaybackTime(0);
+    setPlaybackDuration(0);
     setShowSeekOverlay(true);
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
   }, [mainVideoUrl, mediaId]);
@@ -176,6 +180,32 @@ export default function VIPVideoPlayer({
     if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
   }, []);
 
+  // Permanent, browser-independent timeline displayed below the video.
+  // This remains available even when the native controls auto-hide.
+  const formatTime = (seconds) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+    const rounded = Math.floor(seconds);
+    const hours = Math.floor(rounded / 3600);
+    const minutes = Math.floor((rounded % 3600) / 60);
+    const remaining = String(rounded % 60).padStart(2, "0");
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, "0")}:${remaining}`
+      : `${minutes}:${remaining}`;
+  };
+
+  const seekTo = (value) => {
+    const video = mainVideoRef.current;
+    const next = Number(value);
+    if (!video || !isSeekReady || !Number.isFinite(next) || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const target = Math.max(0, Math.min(next, video.duration));
+    try {
+      video.currentTime = target;
+      setPlaybackTime(target);
+    } catch (error) {
+      console.error("Video seek unavailable:", error);
+    }
+  };
+
   // Rewind / forward exactly 10 seconds, clamped to the current video's duration.
   const seekBy = (seconds) => {
     const video = mainVideoRef.current;
@@ -185,6 +215,7 @@ export default function VIPVideoPlayer({
     const nextTime = Math.max(0, Math.min(video.currentTime + seconds, duration));
     try {
       video.currentTime = nextTime;
+      setPlaybackTime(nextTime);
       revealSeekOverlay();
     } catch (error) {
       console.error('Unable to seek video:', error);
@@ -209,7 +240,9 @@ export default function VIPVideoPlayer({
   };
 
   const handleLoadedMetadata = async (e) => {
-    setIsSeekReady(true);
+    setIsSeekReady(Number.isFinite(e.currentTarget.duration) && e.currentTarget.duration > 0);
+    setPlaybackDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0);
+    setPlaybackTime(Number.isFinite(e.currentTarget.currentTime) ? e.currentTarget.currentTime : 0);
     const durationInSeconds = Math.round(e.target.duration);
     const storedDuration = Number(currentDuration || 0);
 
@@ -323,7 +356,7 @@ export default function VIPVideoPlayer({
         onMouseMove={revealSeekOverlay}
         onTouchStart={revealSeekOverlay}
       >
-        <div className="relative inline-block max-w-full max-h-[65vh]">
+        <div className="relative inline-block max-w-full">
 
           <video
             ref={mainVideoRef}
@@ -335,12 +368,28 @@ export default function VIPVideoPlayer({
             }}
             playsInline
             onLoadedMetadata={handleLoadedMetadata}
+            onDurationChange={(event) => {
+              const duration = event.currentTarget.duration;
+              setPlaybackDuration(Number.isFinite(duration) && duration > 0 ? duration : 0);
+            }}
+            onTimeUpdate={(event) => {
+              const time = event.currentTarget.currentTime;
+              setPlaybackTime(Number.isFinite(time) ? time : 0);
+            }}
+            onSeeked={(event) => {
+              const time = event.currentTarget.currentTime;
+              setPlaybackTime(Number.isFinite(time) ? time : 0);
+            }}
             onClick={revealSeekOverlay}
-            onEmptied={() => setIsSeekReady(false)}
+            onEmptied={() => {
+              setIsSeekReady(false);
+              setPlaybackTime(0);
+              setPlaybackDuration(0);
+            }}
             onPlay={handleVideoPlay}
             onPause={handleVideoPause}
             onEnded={handleVideoEnded}
-            className="block max-w-full max-h-[65vh] w-auto h-auto object-contain"
+            className="block max-h-[52dvh] max-w-full w-auto h-auto object-contain"
             onError={(e) => {
               setIsSeekReady(false);
               console.error("Error loading video:", e.target.error?.code ?? "unknown");
@@ -436,7 +485,28 @@ export default function VIPVideoPlayer({
         </div>
       </div>
 
-
+      {/* Dedicated seek bar — always visible, including when native controls hide. */}
+      <div className="relative z-10 w-full border-t border-slate-700/70 bg-[#0b1425] px-4 py-3 sm:px-5">
+        <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold tabular-nums text-slate-200" aria-live="off">
+          <span>{formatTime(playbackTime)}</span>
+          <span className="text-slate-400">{formatTime(playbackDuration)}</span>
+        </div>
+        <input
+          type="range"
+          aria-label="Video timeline — seek to a time"
+          aria-valuetext={`${formatTime(playbackTime)} of ${formatTime(playbackDuration)}`}
+          min="0"
+          max={playbackDuration > 0 ? playbackDuration : 1}
+          step="0.1"
+          value={Math.min(playbackTime, playbackDuration > 0 ? playbackDuration : 1)}
+          onChange={(event) => seekTo(event.currentTarget.value)}
+          disabled={!isSeekReady || playbackDuration <= 0}
+          className="block h-2 w-full cursor-pointer appearance-none rounded-full outline-none transition-opacity disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-indigo-400 [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-indigo-400 focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          style={{
+            background: `linear-gradient(to right, #818cf8 0%, #818cf8 ${playbackDuration > 0 ? Math.min(100, (playbackTime / playbackDuration) * 100) : 0}%, #475569 ${playbackDuration > 0 ? Math.min(100, (playbackTime / playbackDuration) * 100) : 0}%, #475569 100%)`,
+          }}
+        />
+      </div>
     </div>
   );
 }

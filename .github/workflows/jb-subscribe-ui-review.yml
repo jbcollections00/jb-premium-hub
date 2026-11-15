@@ -6,6 +6,9 @@ on:
       - 'src/components/layout/ProtectedRoute.jsx'
       - 'src/pages/public/Login.jsx'
       - 'src/pages/public/Home.jsx'
+      - 'src/components/VIPVideoPlayer.jsx'
+      - 'src/components/AdSlot.jsx'
+      - 'src/components/SocialBar.jsx'
       - 'src/pages/public/Messages.jsx'
       - 'src/pages/legal/SupportPage.jsx'
       - 'src/components/layout/Header.jsx'
@@ -89,7 +92,31 @@ jobs:
           const supportPage = readFileSync('src/pages/legal/SupportPage.jsx','utf8');
           const header = readFileSync('src/components/layout/Header.jsx','utf8');
           const footer = readFileSync('src/components/layout/Footer.jsx','utf8');
-          assert.match(homePage,/billingReady && membership\.showAds/);
+          assert.match(homePage,/billingReady && membership\.tier === "standard" && membership\.showAds === true/);
+          assert.match(homePage,/triggerPopunderForStandard/);
+          // Visible timeline must remain available even when native controls hide.
+          const videoPlayer = readFileSync('src/components/VIPVideoPlayer.jsx', 'utf8');
+          assert.match(videoPlayer,/Video timeline — seek to a time/);
+          assert.match(videoPlayer,/type="range"/);
+          assert.match(videoPlayer,/onTimeUpdate=/);
+          assert.match(videoPlayer,/onLoadedMetadata=\{handleLoadedMetadata\}/);
+          assert.match(videoPlayer,/controls=\{hasStarted\}/);
+          assert.match(videoPlayer,/onPlay=\{handleVideoPlay\}/);
+          assert.match(videoPlayer,/max-h-\[52dvh\]/);
+          assert.doesNotMatch(homePage,/\[&_video\]:max-h-\[70vh\]/);
+          assert.match(homePage,/membership\.tier !== "standard"/);
+          assert.match(homePage,/membership\.showAds !== true/);
+          assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 3/);
+          assert.doesNotMatch(homePage,/triggerPopunderEveryFiveVideos/);
+          const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
+          const socialAd = readFileSync('src/components/SocialBar.jsx','utf8');
+          const mainLayout = readFileSync('src/components/layout/MainLayout.jsx','utf8');
+          assert.match(nativeAd,/sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
+          assert.doesNotMatch(nativeAd,/allow-same-origin/);
+          assert.match(nativeAd,/Number\.isFinite\(event\.data\.height\)/);
+          assert.match(mainLayout,/membership\.tier === "standard" && membership\.showAds === true/);
+          assert.match(mainLayout,/location\.pathname === "\/home" && showSocialBar/);
+          assert.match(socialAd,/if \(!enabled \|\| typeof document === "undefined"\) return/);
           assert.match(homePage,/billingReady \? !membership\.showAds : false/);
           assert.doesNotMatch(homePage,/Video Vault|Watch this video on JB Premium Hub Vault|If the Console shows a CORS\/network error/);
           assert.doesNotMatch(messagesPage,/JB Vault Admin/);

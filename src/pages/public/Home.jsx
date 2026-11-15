@@ -9,7 +9,7 @@ import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
-const POPUNDER_EVERY_N_VIDEOS = 5;
+const POPUNDER_EVERY_N_VIDEOS = 3;
 const POPUNDER_COUNTER_KEY = "jb_standard_video_play_count";
 
 // Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
@@ -430,22 +430,32 @@ export default function Home() {
     }
   };
 
-  // Standard users only: count actual video plays for the existing Popunder frequency.
-  // Keep frequency at 5 pending confirmation from the ad network.
-  const triggerPopunderEveryFiveVideos = () => {
-    if (isAdFree || typeof window === "undefined") return;
+  // Count a video play for popunders only after active Standard billing access
+  // has been verified. Free users, VIPs, admins, and unresolved accounts
+  // never initiate a third-party popunder.
+  const triggerPopunderForStandard = () => {
+    if (
+      !billingReady ||
+      membership.tier !== "standard" ||
+      membership.showAds !== true ||
+      !userProfile?.id ||
+      typeof window === "undefined"
+    ) return;
+
+    // Keep each account's counter separate on shared devices.
+    const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
 
     try {
-      const currentCount = parseInt(window.localStorage.getItem(POPUNDER_COUNTER_KEY) || "0", 10) || 0;
+      const currentCount = Number.parseInt(window.localStorage.getItem(counterKey) || "0", 10) || 0;
       const nextCount = currentCount + 1;
 
       if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
-        window.localStorage.setItem(POPUNDER_COUNTER_KEY, String(nextCount));
+        window.localStorage.setItem(counterKey, String(nextCount));
         return;
       }
 
-      // Reset first so refreshes/re-renders cannot repeatedly fire the same threshold.
-      window.localStorage.setItem(POPUNDER_COUNTER_KEY, "0");
+      // Reset before loading: repeated player events do not retrigger.
+      window.localStorage.setItem(counterKey, "0");
 
       const existing = document.querySelector('script[data-jb-popunder="true"]');
       if (existing) existing.remove();
@@ -453,12 +463,20 @@ export default function Home() {
       const script = document.createElement("script");
       script.src = POPUNDER_SCRIPT_URL;
       script.async = true;
+      script.referrerPolicy = "no-referrer";
       script.dataset.jbPopunder = "true";
       document.body.appendChild(script);
     } catch (err) {
       console.error("Popunder trigger error:", err);
     }
   };
+
+  // Remove our loader when an account becomes VIP/admin/free. Already opened
+  // third-party popups cannot be undone; the gate prevents further loading.
+  useEffect(() => {
+    if (billingReady && membership.tier === "standard" && membership.showAds === true) return;
+    document.querySelector('script[data-jb-popunder="true"]')?.remove();
+  }, [billingReady, membership.tier, membership.showAds]);
 
   const handleVideoPlay = async () => {
     if (
@@ -474,7 +492,7 @@ export default function Home() {
     setHasRecordedCurrentView(true);
 
     // Count only a real, first play of this opened video.
-    triggerPopunderEveryFiveVideos();
+    triggerPopunderForStandard();
 
     const mediaId = selectedMedia.id;
     const currentVal =
@@ -1241,7 +1259,7 @@ export default function Home() {
           </button>
         </div>
 
-        <AdSlot position="middle" enabled={billingReady && membership.showAds} />
+        <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
@@ -1429,8 +1447,8 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#ef4444_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-red-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-red-500">
-              <div className="bg-black w-full flex items-center justify-center p-2 md:p-4 min-h-[280px] md:min-h-[460px] relative">
+            <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#6366f1_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-indigo-500 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-indigo-400">
+              <div className="relative flex w-full min-h-[220px] items-center justify-center bg-black p-2 sm:p-3 md:min-h-[340px]">
                 
                 {/* STEP 2 CLICK-TO-PLAY OVERLAY FOR AD-SUPPORTED USERS */}
                 {!isAdFree && !autoPlay && (
@@ -1452,7 +1470,7 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className="w-full h-full max-w-4xl flex items-center justify-center [&_video]:max-h-[70vh] [&_video]:w-auto [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
+                <div className="flex h-full w-full max-w-4xl items-center justify-center [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
                   {(!PRIVATE_MEDIA_UI_ENABLED ||
                     (privatePlayback.id === selectedMedia.id && privatePlayback.url)) ? (
                   <VIPVideoPlayer
