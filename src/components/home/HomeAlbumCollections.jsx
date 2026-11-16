@@ -1,9 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
-import {
-  DEFAULT_THUMBNAIL_URL,
-  handleThumbnailLoadError,
-} from "../../services/thumbnailDisplay";
+import AlbumCover from "../albums/AlbumCover";
 
 /**
  * Public-facing album DIRECTORY only.
@@ -14,6 +11,7 @@ import {
 export default function HomeAlbumCollections() {
   const [albums, setAlbums] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
 
@@ -23,7 +21,7 @@ export default function HomeAlbumCollections() {
     const load = async () => {
       const { data, error } = await supabase
         .from("jb_media_albums")
-        .select("id, name, description")
+        .select("id, name, description, cover_style, cover_image_url")
         .eq("is_visible", true)
         .order("created_at", { ascending: false })
         .limit(200);
@@ -54,7 +52,14 @@ export default function HomeAlbumCollections() {
     };
   }, []);
 
-  const selected = albums.find((album) => album.id === selectedId);
+  const filteredAlbums = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return query ? albums.filter((album) =>
+      [album.name, album.description].some((value) => String(value || "").toLowerCase().includes(query))
+    ) : albums;
+  }, [albums, search]);
+
+  const selected = filteredAlbums.find((album) => album.id === selectedId);
 
   return (
     <section
@@ -70,7 +75,7 @@ export default function HomeAlbumCollections() {
             Explore Albums
           </h2>
           <p className="mt-1 text-xs text-slate-400">
-            Albums created by the site administrator appear here.
+            Explore administrator-curated album collections.
           </p>
         </div>
         {albums.length > 0 && (
@@ -90,32 +95,42 @@ export default function HomeAlbumCollections() {
         </p>
       ) : albums.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center">
-          <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="" className="mx-auto mb-3 h-16 w-28 object-contain" />
+          <AlbumCover album={{ cover_style: "indigo" }} className="mx-auto mb-3 w-40 rounded-xl" />
           <p className="text-sm font-bold text-white">No albums yet</p>
           <p className="mt-1 text-xs text-slate-400">New collections will appear here when created.</p>
         </div>
       ) : (
         <>
+          {albums.length > 4 && (
+            <div className="mb-4">
+              <label htmlFor="home-album-search" className="sr-only">Search collections</label>
+              <input
+                id="home-album-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search collections..."
+                className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-sky-400 sm:max-w-sm"
+              />
+            </div>
+          )}
+          {filteredAlbums.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">No collections match your search.</p>
+          ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-            {albums.map((album) => (
+            {filteredAlbums.map((album) => (
               <button
                 type="button"
                 key={album.id}
                 aria-pressed={selectedId === album.id}
                 onClick={() => setSelectedId((previous) => previous === album.id ? null : album.id)}
-                className={`overflow-hidden rounded-xl border text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${
+                className={`group overflow-hidden rounded-xl border text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${
                   selectedId === album.id
                     ? "border-sky-400 bg-sky-950/40"
                     : "border-slate-700 bg-slate-900 hover:border-sky-500/50"
                 }`}
               >
-                <img
-                  src={DEFAULT_THUMBNAIL_URL}
-                  onError={handleThumbnailLoadError}
-                  alt=""
-                  className="aspect-video w-full bg-slate-950 object-contain"
-                  loading="lazy"
-                />
+                <AlbumCover album={album} imageClassName="transition-transform duration-300 group-hover:scale-105" />
                 <span className="block p-3">
                   <span className="block break-words text-sm font-bold text-white">
                     {album.name}
@@ -127,6 +142,7 @@ export default function HomeAlbumCollections() {
               </button>
             ))}
           </div>
+          )}
           {selected && (
             <div className="mt-4 rounded-xl border border-sky-500/20 bg-slate-950/60 p-4" role="status">
               <p className="text-sm font-bold text-white">{selected.name}</p>
