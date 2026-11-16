@@ -12,7 +12,7 @@ export default function AlbumCover({ album, className = "", imageClassName = "" 
   const approvedArtwork = getApprovedAlbumCoverUrl(album?.cover_image_url);
 
   return (
-    <div className={\`relative aspect-video overflow-hidden bg-gradient-to-br \${style.gradient} \${className}\`}>
+    <div className={"relative aspect-video overflow-hidden bg-gradient-to-br " + style.gradient + " " + className}>
       {approvedArtwork ? (
         <img
           src={approvedArtwork}
@@ -20,7 +20,7 @@ export default function AlbumCover({ album, className = "", imageClassName = "" 
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"
-          className={\`absolute inset-0 h-full w-full object-cover \${imageClassName}\`}
+          className={"absolute inset-0 h-full w-full object-cover " + imageClassName}
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center p-7">
