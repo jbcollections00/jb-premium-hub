@@ -40,10 +40,10 @@ test("Users tab reuses parent presence and never creates/removes dashboard chann
   assert.doesNotMatch(users,/supabase\.removeChannel\(/);
   assert.match(dashboard,/onlineUserIds=\{onlineUserIds\}/);
 });
-test("profile and paid billing data are explicitly distinguished, filter is accessible", () => {
-  assert.match(users,/legacy account fields, not current PayMongo subscription tiers/);
-  assert.match(users,/Legacy VIP profiles/);
-  assert.match(users,/htmlFor="admin-users-profile-filter"/);
+test("verified paid-tier display is separate from profile types; filter accessible", () => {
+  assert.match(users,/Payment tiers are based on current LIVE paid entitlement grants/);
+  assert.match(users,/supabase\.rpc\("jb_admin_live_paid_tiers_v1"\)/);
+  assert.match(users,/htmlFor="admin-users-tier-filter"/);
   assert.match(users,/style=\{\{ colorScheme: "dark" \}\}/);
 });
 test("existing account management controls and fetch failure message remain", () => {
