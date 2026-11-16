@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { LEGACY_CATALOG_HOME_HOLD } from "./legacyCatalogHold";
 import { PRIVATE_MEDIA_UI_ENABLED } from "./privateMedia";
 
 // Independent rollout: paid private playback can go live before FREE previews.
@@ -16,6 +17,10 @@ const MEDIA_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function requestFreePreviewUrl(mediaId) {
+  if (LEGACY_CATALOG_HOME_HOLD) {
+    throw new Error("Legacy media access is paused while the new catalog is prepared.");
+  }
+
   if (!FREE_PREVIEW_UI_ENABLED) {
     throw new Error("Secure video playback is not enabled yet");
   }
