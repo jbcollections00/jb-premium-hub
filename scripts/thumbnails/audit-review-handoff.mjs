@@ -6,6 +6,7 @@
  * No content-clearance decision is made here.
  */
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createSafeHandoff } from "./create-review-handoff.mjs";
@@ -67,7 +68,10 @@ async function main() {
   console.log("Local audit report:", dest);
   console.log("This does NOT clear videos, open media, upload images, or alter Supabase/R2.");
 }
-if (process.argv.includes("--run")) {
+// Importing this module from another CLI with --run must NOT launch it.
+const invokedDirectly = Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (invokedDirectly && process.argv.includes("--run")) {
   main().catch(e => {
     console.error("Phase 317G-7 stopped:", e?.message || "Unknown error");
     process.exitCode = 1;
