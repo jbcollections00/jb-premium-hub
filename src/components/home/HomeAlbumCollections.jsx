@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
-import AlbumCover from "../albums/AlbumCover";
 
 /**
- * Public-facing album DIRECTORY only.
- *
- * This component reads album metadata but does not query, select, link to,
- * or play any media. Media publication remains separately restricted.
+ * Dynamic album tabs in the Media Library filter row.
+ * Album titles/descriptions are metadata only. This never queries media,
+ * opens playback, generates video thumbnails, or grants publishing access.
  */
-export default function HomeAlbumCollections() {
+export default function HomeAlbumCollections({ activeCategory = "all", onSelectCategory }) {
   const [albums, setAlbums] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
@@ -19,141 +16,107 @@ export default function HomeAlbumCollections() {
     let active = true;
 
     const load = async () => {
-      const { data, error } = await supabase
-        .from("jb_media_albums")
-        .select("id, name, description, cover_style, cover_image_url")
-        .eq("is_visible", true)
-        .order("created_at", { ascending: false })
-        .limit(200);
+      try {
+        const { data, error } = await supabase
+          .from("jb_media_albums")
+          .select("id, name, description, cover_style, cover_image_url")
+          .eq("is_visible", true)
+          .order("created_at", { ascending: false })
+          .limit(200);
 
-      if (!active) return;
-
-      if (error) {
-        setErrorText(
-          error.code === "42P01"
-            ? "Album directory is not available yet."
-            : "Unable to load albums right now."
-        );
-        setAlbums([]);
-      } else {
-        setErrorText("");
+        if (!active) return;
+        if (error) throw error;
         setAlbums(Array.isArray(data) ? data : []);
+        setErrorText("");
+      } catch (error) {
+        if (!active) return;
+        setAlbums([]);
+        setErrorText(
+          error?.code === "42P01"
+            ? "Albums are not configured yet."
+            : "Album categories are temporarily unavailable."
+        );
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
     };
 
     load();
-    const refreshOnFocus = () => { load(); };
-    window.addEventListener("focus", refreshOnFocus);
-
+    const onFocus = () => { load(); };
+    window.addEventListener("focus", onFocus);
     return () => {
       active = false;
-      window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
   const filteredAlbums = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return query ? albums.filter((album) =>
-      [album.name, album.description].some((value) => String(value || "").toLowerCase().includes(query))
-    ) : albums;
+    if (!query) return albums;
+    return albums.filter((album) =>
+      [album.name, album.description].some((value) =>
+        String(value || "").toLowerCase().includes(query)
+      )
+    );
   }, [albums, search]);
 
-  const selected = filteredAlbums.find((album) => album.id === selectedId);
+  if (loading) {
+    return <span role="status" className="shrink-0 text-xs text-slate-400">Loading albums…</span>;
+  }
+
+  if (errorText) {
+    return <span role="status" className="shrink-0 text-xs text-amber-200">{errorText}</span>;
+  }
+
+  if (albums.length === 0) {
+    return <span className="shrink-0 text-xs text-slate-500">No albums yet</span>;
+  }
 
   return (
-    <section
-      className="jbh-surface mb-10 rounded-2xl border border-white/10 p-5 sm:p-7"
-      aria-label="Explore albums"
-    >
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-extrabold uppercase tracking-widest text-sky-300">
-            Browse by collection
-          </p>
-          <h2 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">
-            Explore Albums
-          </h2>
-          <p className="mt-1 text-xs text-slate-400">
-            Explore administrator-curated album collections.
-          </p>
-        </div>
-        {albums.length > 0 && (
-          <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200">
-            {albums.length} collection{albums.length !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
-
-      {loading ? (
-        <p role="status" className="py-10 text-center text-sm text-slate-400">
-          Loading albums…
-        </p>
-      ) : errorText ? (
-        <p role="status" className="rounded-xl border border-slate-700 p-5 text-sm text-slate-300">
-          {errorText}
-        </p>
-      ) : albums.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center">
-          <AlbumCover album={{ cover_style: "indigo" }} className="mx-auto mb-3 w-40 rounded-xl" />
-          <p className="text-sm font-bold text-white">No albums yet</p>
-          <p className="mt-1 text-xs text-slate-400">New collections will appear here when created.</p>
-        </div>
-      ) : (
+    <>
+      {albums.length > 8 && (
         <>
-          {albums.length > 4 && (
-            <div className="mb-4">
-              <label htmlFor="home-album-search" className="sr-only">Search collections</label>
-              <input
-                id="home-album-search"
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search collections..."
-                className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-sky-400 sm:max-w-sm"
-              />
-            </div>
-          )}
-          {filteredAlbums.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">No collections match your search.</p>
-          ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-            {filteredAlbums.map((album) => (
-              <button
-                type="button"
-                key={album.id}
-                aria-pressed={selectedId === album.id}
-                onClick={() => setSelectedId((previous) => previous === album.id ? null : album.id)}
-                className={`group overflow-hidden rounded-xl border text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${
-                  selectedId === album.id
-                    ? "border-sky-400 bg-sky-950/40"
-                    : "border-slate-700 bg-slate-900 hover:border-sky-500/50"
-                }`}
-              >
-                <AlbumCover album={album} imageClassName="transition-transform duration-300 group-hover:scale-105" />
-                <span className="block p-3">
-                  <span className="block break-words text-sm font-bold text-white">
-                    {album.name}
-                  </span>
-                  <span className="mt-1 block break-words text-xs text-slate-400">
-                    {album.description || "Collection"}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-          )}
-          {selected && (
-            <div className="mt-4 rounded-xl border border-sky-500/20 bg-slate-950/60 p-4" role="status">
-              <p className="text-sm font-bold text-white">{selected.name}</p>
-              <p className="mt-1 text-xs text-slate-300">
-                This album directory is ready. Video listings remain unavailable until
-                the separate, verified media-publication workflow is complete.
-              </p>
-            </div>
-          )}
+          <label htmlFor="home-album-search" className="sr-only">
+            Search album categories
+          </label>
+          <input
+            id="home-album-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Find album..."
+            className="w-36 shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-sky-400 sm:w-44"
+          />
         </>
       )}
-    </section>
+      {filteredAlbums.map((album) => {
+        const categoryKey = "album:" + album.id;
+        const isActive = activeCategory === categoryKey;
+
+        return (
+          <button
+            key={album.id}
+            type="button"
+            title={album.description || album.name}
+            aria-pressed={isActive}
+            onClick={() => onSelectCategory?.(categoryKey)}
+            className={
+              "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border px-4 py-2.5 text-xs font-bold transition-colors " +
+              (isActive
+                ? "border-sky-500 bg-sky-600 text-white"
+                : "border-slate-700 bg-slate-900 text-slate-300 hover:border-sky-500/60 hover:text-white")
+            }
+          >
+            <span aria-hidden="true">📁</span>
+            <span>{album.name}</span>
+          </button>
+        );
+      })}
+      {filteredAlbums.length === 0 && (
+        <span role="status" className="shrink-0 text-xs text-slate-400">
+          No matching album
+        </span>
+      )}
+    </>
   );
 }
