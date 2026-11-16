@@ -29,7 +29,7 @@ test('existing tab IDs and props are preserved', () => {
   for (const id of ['events','billing','tickets','users','messages','chat-reports','chat-analytics','codes','upload']) {
     assert.ok(source.includes("activeTab === '" + id + "'"), 'missing ' + id);
   }
-  assert.match(source, /<AdminUsersTab users=\{users\} fetchData=\{fetchData\} \/>/);
+  assert.match(source, /<AdminUsersTab users=\{users\} fetchData=\{fetchData\} onlineUserIds=\{onlineUserIds\} \/>/);
   assert.match(source, /<SupportTicketsTab supabase=\{supabase\} \/>/);
 });
 test('overview, admin authentication context and signout remain present', () => {
