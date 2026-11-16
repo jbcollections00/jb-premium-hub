@@ -1,29 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, CreditCard, RefreshCw, ShieldCheck, Wallet } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
+import { formatBillingCount, formatBillingDate, formatBillingPeso } from '../../services/adminBillingDisplay';
 
-const peso = (centavos) => {
-  const amount = Number(centavos);
-  if (!Number.isFinite(amount)) return '—';
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 2,
-  }).format(amount / 100);
-};
-
-const dateText = (value) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? '—'
-    : date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
-};
-
-const numberText = (value) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString('en-PH') : '—';
-};
+const peso = formatBillingPeso;
+const dateText = formatBillingDate;
+const numberText = formatBillingCount;
 
 function MetricCard({ label, value, subtitle, icon: Icon, tone = 'blue' }) {
   return (
@@ -59,30 +41,42 @@ export default function AdminBillingTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
+  // Ignore responses from older requests and requests completing after unmount.
+  const requestSerialRef = useRef(0);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
+    const requestSerial = ++requestSerialRef.current;
     if (refresh) setRefreshing(true);
     else setLoading(true);
     setError(false);
     try {
       const { data, error: requestError } = await supabase.rpc('jb_billing_admin_overview_v1');
+      if (requestSerial !== requestSerialRef.current) return;
       if (requestError) throw requestError;
       if (!data || data.read_only !== true || data.environment !== 'live') {
         throw new Error('Unexpected billing report response');
       }
       setReport(data);
     } catch (requestError) {
+      if (requestSerial !== requestSerialRef.current) return;
       console.error('Admin billing report unavailable:', requestError?.code || 'UNAVAILABLE');
       setError(true);
+      // Preserve the last successful snapshot on a failed manual refresh.
       if (!refresh) setReport(null);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestSerial === requestSerialRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void load();
+    return () => {
+      // Protect a lazily mounted tab from a late RPC response.
+      requestSerialRef.current += 1;
+    };
   }, [load]);
 
   const metrics = report?.metrics || {};
@@ -119,7 +113,9 @@ export default function AdminBillingTab() {
       {error && (
         <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-5 text-sm text-amber-100">
           <AlertCircle size={19} className="shrink-0" aria-hidden="true" />
-          <span>Billing report is unavailable. Confirm that the admin-only reporting function has been installed in Supabase and your account is authorized. No billing records have been changed.</span>
+          <span>{report
+            ? `Refresh failed. Showing the last successfully loaded report from ${dateText(report.generated_at)}. Values may be outdated; retry when available. No billing records have been changed.`
+            : 'Billing report is unavailable. Confirm that the admin-only reporting function has been installed in Supabase and your account is authorized. No billing records have been changed.'}</span>
         </div>
       )}
 
