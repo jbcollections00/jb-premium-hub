@@ -1,6 +1,6 @@
 # JB Premium Hub — Phase 317G-5 metadata preflight for next 50 eligible records
 
-No public publishing in this phase. Earlier pilot and batch 5–29 completed (29 uploaded and linked, one short skipped). Batch offset 30–79 must first pass a metadata and qualified content-safety review. Title screening is a conservative signal, NOT evidence the contents are safe, and renaming a title does not verify a video.
+No public publishing in this phase. The script requires an explicit `--run` flag; importing it during tests never starts an audit. Earlier pilot and batch 5–29 completed (29 uploaded and linked, one short skipped). Batch offset 30–79 must first pass a metadata and qualified content-safety review. Title screening is a conservative signal, NOT evidence the contents are safe, and renaming a title does not verify a video.
 
 ## 1. Export title metadata from Supabase SQL Editor
 
@@ -33,7 +33,7 @@ Restore local Phase 317D output path if it isn't already set:
 
 Expected: 4647. Then:
 
-    node .\scripts\thumbnails\preflight-next-50.mjs --csv="$csvPath"
+    node .\scripts\thumbnails\preflight-next-50.mjs --run --csv="$csvPath"
 
 The script checks exact IDs against frozen 4,647-record R2 matching and first-five verified publication receipt, selects next 50 candidates (old eligible queue indexes 30–79), and writes only ID and review states to:
 
