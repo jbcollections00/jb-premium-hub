@@ -1,20 +1,24 @@
 /**
  * JB Premium Hub — titleless *presentation* for independently cleared videos.
  *
- * This file is not a content review, a moderation tool or an access gate.
- * Only include IDs after independent, documented adult safety review confirms
- * lawful non-explicit content. Never add IDs based only on user statements,
- * renamed titles, filename pattern-matching or existing thumbnails.
+ * NOT a content review, moderation tool, entitlement check or access gate.
+ * IDs may be added ONLY after documented, independent adult content-safety
+ * clearance confirms lawful non-explicit material. A title edit, screenshot,
+ * existing cover or blanket statement is never proof of approval.
  *
- * As of creation, no IDs have been verified for this UI change.
- * Intentionally EMPTY and fail-closed: no existing titles disappear.
+ * Until such evidence exists the production list is EMPTY, so titles remain.
  */
 const VERIFIED_NONEXPLICIT_TITLELESS_IDS = new Set([]);
 
-export function canOmitPublicTitle(mediaId, isAdmin = false) {
+export function isTitlelessForVerifiedId(mediaId, isAdmin, verifiedIds) {
   return !isAdmin &&
     typeof mediaId === "string" &&
-    VERIFIED_NONEXPLICIT_TITLELESS_IDS.has(mediaId.toLowerCase());
+    verifiedIds instanceof Set &&
+    verifiedIds.has(mediaId.toLowerCase());
+}
+
+export function canOmitPublicTitle(mediaId, isAdmin = false) {
+  return isTitlelessForVerifiedId(mediaId, isAdmin, VERIFIED_NONEXPLICIT_TITLELESS_IDS);
 }
 
 export function videoThumbnailAlt(media, isAdmin = false) {
