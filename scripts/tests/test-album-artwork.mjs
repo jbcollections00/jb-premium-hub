@@ -53,10 +53,11 @@ test("admin album editor has search, responsive layout and custom static cover m
   assert.doesNotMatch(manager, /uploadFileToR2|requestPrivateMediaUrl|\.from\("media"\)/);
 });
 
-test("home album cards use only album metadata and optional static cover", () => {
+test("Home category tabs read album metadata only; custom covers stay in Admin", () => {
   assert.match(home, /select\("id, name, description, cover_style, cover_image_url"\)/);
   assert.match(home, /\.eq\("is_visible", true\)/);
-  assert.match(home, /<AlbumCover album=\{album\}/);
+  assert.match(home, /onSelectCategory/);
+  assert.doesNotMatch(home, /<AlbumCover/);
   assert.match(home, /home-album-search/);
   assert.match(artwork, /getApprovedAlbumCoverUrl/);
   assert.match(artwork, /DEFAULT_THUMBNAIL_URL/);
