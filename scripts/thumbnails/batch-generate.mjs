@@ -19,11 +19,13 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { captureTimes, portraitOrientation } from "./batch-rules.mjs";
 import { prepareMatchedQueue } from "./matched-queue.mjs";
+import { gateThumbnailSelection } from "./signed-review-thumbnail-gate.mjs";
 
 const ROOT = path.resolve(process.env.JB_THUMBNAIL_OUTPUT_DIR || path.join(".local", "thumbnail-batch-317d"));
 const INVENTORY_FILE = path.join(ROOT, "inventory.json");
 const PROGRESS_FILE = path.join(ROOT, "progress.json");
 const MATCHED_REPORT_FILE = path.join(ROOT, "media-r2-matching-audit.json");
+const REVIEW_INDEX_FILE = path.join(ROOT, "phase326-full-catalog-adult-review-index.csv");
 const VIDEO_PREFIX = "videos/";
 const EXTENSION_RE = /\.(?:mp4|m4v|mov|webm|mkv)$/i;
 const BUCKET =
@@ -45,6 +47,9 @@ const useMatched = process.argv.includes("--matched");
 const limit = Number(option("--limit", "25"));
 const offset = Number(option("--offset", "0"));
 const expectedRows = Number(option("--require-count", "4647"));
+const reviewManifestFile = option("--review-manifest", "");
+const reviewSignatureFile = option("--review-signature", "");
+const reviewKeyFile = option("--review-public-key", "");
 
 function fail(message) {
   throw new Error(message);
@@ -70,8 +75,15 @@ function validateArgs() {
   if (useMatched && !wantGenerate) {
     fail("--matched is only supported with --generate.");
   }
-  if (useMatched && (!Number.isInteger(expectedRows) || expectedRows < 1)) {
-    fail("--require-count must be a positive integer.");
+  if (wantGenerate && !useMatched) {
+    fail("Thumbnail generation requires --matched and independent signed clearance; legacy inventory generation is blocked.");
+  }
+  if (useMatched && expectedRows !== 4647) {
+    fail("Signed review requires the original frozen 4,647-record catalog.");
+  }
+  if (wantGenerate && (!reviewManifestFile || !reviewSignatureFile || !reviewKeyFile ||
+      !process.env.JB_TRUSTED_REVIEWER_SPKI_SHA256)) {
+    fail("Missing independent signed review evidence or independently pinned reviewer fingerprint. No media accessed.");
   }
 }
 
@@ -303,31 +315,37 @@ async function createPreview(client, video, digest) {
   }
 }
 
-async function generate(client) {
-  let items;
-  if (useMatched) {
-    const report = await readJson(MATCHED_REPORT_FILE);
-    const queue = prepareMatchedQueue(report, BUCKET, expectedRows);
-    items = queue.selected;
-    console.log("Full report verified:", queue.total, "exact matches.");
-    console.log("Preserved existing thumbnails:", queue.preserved);
-    console.log("Eligible missing/default-logo records:", queue.eligible);
-    console.log("Mode: MATCHED-ONLY; no public upload or database update.");
-  } else {
-    const snapshot = await readJson(INVENTORY_FILE);
-    if (!snapshot || !Array.isArray(snapshot.items)) {
-      fail("No inventory.json. Run --inventory first.");
-    }
-    if (snapshot.bucket !== BUCKET || snapshot.prefix !== VIDEO_PREFIX) {
-      fail("Inventory bucket/prefix differs from current source. Check settings.");
-    }
-    items = snapshot.items;
-  }
+async function prepareSignedBatch() {
+  // This is executed BEFORE any R2 client is created or FFmpeg is invoked.
+  const report = await readJson(MATCHED_REPORT_FILE);
+  const queue = prepareMatchedQueue(report, BUCKET, expectedRows);
+  const end = Math.min(offset + limit, queue.selected.length);
+  // Retain ORIGINAL full matched-queue offsets, even when IDs are held.
+  const matchedBatch = queue.selected.slice(offset, end);
+  const [indexText, manifestBytes, signatureBytes, reviewerPublicKeyPem] = await Promise.all([
+    readFile(REVIEW_INDEX_FILE, "utf8"),
+    readFile(reviewManifestFile),
+    readFile(reviewSignatureFile),
+    readFile(reviewKeyFile, "utf8"),
+  ]);
+  const selection = gateThumbnailSelection({
+    matchedBatch, indexText, manifestBytes, signatureBytes,
+    reviewerPublicKeyPem,
+    trustedSpkiSha256: process.env.JB_TRUSTED_REVIEWER_SPKI_SHA256,
+  });
+  console.log("Signed review metadata verified for original catalog:", queue.total);
+  console.log("Original eligible missing/default-logo covers:", queue.eligible);
+  console.log("Full queue offset:", offset, "through", end - 1);
+  console.log("Batch safety decisions:", JSON.stringify(selection.summary));
+  console.log("WARNING: A valid signature does not prove actual content safety.");
+  return { selected: selection.approved, summary: selection.summary };
+}
 
-  const end = Math.min(offset + limit, items.length);
-  const selected = items.slice(offset, end);
-  console.log("Batch:", offset, "through", end - 1, "of", items.length);
-
+async function generate(client, verifiedBatch) {
+  // Only the strictly signed approved selection reaches media operations.
+  const selected = verifiedBatch.selected;
+  console.log("Local-only processing of verified APPROVED_NONEXPLICIT IDs:", selected.length);
+  console.log("Held/rejected IDs are skipped; no public uploads or database updates.");
   if (selected.length === 0) {
     console.log("No videos at this offset. Nothing changed.");
     return;
@@ -412,16 +430,22 @@ async function generate(client) {
 async function main() {
   validateArgs();
   if (showHelp) {
-    console.log("Use --inventory [--refresh] OR --generate [--matched --require-count=4647] [--limit=25] [--offset=0] [--retry-failed].");
+    console.log("Use --inventory [--refresh] OR --generate --matched --review-manifest=PATH --review-signature=PATH --review-public-key=PATH [--limit=25] [--offset=0] [--retry-failed].");
     console.log("All outputs remain local and private; nothing is uploaded.");
     return;
   }
   console.log("JB Premium Hub Phase 317D-1 / PRIVATE BATCH");
   console.log("Source bucket:", BUCKET);
+  // Mandatory signed clearance happens before any R2 client or video access.
+  const verifiedBatch = wantGenerate ? await prepareSignedBatch() : null;
+  if (wantGenerate && verifiedBatch.selected.length === 0) {
+    console.log("No signed-approved videos in this batch; zero video files accessed.");
+    return;
+  }
   const client = createClient();
   try {
     if (wantInventory) await inventory(client);
-    else await generate(client);
+    else await generate(client, verifiedBatch);
   } finally {
     client.destroy();
   }
