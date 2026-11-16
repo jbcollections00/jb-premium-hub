@@ -4,6 +4,7 @@
  * NO thumbnails/videos, NO links, NO Supabase/R2, NO automatic approval.
  */
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { readFile, writeFile, stat } from "node:fs/promises";
 
 const ROOT = path.resolve(
@@ -86,7 +87,10 @@ async function main() {
   console.log("The file is not a publication approval or clearance certificate.");
 }
 
-if (process.argv.includes("--run")) {
+// Importing this module from another CLI with --run must NOT launch it.
+const invokedDirectly = Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (invokedDirectly && process.argv.includes("--run")) {
   main().catch(e => {
     console.error("317G-6 stopped:", e?.message || "Unknown error");
     process.exitCode = 1;
