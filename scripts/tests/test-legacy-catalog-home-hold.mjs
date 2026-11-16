@@ -30,8 +30,9 @@ test("client video ticket functions fail closed during legacy hold", () => {
 });
 
 test("album directory remains visible and old media is not deleted", () => {
-  assert.match(home, /<HomeAlbumCollections \/>/);
+  assert.match(home, /<HomeAlbumCollections\s+activeCategory=\{activeCategory\}/);
   assert.match(albumCards, /\.from\("jb_media_albums"\)/);
-  assert.ok(home.indexOf("{/* MOST WATCHED VIDEOS SHOWCASE SECTION */}") < home.indexOf("<HomeAlbumCollections />"));
+  assert.ok(home.indexOf("{/* MOST WATCHED VIDEOS SHOWCASE SECTION */}") < home.indexOf("{/* VAULT MEDIA LIST HEADER */}"));
+  assert.ok(home.indexOf("{/* VAULT MEDIA LIST HEADER */}") < home.indexOf("<HomeAlbumCollections"));
   assert.doesNotMatch(home, /\.from\("media"\)\.delete\(/);
 });
