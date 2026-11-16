@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
@@ -14,16 +14,27 @@ import {
   Cell 
 } from 'recharts';
 
-import SupportTicketsTab from './SupportTicketsTab';
-import AccessCodesTab from './AccessCodesTab';
-import AdminUsersTab from './AdminUsersTab';
-import AdminMessagesTab from './AdminMessagesTab'; 
-import AdminMediaTab from './AdminMediaTab';
-import AdminBillingTab from './AdminBillingTab';
+// Load each heavy workspace only when the authorized admin opens its tab.
+// The admin route remains protected by the existing <ProtectedRoute adminOnly>.
+const SupportTicketsTab = lazy(() => import('./SupportTicketsTab'));
+const AccessCodesTab = lazy(() => import('./AccessCodesTab'));
+const AdminUsersTab = lazy(() => import('./AdminUsersTab'));
+const AdminMessagesTab = lazy(() => import('./AdminMessagesTab'));
+const AdminMediaTab = lazy(() => import('./AdminMediaTab'));
+const AdminBillingTab = lazy(() => import('./AdminBillingTab'));
+const ChatReports = lazy(() => import('./ChatReports'));
+const ChatAnalytics = lazy(() => import('./ChatAnalytics'));
+const AdminEventControl = lazy(() => import('../../components/admin/AdminEventControl'));
+
 import './adminWorkspace.css';
-import ChatReports from './ChatReports';
-import ChatAnalytics from './ChatAnalytics';
-import AdminEventControl from '../../components/admin/AdminEventControl';
+
+function AdminTabLoading() {
+  return (
+    <div role="status" aria-live="polite" className="jbh-admin-panel rounded-2xl p-6 text-sm text-slate-300">
+      Loading administration workspace…
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -405,15 +416,18 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {activeTab === 'events' && <AdminEventControl />}
-        {activeTab === 'billing' && <AdminBillingTab />}
-        {activeTab === 'tickets' && <SupportTicketsTab supabase={supabase} />}
-        {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}
-        {activeTab === 'messages' && <AdminMessagesTab users={users} />}
-        {activeTab === 'chat-reports' && <ChatReports />}
-        {activeTab === 'chat-analytics' && <ChatAnalytics />}
-        {activeTab === 'codes' && <AccessCodesTab />}
-        {activeTab === 'upload' && <AdminMediaTab />}
+        {/* Keep current tab behavior and props; defer JS for inactive workspaces. */}
+        <Suspense fallback={<AdminTabLoading />}>
+          {activeTab === 'events' && <AdminEventControl />}
+          {activeTab === 'billing' && <AdminBillingTab />}
+          {activeTab === 'tickets' && <SupportTicketsTab supabase={supabase} />}
+          {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}
+          {activeTab === 'messages' && <AdminMessagesTab users={users} />}
+          {activeTab === 'chat-reports' && <ChatReports />}
+          {activeTab === 'chat-analytics' && <ChatAnalytics />}
+          {activeTab === 'codes' && <AccessCodesTab />}
+          {activeTab === 'upload' && <AdminMediaTab />}
+        </Suspense>
       </main>
     </div>
   );
