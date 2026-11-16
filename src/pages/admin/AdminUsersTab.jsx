@@ -102,6 +102,9 @@ export default function AdminUsers({ onlineUserIds = new Set() }) {
       if (serial !== paidSerialRef.current) return;
       setPaidTiers(new Map());
       setPaidStatus("error");
+      // A previously selected VIP/Standard filter must not make all rows
+      // mysteriously disappear while payment verification is unavailable.
+      setFilterType("ALL");
       setPaidError(
         "Verified LIVE membership tiers are unavailable. Ensure the " +
         "admin-only billing report RPC is installed and authorized. " +
