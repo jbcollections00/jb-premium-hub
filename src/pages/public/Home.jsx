@@ -6,7 +6,7 @@ import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
-import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
+import { getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -1264,27 +1264,17 @@ export default function Home() {
                           ⏱️ {formatDuration(item.duration)}
                         </div>
 
-                        {item.thumbnail_url ? (
-                          <img
-                            src={getThumbnailDisplayUrl(item.thumbnail_url)}
-                            onError={handleThumbnailLoadError}
-                            alt={item.title}
-                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
-                            loading="lazy"
-                          />
-                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
-                          <video
-                            src={`${getCdnUrl(item.media_url)}#t=1`}
-                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                            preload="metadata"
-                            muted
-                            playsInline
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                            {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
-                          </div>
-                        )}
+                        {/* Display existing approved covers or the static JB Collections logo.
+                            Never load video content to synthesize a card thumbnail. */}
+                        <img
+                          src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                          onError={handleThumbnailLoadError}
+                          alt={item.thumbnail_url ? item.title : "JB Collections"}
+                          className={item.thumbnail_url
+                            ? "w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                            : "max-w-[65%] max-h-[65%] object-contain opacity-75"}
+                          loading="lazy"
+                        />
 
                         <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
                       item.is_free_preview
@@ -1404,27 +1394,17 @@ export default function Home() {
               >
                 <div>
                   <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
-                    {item.thumbnail_url ? (
-                      <img
-                        src={getThumbnailDisplayUrl(item.thumbnail_url)}
-                            onError={handleThumbnailLoadError}
-                        alt={item.title}
-                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
-                        loading="lazy"
-                      />
-                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
-                      <video
-                        src={`${getCdnUrl(item.media_url)}#t=1`}
-                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
-                        preload="metadata"
-                        muted
-                        playsInline
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
-                        {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
-                      </div>
-                    )}
+                    {/* Display existing approved covers or the static JB Collections logo.
+                            Never load video content to synthesize a card thumbnail. */}
+                        <img
+                          src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                          onError={handleThumbnailLoadError}
+                          alt={item.thumbnail_url ? item.title : "JB Collections"}
+                          className={item.thumbnail_url
+                            ? "w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                            : "max-w-[65%] max-h-[65%] object-contain opacity-75"}
+                          loading="lazy"
+                        />
                     <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
                       item.is_free_preview
                         ? "border-emerald-300/30 bg-emerald-500/90 text-white"
