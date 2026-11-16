@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import HomeAlbumCollections from "../../components/home/HomeAlbumCollections";
+import { LEGACY_CATALOG_HOME_HOLD } from "../../services/legacyCatalogHold";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
@@ -122,9 +123,9 @@ export default function Home() {
   // The checkout entitlement is authoritative for new memberships.
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
-  const canDownload = billingReady && membership.canDownload;
+  const canDownload = !LEGACY_CATALOG_HOME_HOLD && billingReady && membership.canDownload;
   const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
-  const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
+  const selectedCanPlay = !LEGACY_CATALOG_HOME_HOLD && billingReady && Boolean(userProfile?.id) &&
     (membership.canViewAlbums || (FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true));
 
   useEffect(() => {
@@ -154,7 +155,7 @@ export default function Home() {
   // Private playback is strictly opt-in. When enabled, NEVER fall back to a public media URL.
   // The ticket endpoint authorizes the current user and exact video on the server.
   useEffect(() => {
-    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id ||
+    if (LEGACY_CATALOG_HOME_HOLD || !PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id ||
         (selectedMedia.is_free_preview === true && !membership.canViewAlbums)) return;
     const id = String(selectedMedia.id);
     let cancelled = false;
@@ -179,7 +180,7 @@ export default function Home() {
   // FREE accounts receive a newly signed R2 URL on every video opening.
   // The server independently authorizes every request; replays are unlimited.
   useEffect(() => {
-    if (!FREE_PREVIEW_UI_ENABLED || !selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
+    if (LEGACY_CATALOG_HOME_HOLD || !FREE_PREVIEW_UI_ENABLED || !selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
       setFreePlayback({ id: "", url: "", status: "idle", error: "" });
       return;
     }
@@ -375,6 +376,11 @@ export default function Home() {
   };
 
   const fetchMostWatched = async () => {
+    if (LEGACY_CATALOG_HOME_HOLD) {
+      setMostWatched([]);
+      setMostWatchedLoading(false);
+      return;
+    }
     setMostWatchedLoading(true);
     try {
       const { data, error } = await supabase
@@ -395,6 +401,13 @@ export default function Home() {
 
   const fetchMedia = async (page = 1, category = "all") => {
     const requestId = ++mediaFetchSerialRef.current;
+    if (LEGACY_CATALOG_HOME_HOLD) {
+      setMediaList([]);
+      setTotalCount(0);
+      setMediaError("");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setMediaError("");
     const from = (page - 1) * ITEMS_PER_PAGE;
@@ -1156,7 +1169,7 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
+        {!LEGACY_CATALOG_HOME_HOLD && FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
               <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
@@ -1168,6 +1181,11 @@ export default function Home() {
               <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
             </div>
           </section>
+        )}
+        {LEGACY_CATALOG_HOME_HOLD && (
+          <p role="status" className="mb-5 rounded-2xl border border-sky-500/25 bg-sky-950/20 px-5 py-4 text-sm text-sky-100">
+            We are preparing a new catalog. Previously listed videos are not displayed here.
+          </p>
         )}
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
@@ -1329,7 +1347,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="p-6 bg-slate-950/40 border border-slate-800/60 rounded-2xl text-center text-slate-500 text-xs">
-              Featured videos will appear here.
+              {LEGACY_CATALOG_HOME_HOLD ? "New videos will appear after review and approval." : "Featured videos will appear here."}
             </div>
           )}
         </div>
@@ -1395,7 +1413,7 @@ export default function Home() {
           </div>
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-            <p className="text-slate-400">{FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums ? "Wala pang napiling Free to Watch videos sa kategoryang ito." : "Wala pang available na videos sa kategoryang ito."}</p>
+            <p className="text-slate-400">{LEGACY_CATALOG_HOME_HOLD ? "The new video catalog is being prepared." : FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums ? "Wala pang napiling Free to Watch videos sa kategoryang ito." : "Wala pang available na videos sa kategoryang ito."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

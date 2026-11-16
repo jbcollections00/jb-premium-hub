@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { LEGACY_CATALOG_HOME_HOLD } from "./legacyCatalogHold";
 
 // Staging flag. OFF unless explicitly set to the string "true" at build time.
 // Do not enable until the Worker is unlocked and frontend permission tests pass.
@@ -21,6 +22,10 @@ const MEDIA_ID_PATTERN =
  * @returns {Promise<string>} Verified HTTPS Worker URL (sensitive: do not log).
  */
 export async function requestPrivateMediaUrl(mediaId, action) {
+  if (LEGACY_CATALOG_HOME_HOLD) {
+    throw new Error("Legacy media access is paused while the new catalog is prepared.");
+  }
+
   if (!PRIVATE_MEDIA_UI_ENABLED) {
     throw new Error("Private media frontend is disabled");
   }
