@@ -15,6 +15,7 @@ import {
 
 import { FREE_PREVIEW_UI_ENABLED } from "../../services/freePreview";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
+import NewCatalogReadiness from "../../components/admin/NewCatalogReadiness";
 
 export default function AdminMediaTab() {
   const [
@@ -1550,7 +1551,7 @@ export default function AdminMediaTab() {
 
           <p className="text-xs text-slate-400 mt-1">
             Secure browser-to-R2 upload, media library management,
-            duplicate review, and thumbnail automation.
+            duplicate review, optional reviewed covers, and default logo fallback.
           </p>
 
         </div>
@@ -1712,6 +1713,11 @@ export default function AdminMediaTab() {
               Bulk Upload Center
             </span>
           </h2>
+
+          <NewCatalogReadiness
+            existingCount={totalMediaCount}
+            queuedFiles={uploadFiles}
+          />
 
           <form
             onSubmit={
