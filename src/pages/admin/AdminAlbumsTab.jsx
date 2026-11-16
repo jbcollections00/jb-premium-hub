@@ -1,9 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
-import {
-  DEFAULT_THUMBNAIL_URL,
-  handleThumbnailLoadError,
-} from "../../services/thumbnailDisplay";
+import AlbumCover from "../../components/albums/AlbumCover";
+import { ALBUM_COVER_STYLES, getAlbumCoverStyle, isAllowedAlbumCoverUrl } from "../../services/albumArtwork";
 
 const MAX_NAME_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 400;
@@ -12,18 +10,39 @@ export default function AdminAlbumsTab() {
   const [albums, setAlbums] = useState([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [coverStyle, setCoverStyle] = useState("indigo");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("recent");
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorText, setErrorText] = useState("");
 
+  const filteredAlbums = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const matching = albums.filter((album) => {
+      const matchesText = !q || [album.name, album.description].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesVisibility = visibilityFilter === "all" ||
+        (visibilityFilter === "visible" ? album.is_visible : !album.is_visible);
+      return matchesText && matchesVisibility;
+    });
+    return [...matching].sort((a, b) => sortBy === "alphabetical"
+      ? a.name.localeCompare(b.name)
+      : String(b.created_at).localeCompare(String(a.created_at))
+    );
+  }, [albums, searchTerm, visibilityFilter, sortBy]);
+
   const loadAlbums = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("jb_media_albums")
-        .select("id, name, description, is_visible, created_at")
+        .select("id, name, description, is_visible, cover_style, cover_image_url, created_at")
         .order("created_at", { ascending: false })
         .limit(200);
 
@@ -49,6 +68,8 @@ export default function AdminAlbumsTab() {
     setEditingId(null);
     setName("");
     setDescription("");
+    setCoverStyle("indigo");
+    setCoverUrl("");
   };
 
   const submitAlbum = async (event) => {
@@ -65,11 +86,22 @@ export default function AdminAlbumsTab() {
       return;
     }
 
+    const cleanCoverUrl = coverUrl.trim();
+    if (cleanCoverUrl && !isAllowedAlbumCoverUrl(cleanCoverUrl)) {
+      setErrorText("Use an independently cleared PNG, JPG or WEBP image URL from https://assets.jb-premium-hub.vip/album-covers/ only.");
+      return;
+    }
+
     setSaving(true);
     setErrorText("");
     setNotice("");
     try {
-      const payload = { name: cleanName, description: cleanDescription };
+      const payload = {
+        name: cleanName,
+        description: cleanDescription,
+        cover_style: getAlbumCoverStyle(coverStyle).key,
+        cover_image_url: cleanCoverUrl || null,
+      };
       const { error } = editingId
         ? await supabase.from("jb_media_albums").update(payload).eq("id", editingId)
         : await supabase.from("jb_media_albums").insert(payload);
@@ -93,6 +125,8 @@ export default function AdminAlbumsTab() {
     setEditingId(album.id);
     setName(album.name);
     setDescription(album.description || "");
+    setCoverStyle(getAlbumCoverStyle(album.cover_style).key);
+    setCoverUrl(album.cover_image_url || "");
     setNotice("");
     setErrorText("");
   };
@@ -148,7 +182,7 @@ export default function AdminAlbumsTab() {
         <h1 className="text-2xl font-extrabold text-white">Album Manager</h1>
         <p className="mt-2 text-sm text-slate-300">
           Create and organize album titles for the homepage. New visible albums
-          appear as collection cards with the neutral JB Collections cover.
+          appear as collection cards with a themed JB Collections cover.
           Adding an album does not publish or approve any video.
         </p>
       </header>
@@ -192,6 +226,49 @@ export default function AdminAlbumsTab() {
             className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-sm text-white outline-none focus:border-sky-400"
           />
         </label>
+        <div className="grid gap-4 rounded-xl border border-slate-700/80 bg-slate-950/50 p-4 sm:grid-cols-[minmax(0,210px)_minmax(0,1fr)]">
+          <AlbumCover album={{ cover_style: coverStyle, cover_image_url: coverUrl }} className="rounded-xl border border-slate-700" />
+          <div className="min-w-0 space-y-3">
+            <div>
+              <p className="text-xs font-bold text-slate-200">Album cover theme</p>
+              <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                {ALBUM_COVER_STYLES.map((style) => (
+                  <button
+                    key={style.key}
+                    type="button"
+                    disabled={saving}
+                    aria-label={style.label + " cover"}
+                    aria-pressed={coverStyle === style.key}
+                    onClick={() => setCoverStyle(style.key)}
+                    className={`flex min-h-12 flex-col items-center justify-center rounded-lg border px-2 py-1 text-[10px] font-semibold transition-colors ${coverStyle === style.key
+                      ? "border-sky-400 bg-sky-500/20 text-white"
+                      : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
+                    }`}
+                  >
+                    <span aria-hidden="true" className={`mb-1 h-3 w-3 rounded-full ${style.dot}`} />
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="block text-xs font-semibold text-slate-300">
+              Optional approved custom artwork URL
+              <input
+                type="url"
+                value={coverUrl}
+                onChange={(e) => setCoverUrl(e.target.value)}
+                maxLength={250}
+                disabled={saving}
+                placeholder="https://assets.jb-premium-hub.vip/album-covers/my-cover.webp"
+                className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-xs text-white outline-none focus:border-sky-400"
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              Optional, already-reviewed static artwork hosted under the public-assets album-covers folder only.
+              This screen does not upload images or extract video frames. Leave blank for the JB Collections logo.
+            </p>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={saving} className="jbh-admin-primary rounded-xl px-5 py-2.5 text-sm font-bold disabled:opacity-50">
             {saving ? "Saving…" : editingId ? "Save changes" : "Create album"}
@@ -211,20 +288,41 @@ export default function AdminAlbumsTab() {
             Refresh
           </button>
         </div>
+        <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+          <label className="sr-only" htmlFor="album-search">Search albums</label>
+          <input
+            id="album-search"
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search album name or description"
+            className="min-w-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white outline-none focus:border-sky-400"
+          />
+          <label className="sr-only" htmlFor="album-visibility">Filter visibility</label>
+          <select id="album-visibility" value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)}
+            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white">
+            <option value="all">All visibility</option>
+            <option value="visible">Visible</option>
+            <option value="hidden">Hidden</option>
+          </select>
+          <label className="sr-only" htmlFor="album-sort">Sort albums</label>
+          <select id="album-sort" value={sortBy} onChange={(event) => setSortBy(event.target.value)}
+            className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white">
+            <option value="recent">Newest first</option>
+            <option value="alphabetical">A–Z</option>
+          </select>
+        </div>
         {loading ? (
           <p role="status" className="text-sm text-slate-300">Loading albums…</p>
         ) : albums.length === 0 ? (
           <p className="text-sm text-slate-400">No albums yet. Create one above to start the directory.</p>
+        ) : filteredAlbums.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">No albums match your filters.</p>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {albums.map((album) => (
+            {filteredAlbums.map((album) => (
               <li key={album.id} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
-                <img
-                  src={DEFAULT_THUMBNAIL_URL}
-                  onError={handleThumbnailLoadError}
-                  alt=""
-                  className="aspect-video w-full bg-slate-950 object-contain"
-                />
+                <AlbumCover album={album} />
                 <div className="space-y-3 p-4">
                   <div>
                     <p className="break-words text-sm font-extrabold text-white">{album.name}</p>

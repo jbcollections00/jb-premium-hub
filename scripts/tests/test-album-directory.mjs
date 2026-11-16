@@ -9,6 +9,7 @@ const adminPage = read("../../src/pages/admin/AdminDashboard.jsx");
 const albumsTab = read("../../src/pages/admin/AdminAlbumsTab.jsx");
 const homePage = read("../../src/pages/public/Home.jsx");
 const albumCards = read("../../src/components/home/HomeAlbumCollections.jsx");
+const albumCover = read("../../src/components/albums/AlbumCover.jsx");
 const mediaTab = read("../../src/pages/admin/AdminMediaTab.jsx");
 
 test("album migration contains a separate RLS-protected metadata table", () => {
@@ -41,7 +42,8 @@ test("homepage queries visible album titles and does not expose media through al
   assert.match(homePage, /<HomeAlbumCollections \/>/);
   assert.match(albumCards, /\.from\("jb_media_albums"\)/);
   assert.match(albumCards, /\.eq\("is_visible", true\)/);
-  assert.match(albumCards, /DEFAULT_THUMBNAIL_URL/);
+  assert.match(albumCards, /<AlbumCover album=\{album\}/);
+  assert.match(albumCover, /DEFAULT_THUMBNAIL_URL/);
   assert.doesNotMatch(albumCards, /\.from\("media"\)|media_url|<video\b|requestPrivateMediaUrl|uploadFileToR2/);
 });
 
