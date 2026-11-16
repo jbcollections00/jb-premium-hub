@@ -23,6 +23,7 @@ import {
   SOURCE_BUCKET, PUBLIC_BUCKET, PUBLIC_ORIGIN, FIRST_PUBLISHED,
   selectBatch, batchName, hash, createGuardedSql,
 } from "./publish-batch-rules.mjs";
+import { gateThumbnailSelection } from "./signed-review-thumbnail-gate.mjs";
 
 const root = path.resolve(
   process.env.JB_THUMBNAIL_OUTPUT_DIR ||
@@ -31,6 +32,11 @@ const root = path.resolve(
 const reportPath = path.join(root, "media-r2-matching-audit.json");
 const progressPath = path.join(root, "progress.json");
 const pilotReceipt = path.join(root, "phase317f-five-published.json");
+const REVIEW_INDEX_FILE = path.join(root, "phase326-full-catalog-adult-review-index.csv");
+const option = (name) => process.argv.find(a => a.startsWith(name + "="))?.slice(name.length + 1) || "";
+const reviewManifestFile = option("--review-manifest");
+const reviewSignatureFile = option("--review-signature");
+const reviewKeyFile = option("--review-public-key");
 const offsetOption = process.argv.find((a) => a.startsWith("--offset="));
 const limitOption = process.argv.find((a) => a.startsWith("--limit="));
 const offset = Number(offsetOption?.slice(9) ?? "5");
@@ -81,12 +87,28 @@ async function expectedItems() {
     readJson(reportPath), readJson(progressPath), readJson(pilotReceipt),
   ]);
   const selection = selectBatch(report, pilot, { offset, limit });
+  // Content decision verification precedes any local JPG reading or public publishing.
+  const [indexText, manifestBytes, signatureBytes, reviewerPublicKeyPem] = await Promise.all([
+    readFile(REVIEW_INDEX_FILE, "utf8"), readFile(reviewManifestFile),
+    readFile(reviewSignatureFile), readFile(reviewKeyFile, "utf8"),
+  ]);
+  const checked = gateThumbnailSelection({
+    matchedBatch: selection.selected,
+    indexText, manifestBytes, signatureBytes, reviewerPublicKeyPem,
+    trustedSpkiSha256: process.env.JB_TRUSTED_REVIEWER_SPKI_SHA256,
+  });
+  const allowed = new Set(checked.approved.map(x => x.media_id));
+  console.log("Verified independent reviewer signature; batch decisions:", JSON.stringify(checked.summary));
   if (!progress || progress.bucket !== SOURCE_BUCKET || !progress.results) {
     throw new Error("The local generation progress report is missing or wrong-bucket.");
   }
   const images = [], skipped = [];
   for (let i = 0; i < selection.selected.length; i++) {
     const item = selection.selected[i];
+    if (!allowed.has(item.media_id)) {
+      skipped.push({ media_id: item.media_id, status: "SAFETY_HOLD" });
+      continue;
+    }
     const digest = hash(item.key).slice(0, 16);
     const record = progress.results[digest];
     if (!record || record.private_video_key !== item.key ||
@@ -178,7 +200,7 @@ function validateChecklist(checklist, expected, requireApproval) {
   }
   for (let i = 0; i < expected.skipped.length; i++) {
     if (checklist.skipped[i]?.media_id !== expected.skipped[i].media_id ||
-        checklist.skipped[i]?.status !== "SKIPPED_SHORT") {
+        checklist.skipped[i]?.status !== expected.skipped[i].status) {
       throw new Error("Short-video skip list changed.");
     }
   }
@@ -215,8 +237,8 @@ async function prepare(expected) {
   await writeFile(galleryPath, html, { mode: 0o600 });
   console.log("Review gallery:", galleryPath);
   console.log("Approval checklist:", checklistPath);
-  console.log("Ready JPGs:", expected.images.length,
-    "| short/default-logo only:", expected.skipped.length);
+  console.log("Ready approved JPGs:", expected.images.length,
+    "| safety-held or too-short:", expected.skipped.length);
   console.log("No public R2 uploads or Supabase changes.");
 }
 
@@ -361,7 +383,7 @@ async function publish(expected) {
   const sql = createGuardedSql(expected.images);
   await writeFile(sqlPath, sql, { mode: 0o600 });
   console.log("Public JPGs verified:", expected.images.length);
-  console.log("SKIPPED_SHORT (default logo remains):", expected.skipped.length);
+  console.log("Skipped safety-held or too-short records:", expected.skipped.length);
   console.log("Manual guarded SQL generated:", sqlPath);
   console.log("No Supabase database changes were made by this script.");
 }
@@ -376,6 +398,10 @@ async function main() {
   }
   console.log("JB PREMIUM HUB / PHASE 317G / REVIEWED THUMBNAIL BATCH");
   console.log("Batch", stem, "=> eligible offsets", offset, "through", offset+limit-1);
+  if (!reviewManifestFile || !reviewSignatureFile || !reviewKeyFile ||
+      !process.env.JB_TRUSTED_REVIEWER_SPKI_SHA256) {
+    throw new Error("Independent signed review required before any JPG read or public publishing.");
+  }
   const expected = await expectedItems();
   if (flag("--prepare")) await prepare(expected);
   if (flag("--approve")) await approve(expected);
