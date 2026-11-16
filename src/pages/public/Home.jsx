@@ -7,6 +7,7 @@ import { getBillingAccess, resolveMemberPresentation } from "../../services/bill
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
 import { getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
+import { canOmitPublicTitle, videoThumbnailAlt } from "../../services/verifiedTitlelessPresentation";
 
 const ITEMS_PER_PAGE = 50;
 const POPUNDER_SCRIPT_URL =
@@ -1269,7 +1270,7 @@ export default function Home() {
                         <img
                           src={getThumbnailDisplayUrl(item.thumbnail_url)}
                           onError={handleThumbnailLoadError}
-                          alt={item.thumbnail_url ? item.title : "JB Collections"}
+                          alt={videoThumbnailAlt(item, isAdmin)}
                           className={item.thumbnail_url
                             ? "w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             : "max-w-[65%] max-h-[65%] object-contain opacity-75"}
@@ -1293,9 +1294,11 @@ export default function Home() {
                       </div>
 
                       <div className="p-3">
-                        <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
-                          {item.title}
-                        </h4>
+                        {!canOmitPublicTitle(item.id, isAdmin) && (
+                          <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
+                            {item.title}
+                          </h4>
+                        )}
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900">
                           <span
                             onClick={(e) => isAdmin && handleOpenViewers(e, item)}
@@ -1399,7 +1402,7 @@ export default function Home() {
                         <img
                           src={getThumbnailDisplayUrl(item.thumbnail_url)}
                           onError={handleThumbnailLoadError}
-                          alt={item.thumbnail_url ? item.title : "JB Collections"}
+                          alt={videoThumbnailAlt(item, isAdmin)}
                           className={item.thumbnail_url
                             ? "w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                             : "max-w-[65%] max-h-[65%] object-contain opacity-75"}
@@ -1435,9 +1438,11 @@ export default function Home() {
                         👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
-                    <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">
-                      {item.title}
-                    </h3>
+                    {!canOmitPublicTitle(item.id, isAdmin) && (
+                      <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">
+                        {item.title}
+                      </h3>
+                    )}
                   </div>
                 </div>
 
@@ -1546,9 +1551,11 @@ export default function Home() {
                 <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-[.12em] md:text-xs">
                   Now playing
                 </span>
-                <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">
-                  {selectedMedia.title}
-                </h2>
+                {!canOmitPublicTitle(selectedMedia.id, isAdmin) && (
+                  <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">
+                    {selectedMedia.title}
+                  </h2>
+                )}
               </div>
               <button
                 onClick={handleCloseMedia}
