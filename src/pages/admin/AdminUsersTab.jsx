@@ -1,65 +1,30 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import AdminMembershipModal from "./AdminMembershipModal";
+import { getAdminProfileKind, getAdminProfileLabel, matchesAdminProfileFilter } from "../../services/adminUserProfileView";
 
 const USERS_PER_PAGE = 50;
 
-export default function AdminUsers() {
+export default function AdminUsers({ onlineUserIds = new Set() }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("ALL");
-  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [fetchError, setFetchError] = useState("");
+  const requestSerialRef = useRef(0);
   const [actionInProgress, setActionInProgress] = useState(null);
   const [membershipUser, setMembershipUser] = useState(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Dashboard owns the shared online-presence channel. Do not create/remove
+  // a second channel in this tab: it would break live status on tab changes.
   useEffect(() => {
-    let isMounted = true;
-    let channel;
-
-    fetchUsers();
-
-    const setupPresence = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
-
-      const existingChannel = supabase
-        .getChannels()
-        .find((c) => c.topic === "realtime:online-users");
-      if (existingChannel) {
-        await supabase.removeChannel(existingChannel);
-      }
-
-      if (!isMounted) return;
-
-      channel = supabase.channel("online-users", {
-        config: { presence: { key: user.id } },
-      });
-
-      channel
-        .on("presence", { event: "sync" }, () => {
-          if (!isMounted) return;
-          const state = channel.presenceState();
-          const activeIds = new Set(Object.keys(state));
-          setOnlineUserIds(activeIds);
-        })
-        .subscribe(async (status) => {
-          if (status === "SUBSCRIBED" && isMounted) {
-            await channel.track({ online_at: new Date().toISOString() });
-          }
-        });
-    };
-
-    setupPresence();
-
+    void fetchUsers();
     return () => {
-      isMounted = false;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      // Ignore late replies once the lazy tab is unmounted.
+      requestSerialRef.current += 1;
     };
   }, []);
 
@@ -70,6 +35,8 @@ export default function AdminUsers() {
 
   // BATCH FETCH: Kukunin ang lahat ng users kahit lumagpas sa 1000 limit ng Supabase
   const fetchUsers = async () => {
+    const requestSerial = ++requestSerialRef.current;
+    setFetchError("");
     try {
       setLoading(true);
       let allProfiles = [];
@@ -97,11 +64,14 @@ export default function AdminUsers() {
         }
       }
 
-      setUsers(allProfiles);
+      if (requestSerial === requestSerialRef.current) setUsers(allProfiles);
     } catch (err) {
-      console.error("Error fetching users:", err.message);
+      console.error("Error fetching users:", err?.code || "UNAVAILABLE");
+      if (requestSerial === requestSerialRef.current) {
+        setFetchError("User profiles could not be loaded. Try reopening this tab.");
+      }
     } finally {
-      setLoading(false);
+      if (requestSerial === requestSerialRef.current) setLoading(false);
     }
   };
 
@@ -199,16 +169,7 @@ export default function AdminUsers() {
       (u.email && u.email.toLowerCase().includes(searchLower)) ||
       (u.id && u.id.toLowerCase().includes(searchLower));
 
-    const accountType = (u.account_type || u.role || "").toUpperCase();
-    const isAdmin = accountType === "ADMIN";
-    const isVip = accountType === "VIP";
-
-    if (filterType === "ADMIN") return matchesSearch && isAdmin;
-    if (filterType === "VIP") return matchesSearch && isVip;
-    if (filterType === "STANDARD") return matchesSearch && !isVip && !isAdmin;
-    if (filterType === "ONLINE") return matchesSearch && onlineUserIds.has(u.id);
-
-    return matchesSearch;
+    return matchesSearch && matchesAdminProfileFilter(u, filterType, onlineUserIds);
   });
 
   // 2. PAGINATION CALCULATIONS
@@ -222,6 +183,10 @@ export default function AdminUsers() {
         <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-100">People & accounts</p>
         <h1 className="mt-2">User management</h1>
         <p className="mt-2 text-sm">Review account profiles, membership grants and access settings.</p>
+        <p className="mt-2 text-xs text-sky-100/80">
+          Profile labels are legacy account fields, not current PayMongo subscription tiers.
+          View verified active subscriptions in Billing &amp; memberships.
+        </p>
         <p className="mt-3 text-xs">Profiles loaded: <strong>{users.length.toLocaleString()}</strong></p>
       </header>
 
@@ -237,23 +202,32 @@ export default function AdminUsers() {
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <label className="text-xs text-gray-400 shrink-0">Filter:</label>
+          <label htmlFor="admin-users-profile-filter" className="text-xs text-slate-300 shrink-0">Profile filter:</label>
           <select
+            id="admin-users-profile-filter"
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="w-full min-w-40 px-3 py-2.5 text-sm sm:w-auto"
+            style={{ colorScheme: "dark" }}
+            className="w-full min-w-40 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/30 sm:w-auto"
           >
-            <option value="ALL">All Accounts ({users.length})</option>
-            <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
-            <option value="ADMIN">Admins Only</option>
-            <option value="VIP">VIP profiles</option>
-            <option value="STANDARD">Regular profiles</option>
+            <option value="ALL">All profiles ({users.length})</option>
+            <option value="ONLINE">Online now ({onlineUserIds.size})</option>
+            <option value="ADMIN">Admin roles</option>
+            <option value="VIP">Legacy VIP profiles</option>
+            <option value="STANDARD">Standard profiles</option>
+            <option value="GUEST">Guest profiles</option>
           </select>
         </div>
       </div>
 
+      {fetchError && (
+        <div role="alert" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+          {fetchError}
+        </div>
+      )}
+
       {loading ? (
-        <div className="text-center py-12 text-gray-500 text-xs">Loading user profiles...</div>
+        <div role="status" className="text-center py-12 text-gray-400 text-sm">Loading user profiles...</div>
       ) : (
         <>
           <div className="jbh-admin-panel jbh-admin-table overflow-x-auto">
@@ -261,7 +235,7 @@ export default function AdminUsers() {
               <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="p-4">User Details</th>
-                  <th className="p-4">Profile type</th>
+                  <th className="p-4" title="Stored profile label, not live paid membership">Profile label</th>
                   <th className="p-4">Status</th>
                   <th className="p-4">Joined Date</th>
                   <th className="p-4 text-right">Actions</th>
@@ -277,7 +251,7 @@ export default function AdminUsers() {
                 ) : (
                   paginatedUsers.map((u) => {
                     const isOnline = onlineUserIds.has(u.id);
-                    const isVip = (u.account_type || "").toUpperCase() === "VIP";
+                    const profileKind = getAdminProfileKind(u);
                     const isAdminUser = (u.role || "").toLowerCase() === "admin" || (u.account_type || "").toLowerCase() === "admin";
 
                     return (
@@ -288,9 +262,15 @@ export default function AdminUsers() {
                         </td>
                         <td className="p-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                            isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                          }`}>
-                            Profile: {u.account_type || 'unknown'}
+                            profileKind === "vip"
+                              ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                              : profileKind === "admin"
+                                ? "bg-violet-500/10 text-violet-300 border-violet-500/20"
+                                : profileKind === "guest"
+                                  ? "bg-slate-600/10 text-slate-300 border-slate-500/20"
+                                  : "bg-blue-500/10 text-blue-300 border-blue-500/20"
+                          }`} title="Stored profile label only; not a current paid entitlement">
+                            {getAdminProfileLabel(u)}
                           </span>
                         </td>
                         <td className="p-4">

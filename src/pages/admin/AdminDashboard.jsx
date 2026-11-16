@@ -421,7 +421,7 @@ export default function AdminDashboard() {
           {activeTab === 'events' && <AdminEventControl />}
           {activeTab === 'billing' && <AdminBillingTab />}
           {activeTab === 'tickets' && <SupportTicketsTab supabase={supabase} />}
-          {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} />}
+          {activeTab === 'users' && <AdminUsersTab users={users} fetchData={fetchData} onlineUserIds={onlineUserIds} />}
           {activeTab === 'messages' && <AdminMessagesTab users={users} />}
           {activeTab === 'chat-reports' && <ChatReports />}
           {activeTab === 'chat-analytics' && <ChatAnalytics />}
