@@ -1156,7 +1156,6 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        <HomeAlbumCollections />
         {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
@@ -1334,6 +1333,9 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* Album cards follow the Most Watched showcase. */}
+        <HomeAlbumCollections />
 
         {/* VAULT MEDIA LIST HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
