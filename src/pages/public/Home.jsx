@@ -75,7 +75,8 @@ export default function Home() {
 
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
-      return new URLSearchParams(window.location.search).get("cat") || "all";
+      const category = new URLSearchParams(window.location.search).get("cat") || "all";
+      return category === "pinay_asian" ? "all" : category;
     }
     return "all";
   });
@@ -401,6 +402,16 @@ export default function Home() {
 
   const fetchMedia = async (page = 1, category = "all") => {
     const requestId = ++mediaFetchSerialRef.current;
+    // Album category metadata can be selected, but no server-cleared
+    // video-to-album association is available. Never fall through to the
+    // unfiltered legacy media query for an album selection.
+    if (typeof category === "string" && category.startsWith("album:")) {
+      setMediaList([]);
+      setTotalCount(0);
+      setMediaError("");
+      setLoading(false);
+      return;
+    }
     if (LEGACY_CATALOG_HOME_HOLD) {
       setMediaList([]);
       setTotalCount(0);
@@ -431,11 +442,6 @@ export default function Home() {
           item.is_free_preview === true &&
           !Object.prototype.hasOwnProperty.call(item, "media_url")
         );
-        if (category === "pinay_asian") {
-          approved = approved.filter((item) =>
-            /pinay|asian/i.test(`${item.category || ""} ${item.title || ""}`)
-          );
-        }
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
@@ -445,11 +451,6 @@ export default function Home() {
       // Paid members retain the existing full-library query and privileges.
       let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
       if (category === "free") query = query.eq("is_free_preview", true);
-      if (category === "pinay_asian") {
-        query = query.or(
-          "category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%"
-        );
-      }
       const { data, count, error } = await query
         .order("created_at", { ascending: false })
         .range(from, to);
@@ -840,27 +841,6 @@ export default function Home() {
     url.searchParams.set("cat", catKey);
     url.searchParams.set("page", 1);
     window.history.replaceState({}, "", url);
-  };
-
-  const handleUpdateCategory = async (videoId, newCategory) => {
-    if (!isAdmin || !videoId) return;
-
-    const allowedCategories = ["general", "pinay_asian"];
-    if (!allowedCategories.includes(newCategory)) {
-      alert("Invalid category.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("media")
-      .update({ category: newCategory })
-      .eq("id", videoId);
-
-    if (error) {
-      alert("Failed to update category: " + error.message);
-    } else {
-      fetchMedia(currentPage, activeCategory);
-    }
   };
 
   // Open the selected video in the current tab without ad redirects.
@@ -1352,9 +1332,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Album cards follow the Most Watched showcase. */}
-        <HomeAlbumCollections />
-
         {/* VAULT MEDIA LIST HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <h1 className="text-xl md:text-2xl font-bold text-white">Media library</h1>
@@ -1387,16 +1364,11 @@ export default function Home() {
             <span>▶</span> Free to Watch
           </button>
           )}
-          <button
-            onClick={() => handleCategoryChange("pinay_asian")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
-              activeCategory === "pinay_asian"
-                ? "bg-indigo-600 text-white"
-                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🇵🇭</span> Pinay / Asian
-          </button>
+          {/* Visible admin-created album titles replace fixed category tabs. */}
+          <HomeAlbumCollections
+            activeCategory={activeCategory}
+            onSelectCategory={handleCategoryChange}
+          />
         </div>
 
         <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
@@ -1413,7 +1385,15 @@ export default function Home() {
           </div>
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-            <p className="text-slate-400">{LEGACY_CATALOG_HOME_HOLD ? "The new video catalog is being prepared." : FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums ? "Wala pang napiling Free to Watch videos sa kategoryang ito." : "Wala pang available na videos sa kategoryang ito."}</p>
+            <p className="text-slate-400">{
+              activeCategory.startsWith("album:")
+                ? "Wala pang available na videos sa album na ito. Hinihintay ang verified new-upload integration."
+                : LEGACY_CATALOG_HOME_HOLD
+                  ? "The new video catalog is being prepared."
+                  : FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums
+                    ? "Wala pang napiling Free to Watch videos sa kategoryang ito."
+                    : "Wala pang available na videos sa kategoryang ito."
+            }</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -1509,24 +1489,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                {isAdmin && (
-                  <div
-                    className="p-3 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      Tag Category:
-                    </span>
-                    <select
-                      value={item.category || "general"}
-                      onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
-                      className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
-                    >
-                      <option value="general">🔥 General</option>
-                      <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
-                    </select>
-                  </div>
-                )}
+
               </div>
             ))}
           </div>
