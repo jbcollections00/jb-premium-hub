@@ -38,11 +38,12 @@ test("album manager performs metadata-only administration", () => {
   assert.doesNotMatch(albumsTab, /\.from\("media"\)|uploadFileToR2|fetch\(/);
 });
 
-test("homepage queries visible album titles and does not expose media through album cards", () => {
-  assert.match(homePage, /<HomeAlbumCollections \/>/);
+test("homepage embeds dynamic album tabs without reading media through them", () => {
+  assert.match(homePage, /<HomeAlbumCollections\s+activeCategory=\{activeCategory\}/);
   assert.match(albumCards, /\.from\("jb_media_albums"\)/);
   assert.match(albumCards, /\.eq\("is_visible", true\)/);
-  assert.match(albumCards, /<AlbumCover album=\{album\}/);
+  assert.match(albumCards, /album\.name/);
+  assert.match(albumCards, /onSelectCategory/);
   assert.match(albumCover, /DEFAULT_THUMBNAIL_URL/);
   assert.doesNotMatch(albumCards, /\.from\("media"\)|media_url|<video\b|requestPrivateMediaUrl|uploadFileToR2/);
 });
