@@ -151,6 +151,35 @@ export default function AdminAlbumsTab() {
     }
   };
 
+  // Reversible metadata-only bulk action. Does not touch the media table,
+  // video files, private R2 storage, or evidence-related records.
+  const hideAllAlbums = async () => {
+    const answer = window.prompt(
+      'Hide ALL album directory cards from Home? This does NOT delete videos, media records, or files. To confirm, type HIDE ALL.'
+    );
+    if (answer !== 'HIDE ALL') return;
+
+    setSaving(true);
+    setErrorText('');
+    setNotice('');
+    try {
+      // The database UPDATE policy already requires an authenticated admin.
+      // No client-side authorization override and no destructive operation.
+      const { error } = await supabase
+        .from('jb_media_albums')
+        .update({ is_visible: false })
+        .eq('is_visible', true);
+
+      if (error) throw error;
+      setNotice('All album directory cards are now hidden from Home. You can restore each album with Show. No video files or records were deleted.');
+      await loadAlbums();
+    } catch (error) {
+      setErrorText(error?.message || 'Unable to hide album directory.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteAlbum = async (album) => {
     if (!window.confirm(
       'Delete album "' + album.name + '"? This removes album metadata only; it does not delete videos.'
@@ -282,12 +311,27 @@ export default function AdminAlbumsTab() {
       </form>
 
       <div className="jbh-admin-panel rounded-2xl p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-bold text-white">Your albums ({albums.length})</h2>
-          <button type="button" onClick={loadAlbums} disabled={loading || saving} className="text-xs font-bold text-sky-300 disabled:opacity-50">
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={loadAlbums} disabled={loading || saving} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-sky-300 disabled:opacity-50">
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={hideAllAlbums}
+              disabled={loading || saving || !albums.some((album) => album.is_visible)}
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Hide all album directory cards"
+            >
+              Hide All Albums
+            </button>
+          </div>
         </div>
+        <p className="mb-4 text-[11px] leading-relaxed text-slate-400">
+          Hide All affects album directory visibility only and can be reversed with each album's Show button.
+          It does not remove old video listings, restrict video API access, or delete R2/database records.
+        </p>
         <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
           <label className="sr-only" htmlFor="album-search">Search albums</label>
           <input
