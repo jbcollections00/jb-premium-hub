@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
+import { Clapperboard, CreditCard, FolderOpen, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -21,6 +21,7 @@ const AccessCodesTab = lazy(() => import('./AccessCodesTab'));
 const AdminUsersTab = lazy(() => import('./AdminUsersTab'));
 const AdminMessagesTab = lazy(() => import('./AdminMessagesTab'));
 const AdminMediaTab = lazy(() => import('./AdminMediaTab'));
+const AdminAlbumsTab = lazy(() => import('./AdminAlbumsTab'));
 const AdminBillingTab = lazy(() => import('./AdminBillingTab'));
 const ChatReports = lazy(() => import('./ChatReports'));
 const ChatAnalytics = lazy(() => import('./ChatAnalytics'));
@@ -260,6 +261,7 @@ export default function AdminDashboard() {
     { id: 'messages', icon: MessageSquare, label: 'Messages' },
     { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'codes', icon: KeyRound, label: 'Access codes' },
+    { id: 'albums', icon: FolderOpen, label: 'Albums' },
     { id: 'upload', icon: Clapperboard, label: 'Media manager' },
   ];
 
@@ -426,6 +428,7 @@ export default function AdminDashboard() {
           {activeTab === 'chat-reports' && <ChatReports />}
           {activeTab === 'chat-analytics' && <ChatAnalytics />}
           {activeTab === 'codes' && <AccessCodesTab />}
+          {activeTab === 'albums' && <AdminAlbumsTab />}
           {activeTab === 'upload' && <AdminMediaTab />}
         </Suspense>
       </main>

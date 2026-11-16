@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
+import HomeAlbumCollections from "../../components/home/HomeAlbumCollections";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
@@ -1332,6 +1333,9 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* Album cards follow the Most Watched showcase. */}
+        <HomeAlbumCollections />
 
         {/* VAULT MEDIA LIST HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
