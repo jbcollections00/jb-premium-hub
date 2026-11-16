@@ -1,75 +1,52 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../../services/supabaseClient";
 import AdminMembershipModal from "./AdminMembershipModal";
+import {
+  getAdminDisplayedTier, getAdminDisplayedTierLabel,
+  matchAdminMemberTierFilter, normalizeAdminPaidTiers, countAdminDisplayTiers,
+} from "../../services/adminMemberTierView";
 
 const USERS_PER_PAGE = 50;
 
-export default function AdminUsers() {
+export default function AdminUsers({ onlineUserIds = new Set() }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("ALL");
-  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [onlineOnly, setOnlineOnly] = useState(false);
+  const [paidTiers, setPaidTiers] = useState(new Map());
+  const [paidStatus, setPaidStatus] = useState("loading");
+  const [paidError, setPaidError] = useState("");
+  const paidSerialRef = useRef(0);
+  const [fetchError, setFetchError] = useState("");
+  const requestSerialRef = useRef(0);
   const [actionInProgress, setActionInProgress] = useState(null);
   const [membershipUser, setMembershipUser] = useState(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Dashboard owns the shared online-presence channel. Do not create/remove
+  // a second channel in this tab: it would break live status on tab changes.
   useEffect(() => {
-    let isMounted = true;
-    let channel;
-
-    fetchUsers();
-
-    const setupPresence = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
-
-      const existingChannel = supabase
-        .getChannels()
-        .find((c) => c.topic === "realtime:online-users");
-      if (existingChannel) {
-        await supabase.removeChannel(existingChannel);
-      }
-
-      if (!isMounted) return;
-
-      channel = supabase.channel("online-users", {
-        config: { presence: { key: user.id } },
-      });
-
-      channel
-        .on("presence", { event: "sync" }, () => {
-          if (!isMounted) return;
-          const state = channel.presenceState();
-          const activeIds = new Set(Object.keys(state));
-          setOnlineUserIds(activeIds);
-        })
-        .subscribe(async (status) => {
-          if (status === "SUBSCRIBED" && isMounted) {
-            await channel.track({ online_at: new Date().toISOString() });
-          }
-        });
-    };
-
-    setupPresence();
-
+    void fetchUsers();
+    void fetchLivePaidTiers();
     return () => {
-      isMounted = false;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      // Ignore late replies once the lazy tab is unmounted.
+      requestSerialRef.current += 1;
+      paidSerialRef.current += 1;
     };
   }, []);
 
   // I-reset sa Page 1 kapag nagbago ang search term o filter type
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterType]);
+  }, [searchTerm, filterType, onlineOnly]);
 
   // BATCH FETCH: Kukunin ang lahat ng users kahit lumagpas sa 1000 limit ng Supabase
   const fetchUsers = async () => {
+    const requestSerial = ++requestSerialRef.current;
+    setFetchError("");
     try {
       setLoading(true);
       let allProfiles = [];
@@ -97,11 +74,43 @@ export default function AdminUsers() {
         }
       }
 
-      setUsers(allProfiles);
+      if (requestSerial === requestSerialRef.current) setUsers(allProfiles);
     } catch (err) {
-      console.error("Error fetching users:", err.message);
+      console.error("Error fetching users:", err?.code || "UNAVAILABLE");
+      if (requestSerial === requestSerialRef.current) {
+        setFetchError("User profiles could not be loaded. Try reopening this tab.");
+      }
     } finally {
-      setLoading(false);
+      if (requestSerial === requestSerialRef.current) setLoading(false);
+    }
+  };
+
+  const fetchLivePaidTiers = async () => {
+    const serial = ++paidSerialRef.current;
+    setPaidStatus("loading");
+    setPaidError("");
+    // Do NOT fall back to profiles.account_type if the authoritative
+    // admin-only RPC is missing, unauthorized or malformed.
+    try {
+      const { data, error } = await supabase.rpc("jb_admin_live_paid_tiers_v1");
+      if (serial !== paidSerialRef.current) return;
+      if (error) throw error;
+      const active = normalizeAdminPaidTiers(data);
+      setPaidTiers(active);
+      setPaidStatus("ready");
+    } catch (error) {
+      if (serial !== paidSerialRef.current) return;
+      setPaidTiers(new Map());
+      setPaidStatus("error");
+      // A previously selected VIP/Standard filter must not make all rows
+      // mysteriously disappear while payment verification is unavailable.
+      setFilterType("ALL");
+      setPaidError(
+        "Verified LIVE membership tiers are unavailable. Ensure the " +
+        "admin-only billing report RPC is installed and authorized. " +
+        "No users have been reclassified."
+      );
+      console.error("Admin membership tiers unavailable:", error?.code || "UNAVAILABLE");
     }
   };
 
@@ -191,24 +200,17 @@ export default function AdminUsers() {
     setActionInProgress(null);
   };
 
-  // 1. FILTER LOGIC
+  // True LIVE paid tiers from the server. Never infer payment from profiles.
+  const tierCounts = countAdminDisplayTiers(users, paidTiers, paidStatus);
   const filteredUsers = users.filter((u) => {
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = searchTerm.trim().toLowerCase();
     const matchesSearch =
-      (u.full_name && u.full_name.toLowerCase().includes(searchLower)) ||
-      (u.email && u.email.toLowerCase().includes(searchLower)) ||
-      (u.id && u.id.toLowerCase().includes(searchLower));
-
-    const accountType = (u.account_type || u.role || "").toUpperCase();
-    const isAdmin = accountType === "ADMIN";
-    const isVip = accountType === "VIP";
-
-    if (filterType === "ADMIN") return matchesSearch && isAdmin;
-    if (filterType === "VIP") return matchesSearch && isVip;
-    if (filterType === "STANDARD") return matchesSearch && !isVip && !isAdmin;
-    if (filterType === "ONLINE") return matchesSearch && onlineUserIds.has(u.id);
-
-    return matchesSearch;
+      String(u.full_name || "").toLowerCase().includes(searchLower) ||
+      String(u.email || "").toLowerCase().includes(searchLower) ||
+      String(u.id || "").toLowerCase().includes(searchLower);
+    if (!matchesSearch || (onlineOnly && !onlineUserIds.has(u.id))) return false;
+    const tier = getAdminDisplayedTier(u, paidTiers, paidStatus);
+    return matchAdminMemberTierFilter(tier, filterType);
   });
 
   // 2. PAGINATION CALCULATIONS
@@ -222,7 +224,20 @@ export default function AdminUsers() {
         <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-100">People & accounts</p>
         <h1 className="mt-2">User management</h1>
         <p className="mt-2 text-sm">Review account profiles, membership grants and access settings.</p>
+        <p className="mt-2 text-xs text-sky-100/80">
+          Payment tiers are based on current LIVE paid entitlement grants, not profile labels.
+          Complimentary access and admin privileges are separate.
+        </p>
         <p className="mt-3 text-xs">Profiles loaded: <strong>{users.length.toLocaleString()}</strong></p>
+        {paidStatus === "ready" ? (
+          <p className="mt-2 text-sm font-semibold text-sky-100" role="status">
+            Free: {tierCounts.free.toLocaleString()} · Standard: {tierCounts.standard.toLocaleString()} · VIP: {tierCounts.vip.toLocaleString()}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-amber-200" role="status">
+            {paidStatus === "loading" ? "Checking verified LIVE membership tiers…" : "Membership verification unavailable"}
+          </p>
+        )}
       </header>
 
       <div className="jbh-admin-panel flex flex-col items-stretch justify-between gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
@@ -236,24 +251,48 @@ export default function AdminUsers() {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <label className="text-xs text-gray-400 shrink-0">Filter:</label>
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <label htmlFor="admin-users-tier-filter" className="text-xs text-slate-300 shrink-0">Payment tier:</label>
           <select
+            id="admin-users-tier-filter"
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="w-full min-w-40 px-3 py-2.5 text-sm sm:w-auto"
+            disabled={paidStatus !== "ready"}
+            style={{ colorScheme: "dark" }}
+            className="w-full min-w-44 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400/30 disabled:opacity-50 sm:w-auto"
           >
-            <option value="ALL">All Accounts ({users.length})</option>
-            <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
-            <option value="ADMIN">Admins Only</option>
-            <option value="VIP">VIP profiles</option>
-            <option value="STANDARD">Regular profiles</option>
+            <option value="ALL">All users ({users.length})</option>
+            <option value="FREE">Free Users ({paidStatus === "ready" ? tierCounts.free : "—"})</option>
+            <option value="STANDARD">Standard Users ({paidStatus === "ready" ? tierCounts.standard : "—"})</option>
+            <option value="VIP">VIP ({paidStatus === "ready" ? tierCounts.vip : "—"})</option>
           </select>
+          <label className="inline-flex items-center gap-2 text-xs text-slate-200">
+            <input type="checkbox" checked={onlineOnly} onChange={e => setOnlineOnly(e.target.checked)}
+              className="accent-sky-500" />
+            Online only ({onlineUserIds.size})
+          </label>
+          <button type="button" onClick={() => void fetchLivePaidTiers()}
+            disabled={paidStatus === "loading"}
+            className="jbh-admin-secondary rounded-xl px-3 py-2 text-xs disabled:opacity-40">
+            Refresh tiers
+          </button>
         </div>
       </div>
 
+      {paidError && (
+        <div role="alert" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+          {paidError}
+        </div>
+      )}
+
+      {fetchError && (
+        <div role="alert" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+          {fetchError}
+        </div>
+      )}
+
       {loading ? (
-        <div className="text-center py-12 text-gray-500 text-xs">Loading user profiles...</div>
+        <div role="status" className="text-center py-12 text-gray-400 text-sm">Loading user profiles...</div>
       ) : (
         <>
           <div className="jbh-admin-panel jbh-admin-table overflow-x-auto">
@@ -261,7 +300,7 @@ export default function AdminUsers() {
               <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="p-4">User Details</th>
-                  <th className="p-4">Profile type</th>
+                  <th className="p-4" title="Verified active LIVE paid tier, or Free if no current paid grant">Payment tier</th>
                   <th className="p-4">Status</th>
                   <th className="p-4">Joined Date</th>
                   <th className="p-4 text-right">Actions</th>
@@ -277,7 +316,7 @@ export default function AdminUsers() {
                 ) : (
                   paginatedUsers.map((u) => {
                     const isOnline = onlineUserIds.has(u.id);
-                    const isVip = (u.account_type || "").toUpperCase() === "VIP";
+                    const tier = getAdminDisplayedTier(u, paidTiers, paidStatus);
                     const isAdminUser = (u.role || "").toLowerCase() === "admin" || (u.account_type || "").toLowerCase() === "admin";
 
                     return (
@@ -288,10 +327,19 @@ export default function AdminUsers() {
                         </td>
                         <td className="p-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                            isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                          }`}>
-                            Profile: {u.account_type || 'unknown'}
+                            tier === "vip"
+                              ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                              : tier === "standard"
+                                ? "bg-sky-500/10 text-sky-300 border-sky-500/20"
+                                : tier === "free"
+                                  ? "bg-slate-500/10 text-slate-300 border-slate-500/20"
+                                  : "bg-rose-500/10 text-rose-300 border-rose-500/20"
+                          }`} title="Based on current server-authorized LIVE paid entitlement grants">
+                            {getAdminDisplayedTierLabel(tier)}
                           </span>
+                          {isAdminUser && (
+                            <div className="mt-2 text-[10px] text-violet-300">Admin role</div>
+                          )}
                         </td>
                         <td className="p-4">
                           {u.is_banned ? (
