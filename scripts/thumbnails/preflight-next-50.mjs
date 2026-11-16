@@ -151,7 +151,8 @@ async function main() {
   console.log("Any unverified item must remain excluded from public thumbnail publication.");
 }
 
-if (process.argv[1] && process.argv[1].endsWith("preflight-next-50.mjs")) {
+// Explicit execution flag prevents accidental runs when imported by node --test.
+if (process.argv.includes("--run")) {
   main().catch(err => {
     console.error("Preflight stopped:", err?.message || "Unknown error.");
     process.exitCode = 1;
