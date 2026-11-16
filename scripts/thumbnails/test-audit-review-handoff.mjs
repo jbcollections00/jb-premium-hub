@@ -39,3 +39,22 @@ test("unauthorized publication flags in preflight are rejected", () => {
   p.items[0].approval_to_publish=true;
   assert.throws(()=>auditHandoff(p,csv),/rejected/);
 });
+
+
+test("import with --run never triggers the handoff CLI as a side effect", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const imported = new URL("./create-review-handoff.mjs", import.meta.url);
+  const fakeParent = fileURLToPath(new URL("./audit-review-handoff.mjs", import.meta.url));
+  const evalSource = [
+    "process.argv[1] = " + JSON.stringify(fakeParent) + ";",
+    "process.argv.push('--run');",
+    "await import(" + JSON.stringify(imported.href) + ");",
+  ].join(" ");
+  const out = spawnSync(process.execPath, ["--input-type=module", "--eval", evalSource], {
+    encoding:"utf8", timeout:10000,
+    env: {...process.env, JB_THUMBNAIL_OUTPUT_DIR:"__nonexistent_regression_fixture__"},
+  });
+  assert.equal(out.status,0, out.stderr);
+  assert.equal(out.stdout,"", "Import must not run the handoff generator");
+});
