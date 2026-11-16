@@ -11,7 +11,7 @@ const albumCards = read("../../src/components/home/HomeAlbumCollections.jsx");
 
 test("legacy catalog hold defaults ON and is not a destructive action", () => {
   assert.match(hold, /export const LEGACY_CATALOG_HOME_HOLD = true/);
-  assert.doesNotMatch(hold, /TRUNCATE|DELETE FROM|uploadFileToR2|\\.delete\\(/i);
+  assert.doesNotMatch(hold, /TRUNCATE|DELETE FROM|uploadFileToR2|\.delete\(/i);
 });
 
 test("Home suppresses legacy grid, popular listings, and selected playback", () => {
@@ -33,5 +33,5 @@ test("album directory remains visible and old media is not deleted", () => {
   assert.match(home, /<HomeAlbumCollections \/>/);
   assert.match(albumCards, /\.from\("jb_media_albums"\)/);
   assert.ok(home.indexOf("{/* MOST WATCHED VIDEOS SHOWCASE SECTION */}") < home.indexOf("<HomeAlbumCollections />"));
-  assert.doesNotMatch(home, /\\.from\\("media"\\)\\.delete\\(/);
+  assert.doesNotMatch(home, /\.from\("media"\)\.delete\(/);
 });
