@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
+import HomeAlbumCollections from "../../components/home/HomeAlbumCollections";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
@@ -1155,6 +1156,7 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
+        <HomeAlbumCollections />
         {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
