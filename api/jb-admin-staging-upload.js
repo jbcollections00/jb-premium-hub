@@ -111,7 +111,9 @@ async function begin(req, res, services, admin) {
     typeof fileName !== "string" ||
     !fileName.trim() ||
     fileName.length > MAX_NAME_LENGTH ||
-    /[/\\\x00-\x1f]/.test(fileName)
+    fileName.includes("/") ||
+    fileName.includes(String.fromCharCode(92)) ||
+    /[\x00-\x1f]/.test(fileName)
   ) {
     return fail(res, 400, "Invalid video file name.");
   }
