@@ -77,11 +77,15 @@ export default function AdminPrivateAlbumUpload() {
   const pickerRef = useRef(null);
   const mountedRef = useRef(true);
   const localPreviewUrls = useRef(new Set());
+  const previewGenerationRef = useRef(0);
+  const preselectedJpegs = useRef(new Map());
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      previewGenerationRef.current += 1;
+      preselectedJpegs.current.clear();
       for (const url of localPreviewUrls.current) URL.revokeObjectURL(url);
       localPreviewUrls.current.clear();
     };
@@ -161,8 +165,28 @@ export default function AdminPrivateAlbumUpload() {
   const doneCount = queue.filter((item) => item.status === "done").length;
   const failedCount = queue.filter((item) => item.status === "failed").length;
 
+  const previewSelectedFiles = async (selected, generation) => {
+    // To conserve memory on phones, preview at most the first 20 selected
+    // files before upload. Additional files get previews as they upload.
+    for (let index = 0; index < Math.min(selected.length, 20); index += 1) {
+      if (!mountedRef.current || previewGenerationRef.current !== generation) return;
+      const file = selected[index];
+      if (!ALLOWED_EXTENSIONS.has(basenameExtension(file.name))) continue;
+      const jpeg = await capturePrivateVideoPreview(file);
+      if (!mountedRef.current || previewGenerationRef.current !== generation) return;
+      if (!jpeg) continue;
+      const previewUrl = URL.createObjectURL(jpeg);
+      localPreviewUrls.current.add(previewUrl);
+      preselectedJpegs.current.set(index, jpeg);
+      updateQueue(index, { previewUrl });
+    }
+  };
+
   const selectFiles = (event) => {
     const selected = [...(event.target.files || [])];
+    previewGenerationRef.current += 1;
+    const generation = previewGenerationRef.current;
+    preselectedJpegs.current.clear();
     for (const url of localPreviewUrls.current) URL.revokeObjectURL(url);
     localPreviewUrls.current.clear();
     setFiles(selected);
@@ -180,6 +204,7 @@ export default function AdminPrivateAlbumUpload() {
     setErrorText(invalid
       ? "Use MP4, MOV, WEBM, MKV or AVI files between 1 byte and 2 GB each."
       : "");
+    if (!invalid) void previewSelectedFiles(selected, generation);
   };
 
   const submit = async (event) => {
@@ -198,6 +223,8 @@ export default function AdminPrivateAlbumUpload() {
     }
 
     setBusy(true);
+    // Cancel any in-progress preselection previews while processing the batch.
+    previewGenerationRef.current += 1;
     setErrorText("");
     let failures = 0;
     try {
@@ -234,14 +261,15 @@ export default function AdminPrivateAlbumUpload() {
           // The JPEG is uploaded back to the SAME private staging bucket,
           // with no writes to public.media or the public-assets bucket.
           let thumbnailSaved = false;
-          const jpeg = await capturePrivateVideoPreview(file);
+          const jpeg = preselectedJpegs.current.get(index) || await capturePrivateVideoPreview(file);
           if (jpeg) {
-            const previewUrl = URL.createObjectURL(jpeg);
-            localPreviewUrls.current.add(previewUrl);
+            const previewUrl = preselectedJpegs.current.has(index)
+              ? undefined : URL.createObjectURL(jpeg);
+            if (previewUrl) localPreviewUrls.current.add(previewUrl);
             updateQueue(index, {
               status: "thumbnail",
               loaded: file.size,
-              previewUrl,
+              ...(previewUrl ? { previewUrl } : {}),
               message: "Saving private video thumbnail…",
             });
             try {
@@ -281,6 +309,7 @@ export default function AdminPrivateAlbumUpload() {
       }
 
       await loadStaging();
+      preselectedJpegs.current.clear();
       if (failures === 0) {
         setFiles([]);
         if (pickerRef.current) pickerRef.current.value = "";
@@ -371,7 +400,8 @@ export default function AdminPrivateAlbumUpload() {
         <p className="text-xs text-slate-400">
           Maximum 2 GB per file. Album: {albums.find((a) => a.id === albumId)?.name || "None"}.
           Videos must be cleared before they can be published.
-          A private thumbnail is generated automatically for supported codecs. If preview generation fails,
+          Thumbnails for the first 20 selected videos appear before upload when supported.
+          Private thumbnails are saved automatically after each verified upload. If extraction fails,
           the JB Collections logo is used. No thumbnail is made public before content clearance.
         </p>
 
