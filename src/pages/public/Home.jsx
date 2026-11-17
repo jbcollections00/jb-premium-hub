@@ -125,6 +125,17 @@ export default function Home() {
   const homeAudience = resolveHomeAudience(userProfile, billingReady, membership);
   const canBrowseMemberAlbums = homeAudience === "member";
   const showFreeHome = homeAudience === "free";
+  // Render from the appropriate entitlement-filtered list, never from
+  // stale membership state during an account change.
+  const displayedMediaList = LEGACY_CATALOG_HOME_HOLD ? [] : showFreeHome
+    ? mediaList.filter((item) =>
+        item?.is_free_preview === true &&
+        !Object.prototype.hasOwnProperty.call(item, "media_url")
+      )
+    : canBrowseMemberAlbums ? mediaList : [];
+  const displayedMostWatched = !LEGACY_CATALOG_HOME_HOLD && canBrowseMemberAlbums
+    ? mostWatched : [];
+  const displayedTotalCount = LEGACY_CATALOG_HOME_HOLD || homeAudience === "pending" ? 0 : totalCount;
   // The checkout entitlement is authoritative for new memberships.
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
@@ -1274,9 +1285,9 @@ export default function Home() {
                 <div key={n} className="bg-slate-950/80 border border-slate-800/80 rounded-2xl h-44 animate-pulse"></div>
               ))}
             </div>
-          ) : mostWatched.length > 0 ? (
+          ) : displayedMostWatched.length > 0 ? (
             <div className="flex gap-4 overflow-x-auto pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
-              {mostWatched.map((item, index) => {
+              {displayedMostWatched.map((item, index) => {
                 const rank = index + 1;
                 const badgeStyle =
                   rank === 1
@@ -1383,7 +1394,7 @@ export default function Home() {
             {showFreeHome ? "Free to Watch" : "Media library"}
           </h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-            Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
+            Showing {displayedMediaList.length} of <strong className="text-indigo-300">{displayedTotalCount}</strong> videos
           </span>
         </div>
 
@@ -1439,7 +1450,7 @@ export default function Home() {
             <p className="font-semibold text-rose-200">{mediaError}</p>
             <button type="button" onClick={() => fetchMedia(currentPage, activeCategory)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
           </div>
-        ) : mediaList.length === 0 ? (
+        ) : displayedMediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
             <p className="text-slate-400">{
               showFreeHome
@@ -1459,7 +1470,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {mediaList.map((item) => (
+            {displayedMediaList.map((item) => (
               <div
                 key={item.id}
                 id={`video-${item.id}`}
