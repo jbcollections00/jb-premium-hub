@@ -16,6 +16,11 @@ import {
 import { FREE_PREVIEW_UI_ENABLED } from "../../services/freePreview";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 import NewCatalogReadiness from "../../components/admin/NewCatalogReadiness";
+import AdminPrivateAlbumUpload from "../../components/admin/AdminPrivateAlbumUpload";
+
+// Keep the historical public signer/upload path unreachable. Only private
+// staging can accept new video bytes until reviewed publication exists.
+const LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED = true;
 
 export default function AdminMediaTab() {
   const [
@@ -799,6 +804,10 @@ export default function AdminMediaTab() {
       event
     ) => {
       event.preventDefault();
+      if (LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED) {
+        window.alert("Legacy public R2 upload is disabled. Use Private Album Upload.");
+        return;
+      }
 
       if (
         uploadFiles.length ===
@@ -1694,7 +1703,7 @@ export default function AdminMediaTab() {
             />
           </svg>
 
-          Upload media
+          Private Album Upload
 
         </button>
 
@@ -1704,7 +1713,14 @@ export default function AdminMediaTab() {
           UPLOAD TAB
       ===================================================== */}
 
-      {activeTab ===
+      {activeTab === "upload" && (
+        <div className="jbh-admin-panel space-y-5 p-5 sm:p-7">
+          <AdminPrivateAlbumUpload />
+        </div>
+      )}
+
+      {/* Legacy uploader retained for reference but never rendered. */}
+      {!LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED && activeTab ===
         "upload" && (
         <div className="jbh-admin-panel space-y-5 p-5 sm:p-7">
 
