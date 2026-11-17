@@ -73,4 +73,36 @@ test("staging API denies unauthenticated and unwanted origins before any upload"
   const badMethod = response();
   await handler({ method: "GET", headers: { origin: "http://localhost:5173" } }, badMethod);
   assert.equal(badMethod.statusCode, 405);
+
+  const branchHost = "jb-premium-hub-git-phase-69f786-jbcollections00-7010s-projects.vercel.app";
+  const branchOrigin = "https://" + branchHost;
+  const sameOrigin = response();
+  await handler({
+    method: "POST",
+    headers: { host: branchHost, origin: branchOrigin },
+  }, sameOrigin);
+  assert.equal(sameOrigin.statusCode, 401);
+  assert.equal(sameOrigin.headers["Access-Control-Allow-Origin"], branchOrigin);
+
+  const wrongOrigin = response();
+  await handler({
+    method: "POST",
+    headers: { host: branchHost, origin: "https://attacker.example" },
+  }, wrongOrigin);
+  assert.equal(wrongOrigin.statusCode, 403);
+  assert.deepEqual(wrongOrigin.body, { error: "Origin not permitted." });
+
+  const spoofedHost = response();
+  await handler({
+    method: "POST",
+    headers: { host: "attacker.example", origin: "https://attacker.example" },
+  }, spoofedHost);
+  assert.equal(spoofedHost.statusCode, 403);
+
+  const crossOriginPreview = response();
+  await handler({
+    method: "POST",
+    headers: { host: branchHost, origin: "https://another-preview.example" },
+  }, crossOriginPreview);
+  assert.equal(crossOriginPreview.statusCode, 403);
 });
