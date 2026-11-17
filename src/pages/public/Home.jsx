@@ -4,6 +4,7 @@ import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import HomeAlbumCollections from "../../components/home/HomeAlbumCollections";
 import { LEGACY_CATALOG_HOME_HOLD } from "../../services/legacyCatalogHold";
+import { resolveHomeAudience, getHomeCategory } from "../../services/homeAudience";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
@@ -121,13 +122,46 @@ export default function Home() {
   const membership = resolveMemberPresentation(userProfile, billingAccess);
   const isAdmin = membership.isAdmin;
   const isVIP = membership.tier === "vip";
+  const homeAudience = resolveHomeAudience(userProfile, billingReady, membership);
+  const canBrowseMemberAlbums = homeAudience === "member";
+  const showFreeHome = homeAudience === "free";
+  // Render from the appropriate entitlement-filtered list, never from
+  // stale membership state during an account change.
+  const displayedMediaList = LEGACY_CATALOG_HOME_HOLD ? [] : showFreeHome
+    ? mediaList.filter((item) =>
+        item?.is_free_preview === true &&
+        !Object.prototype.hasOwnProperty.call(item, "media_url")
+      )
+    : canBrowseMemberAlbums ? mediaList : [];
+  const displayedMostWatched = !LEGACY_CATALOG_HOME_HOLD && canBrowseMemberAlbums
+    ? mostWatched : [];
+  const displayedTotalCount = LEGACY_CATALOG_HOME_HOLD || homeAudience === "pending" ? 0 : totalCount;
   // The checkout entitlement is authoritative for new memberships.
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
   const canDownload = !LEGACY_CATALOG_HOME_HOLD && billingReady && membership.canDownload;
   const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
   const selectedCanPlay = !LEGACY_CATALOG_HOME_HOLD && billingReady && Boolean(userProfile?.id) &&
-    (membership.canViewAlbums || (FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true));
+    (canBrowseMemberAlbums || (showFreeHome && FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true));
+
+  // Switching to FREE, including on refresh or expired membership, removes
+  // any old member-only album selection from the address bar and page state.
+  useEffect(() => {
+    if (!showFreeHome || activeCategory === "free") return;
+    setActiveCategory("free");
+    setCurrentPage(1);
+    const url = new URL(window.location.href);
+    url.searchParams.set("cat", "free");
+    url.searchParams.set("page", "1");
+    url.searchParams.delete("v");
+    url.searchParams.delete("autoplay");
+    window.history.replaceState({}, "", url);
+  }, [showFreeHome, activeCategory]);
+
+  useEffect(() => {
+    if (!showFreeHome || !selectedMedia || selectedMedia.is_free_preview === true) return;
+    setSelectedMedia(null);
+  }, [showFreeHome, selectedMedia?.id, selectedMedia?.is_free_preview]);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,7 +266,7 @@ export default function Home() {
     if (!billingReady) return;
     // Refresh the gallery when the authenticated user's entitlement resolves.
     // An initially signed-in FREE user must not rely on full media-table RLS.
-    if (FREE_PREVIEW_UI_ENABLED && !userProfile?.id) {
+    if (homeAudience === "pending") {
       ++mediaFetchSerialRef.current;
       setMediaList([]);
       setTotalCount(0);
@@ -241,15 +275,15 @@ export default function Home() {
       setLoading(false);
       return;
     }
-    fetchMedia(currentPage, activeCategory);
-    if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
+    fetchMedia(currentPage, getHomeCategory(activeCategory, homeAudience));
+    if (!canBrowseMemberAlbums) {
       // Do not query the paid-library 'most watched' records for FREE accounts.
       setMostWatched([]);
       setMostWatchedLoading(false);
     } else {
       fetchMostWatched();
     }
-  }, [currentPage, activeCategory, billingReady, membership.canViewAlbums, userProfile?.id]);
+  }, [currentPage, activeCategory, billingReady, homeAudience, canBrowseMemberAlbums, userProfile?.id]);
 
   useEffect(() => {
     const allIds = [
@@ -402,6 +436,16 @@ export default function Home() {
 
   const fetchMedia = async (page = 1, category = "all") => {
     const requestId = ++mediaFetchSerialRef.current;
+    // Never let a FREE or unresolved account query the member media table.
+    // The server-side Free to Watch RPC remains the only future FREE list source.
+    if (homeAudience === "pending" || (homeAudience === "free" && !FREE_PREVIEW_UI_ENABLED)) {
+      setMediaList([]);
+      setTotalCount(0);
+      setMediaError("");
+      setLoading(false);
+      return;
+    }
+    category = getHomeCategory(category, homeAudience);
     // Album category metadata can be selected, but no server-cleared
     // video-to-album association is available. Never fall through to the
     // unfiltered legacy media query for an album selection.
@@ -834,11 +878,12 @@ export default function Home() {
   };
 
   const handleCategoryChange = (catKey) => {
-    setActiveCategory(catKey);
+    const nextCategory = getHomeCategory(catKey, homeAudience);
+    setActiveCategory(nextCategory);
     setCurrentPage(1);
 
     const url = new URL(window.location.href);
-    url.searchParams.set("cat", catKey);
+    url.searchParams.set("cat", nextCategory);
     url.searchParams.set("page", 1);
     window.history.replaceState({}, "", url);
   };
@@ -1149,25 +1194,34 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        {!LEGACY_CATALOG_HOME_HOLD && FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
+        {showFreeHome && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
-              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
-              <h2 className="mt-2 text-xl font-extrabold text-white sm:text-2xl">Watch selected videos for free.</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-300">Watch these videos as often as you like. Explore membership options whenever you're ready for the full collection.</p>
+              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">FREE MEMBER HOME</span>
+              <h2 className="mt-2 text-xl font-extrabold text-white sm:text-2xl">Free to Watch</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                {LEGACY_CATALOG_HOME_HOLD
+                  ? "Our new Free to Watch collection is being prepared. Only independently cleared videos selected by the admin will appear here."
+                  : FREE_PREVIEW_UI_ENABLED
+                    ? "Only admin-selected Free to Watch videos appear here. Member albums are available with Standard or VIP."
+                    : "Free video access is not enabled yet. New approved free videos will be listed here when available."}
+              </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => handleCategoryChange("free")} className="jbh-btn">Explore free videos</button>
+              {!LEGACY_CATALOG_HOME_HOLD && FREE_PREVIEW_UI_ENABLED && (
+                <button type="button" onClick={() => handleCategoryChange("free")} className="jbh-btn">Explore free videos</button>
+              )}
               <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
             </div>
           </section>
         )}
-        {LEGACY_CATALOG_HOME_HOLD && (
+        {LEGACY_CATALOG_HOME_HOLD && canBrowseMemberAlbums && (
           <p role="status" className="mb-5 rounded-2xl border border-sky-500/25 bg-sky-950/20 px-5 py-4 text-sm text-sky-100">
             We are preparing a new catalog. Previously listed videos are not displayed here.
           </p>
         )}
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
+        {canBrowseMemberAlbums && (
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
           <div className="pointer-events-none absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl"></div>
@@ -1231,9 +1285,9 @@ export default function Home() {
                 <div key={n} className="bg-slate-950/80 border border-slate-800/80 rounded-2xl h-44 animate-pulse"></div>
               ))}
             </div>
-          ) : mostWatched.length > 0 ? (
+          ) : displayedMostWatched.length > 0 ? (
             <div className="flex gap-4 overflow-x-auto pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
-              {mostWatched.map((item, index) => {
+              {displayedMostWatched.map((item, index) => {
                 const rank = index + 1;
                 const badgeStyle =
                   rank === 1
@@ -1332,16 +1386,27 @@ export default function Home() {
           )}
         </div>
 
+        )}
+
         {/* VAULT MEDIA LIST HEADER */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl md:text-2xl font-bold text-white">Media library</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-white">
+            {showFreeHome ? "Free to Watch" : "Media library"}
+          </h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-            Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
+            Showing {displayedMediaList.length} of <strong className="text-indigo-300">{displayedTotalCount}</strong> videos
           </span>
         </div>
 
         {/* CATEGORY TABS */}
         <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
+          {showFreeHome && (
+            <span aria-current="true" className="flex shrink-0 items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-700 px-5 py-2.5 text-xs font-bold text-white">
+              ▶ Free to Watch
+            </span>
+          )}
+          {canBrowseMemberAlbums && (
+          <>
           <button
             onClick={() => handleCategoryChange("all")}
             className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
@@ -1369,6 +1434,8 @@ export default function Home() {
             activeCategory={activeCategory}
             onSelectCategory={handleCategoryChange}
           />
+          </>
+          )}
         </div>
 
         <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
@@ -1383,10 +1450,16 @@ export default function Home() {
             <p className="font-semibold text-rose-200">{mediaError}</p>
             <button type="button" onClick={() => fetchMedia(currentPage, activeCategory)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
           </div>
-        ) : mediaList.length === 0 ? (
+        ) : displayedMediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
             <p className="text-slate-400">{
-              activeCategory.startsWith("album:")
+              showFreeHome
+                ? LEGACY_CATALOG_HOME_HOLD
+                  ? "Free to Watch videos are being prepared. Only approved selections by the admin will be available."
+                  : FREE_PREVIEW_UI_ENABLED
+                    ? "Wala pang piniling Free to Watch videos ang admin."
+                    : "Free to Watch is currently unavailable."
+                : activeCategory.startsWith("album:")
                 ? "Wala pang available na videos sa album na ito. Hinihintay ang verified new-upload integration."
                 : LEGACY_CATALOG_HOME_HOLD
                   ? "The new video catalog is being prepared."
@@ -1397,7 +1470,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {mediaList.map((item) => (
+            {displayedMediaList.map((item) => (
               <div
                 key={item.id}
                 id={`video-${item.id}`}
