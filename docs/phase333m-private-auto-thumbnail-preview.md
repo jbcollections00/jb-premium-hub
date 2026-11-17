@@ -3,7 +3,7 @@
 ## Implemented
 
 - On each **new** verified private video staging upload, the admin's browser seeks near the start of the original selected video file and creates a compact **JPEG thumbnail** (maximum 480x270 and 1 MB). This does not require a separate user-selected image file.
-- The preview appears directly in the Admin bulk upload progress list.
+- Before uploading, the first 20 selected videos also get local-only previews directly in the Admin bulk upload progress list (to avoid decoding hundreds of videos in parallel on low-memory devices). Remaining files get their preview after the private upload. Local file-selection previews work in the Vite localhost UI even if no Preview backend is available.
 - After the video has been verified as a private `pending_review` object, the admin-authenticated staging API issues a signed PUT URL for a matching JPEG in the **same non-public** `jb-premium-private-videos` R2 bucket.
 - Backend HEAD verification checks image content type and byte size before saving `preview_key` in an RLS-protected staging row.
 - The Admin Private Upload Queue uses an authenticated API to generate **short-lived** signed GET URLs for these private preview JPEGs. Existing drafts remain read-only; the preview survives a page refresh.
@@ -33,6 +33,10 @@ npm run build
 ```
 
 Then test the **protected Vercel Preview** with a small **original, non-explicit, rights-authorized** MP4. Upload it privately to Educational Videos, verify both the new JPEG in the Admin progress list and the same thumbnail after refreshing the private queue. Revisit the queue when the signed GET has expired to confirm a fresh link is obtained. Verify Home does not display the pending-review image or video. Do not use the previously uploaded copyrighted official music video as a publishing test or auto-backfill its preview.
+
+## Preview deployment note (2026-11-17)
+
+GitHub Vercel status for the initial Phase 333M head reports **build-rate-limit on the Hobby plan** (upgrade-to-Pro URL), not a diagnosed compiler failure. Use the local Vite build and local no-upload preview first. Do not assume the newest branch is deployed on Vercel or click redeploy repeatedly while limited. Recheck build status later.
 
 ## Not implemented
 
