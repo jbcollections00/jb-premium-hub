@@ -44,11 +44,17 @@ if (missing.length) {
     },
   });
 
-  const getAlbumCount = async (client) => {
+  const getAlbumCount = async (client, allowDenied = false) => {
     const { count, error } = await client
       .from(ALBUMS_TABLE)
       .select("id", { count: "exact", head: true });
-    if (error) throw new Error("Album SELECT failed: " + (error.code || "UNKNOWN"));
+    // The anonymous role has SELECT revoked: a permission-denied response
+    // is a valid PASS. Other errors (missing table/network/failed RLS)
+    // must never be counted as a successful access-control test.
+    if (error) {
+      if (allowDenied && error.code === "42501") return 0;
+      throw new Error("Album SELECT failed: " + (error.code || "UNKNOWN"));
+    }
     if (!Number.isInteger(count)) throw new Error("Supabase returned no album count");
     return count;
   };
@@ -57,7 +63,7 @@ if (missing.length) {
 
   const checkAnon = async () => {
     const client = createScopedClient();
-    const count = await getAlbumCount(client);
+    const count = await getAlbumCount(client, true);
     const passed = count === 0;
     results.push({ account: "ANONYMOUS", result: passed ? "PASS" : "FAIL", albumCount: count });
     if (!passed) throw new Error("Anonymous sessions can still read member album records");
