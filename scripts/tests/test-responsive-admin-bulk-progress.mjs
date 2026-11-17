@@ -49,7 +49,7 @@ test("upload failures are represented per file, and later files can continue", (
   assert.match(uploader, /status: "uploading"/);
 });
 
-test("new progress UI does not publish or extract video-frame thumbnails", () => {
+test("new progress UI does not publish video thumbnails or media to public feeds", () => {
   assert.match(uploader, /stagingRequest\("begin"/);
   assert.match(uploader, /stagingRequest\("complete"/);
   assert.match(uploader, /\.from\("jb_media_upload_staging"\)/);

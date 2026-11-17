@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
+import { capturePrivateVideoPreview } from "../../services/privateVideoPreview";
+import { DEFAULT_THUMBNAIL_URL, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 // Private staging only. These uploads never insert into public.media,
 // create playback links, or publish files to member/public pages.
@@ -70,13 +72,23 @@ export default function AdminPrivateAlbumUpload() {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [existingDrafts, setExistingDrafts] = useState([]);
+  const [privatePreviews, setPrivatePreviews] = useState({});
   const [draftsLoading, setDraftsLoading] = useState(true);
   const pickerRef = useRef(null);
   const mountedRef = useRef(true);
+  const localPreviewUrls = useRef(new Set());
+  const previewGenerationRef = useRef(0);
+  const preselectedJpegs = useRef(new Map());
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      previewGenerationRef.current += 1;
+      preselectedJpegs.current.clear();
+      for (const url of localPreviewUrls.current) URL.revokeObjectURL(url);
+      localPreviewUrls.current.clear();
+    };
   }, []);
 
   const updateQueue = (index, patch) => {
@@ -95,7 +107,18 @@ export default function AdminPrivateAlbumUpload() {
         .order("created_at", { ascending: false })
         .limit(100);
       if (error) throw error;
-      if (mountedRef.current) setExistingDrafts(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      if (mountedRef.current) setExistingDrafts(rows);
+      // Use fresh admin-authorized short-lived GET links after refresh.
+      // This does not generate public thumbnails, video playback or catalog access.
+      const ids = rows.filter((row) => row.status === "pending_review").map((row) => row.id);
+      try {
+        const response = await stagingRequest("thumbnail-previews", { draftIds: ids });
+        if (mountedRef.current) setPrivatePreviews(response.previews || {});
+      } catch {
+        // Staging remains readable if private thumbnails are not configured yet.
+        if (mountedRef.current) setPrivatePreviews({});
+      }
     } catch {
       if (mountedRef.current) setExistingDrafts([]);
     } finally {
@@ -142,8 +165,30 @@ export default function AdminPrivateAlbumUpload() {
   const doneCount = queue.filter((item) => item.status === "done").length;
   const failedCount = queue.filter((item) => item.status === "failed").length;
 
+  const previewSelectedFiles = async (selected, generation) => {
+    // To conserve memory on phones, preview at most the first 20 selected
+    // files before upload. Additional files get previews as they upload.
+    for (let index = 0; index < Math.min(selected.length, 20); index += 1) {
+      if (!mountedRef.current || previewGenerationRef.current !== generation) return;
+      const file = selected[index];
+      if (!ALLOWED_EXTENSIONS.has(basenameExtension(file.name))) continue;
+      const jpeg = await capturePrivateVideoPreview(file);
+      if (!mountedRef.current || previewGenerationRef.current !== generation) return;
+      if (!jpeg) continue;
+      const previewUrl = URL.createObjectURL(jpeg);
+      localPreviewUrls.current.add(previewUrl);
+      preselectedJpegs.current.set(index, jpeg);
+      updateQueue(index, { previewUrl });
+    }
+  };
+
   const selectFiles = (event) => {
     const selected = [...(event.target.files || [])];
+    previewGenerationRef.current += 1;
+    const generation = previewGenerationRef.current;
+    preselectedJpegs.current.clear();
+    for (const url of localPreviewUrls.current) URL.revokeObjectURL(url);
+    localPreviewUrls.current.clear();
     setFiles(selected);
     setQueue(selected.map((file) => ({
       name: file.name,
@@ -159,6 +204,7 @@ export default function AdminPrivateAlbumUpload() {
     setErrorText(invalid
       ? "Use MP4, MOV, WEBM, MKV or AVI files between 1 byte and 2 GB each."
       : "");
+    if (!invalid) void previewSelectedFiles(selected, generation);
   };
 
   const submit = async (event) => {
@@ -177,6 +223,8 @@ export default function AdminPrivateAlbumUpload() {
     }
 
     setBusy(true);
+    // Cancel any in-progress preselection previews while processing the batch.
+    previewGenerationRef.current += 1;
     setErrorText("");
     let failures = 0;
     try {
@@ -209,10 +257,47 @@ export default function AdminPrivateAlbumUpload() {
           if (finished.status !== "pending_review") {
             throw new Error("Private R2 upload was not verified by the server.");
           }
+          // Only after the PRIVATE video is verified do we derive its poster.
+          // The JPEG is uploaded back to the SAME private staging bucket,
+          // with no writes to public.media or the public-assets bucket.
+          let thumbnailSaved = false;
+          const jpeg = preselectedJpegs.current.get(index) || await capturePrivateVideoPreview(file);
+          if (jpeg) {
+            const previewUrl = preselectedJpegs.current.has(index)
+              ? undefined : URL.createObjectURL(jpeg);
+            if (previewUrl) localPreviewUrls.current.add(previewUrl);
+            updateQueue(index, {
+              status: "thumbnail",
+              loaded: file.size,
+              ...(previewUrl ? { previewUrl } : {}),
+              message: "Saving private video thumbnail…",
+            });
+            try {
+              const thumb = await stagingRequest("thumbnail-begin", {
+                draftId: draft.draftId,
+                fileSize: jpeg.size,
+              });
+              if (!thumb.uploadUrl || thumb.contentType !== "image/jpeg") {
+                throw new Error("Private thumbnail upload is unavailable.");
+              }
+              await putPrivateObjectWithProgress(thumb.uploadUrl, jpeg, "image/jpeg", () => {});
+              const saved = await stagingRequest("thumbnail-complete", {
+                draftId: draft.draftId,
+                fileSize: jpeg.size,
+              });
+              thumbnailSaved = saved.status === "private_preview_saved";
+            } catch {
+              // Thumbnail failures do not undo a fully verified private video.
+              // Show the locally generated image during this session and fall
+              // back to the shared JB logo on a future visit if not persisted.
+            }
+          }
           updateQueue(index, {
             status: "done",
             loaded: file.size,
-            message: "Private · Pending review",
+            message: thumbnailSaved
+              ? "Private · Pending review · Thumbnail saved"
+              : "Private · Pending review · Default cover on reload",
           });
         } catch (error) {
           failures += 1;
@@ -224,6 +309,7 @@ export default function AdminPrivateAlbumUpload() {
       }
 
       await loadStaging();
+      preselectedJpegs.current.clear();
       if (failures === 0) {
         setFiles([]);
         if (pickerRef.current) pickerRef.current.value = "";
@@ -242,7 +328,8 @@ export default function AdminPrivateAlbumUpload() {
   };
 
   const statusLabel = (item) => {
-    if (item.status === "done") return "Private · Pending review";
+    if (item.status === "done") return item.message || "Private · Pending review";
+    if (item.status === "thumbnail") return "Saving private thumbnail…";
     if (item.status === "failed") return item.message;
     if (item.status === "verifying") return "Verifying upload…";
     if (item.status === "uploading") return "Uploading · " + fileProgress(item) + "%";
@@ -313,7 +400,9 @@ export default function AdminPrivateAlbumUpload() {
         <p className="text-xs text-slate-400">
           Maximum 2 GB per file. Album: {albums.find((a) => a.id === albumId)?.name || "None"}.
           Videos must be cleared before they can be published.
-          Default JB logo is used for missing public thumbnail artwork; this intake does not extract video frames.
+          Thumbnails for the first 20 selected videos appear before upload when supported.
+          Private thumbnails are saved automatically after each verified upload. If extraction fails,
+          the JB Collections logo is used. No thumbnail is made public before content clearance.
         </p>
 
         {queue.length > 0 && (
@@ -342,6 +431,12 @@ export default function AdminPrivateAlbumUpload() {
                 return (
                   <li key={index} className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-950/50 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2 text-xs">
+                      <img
+                        src={item.previewUrl || DEFAULT_THUMBNAIL_URL}
+                        alt=""
+                        onError={handleThumbnailLoadError}
+                        className="h-14 w-24 shrink-0 rounded-md border border-slate-700 object-contain"
+                      />
                       <span className="min-w-0 flex-1 break-all text-slate-100">{item.name}</span>
                       <span className={
                         item.status === "failed" ? "text-rose-300" :
@@ -404,8 +499,16 @@ export default function AdminPrivateAlbumUpload() {
         ) : (
           <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
             {existingDrafts.map((draft) => (
-              <li key={draft.id} className="flex min-w-0 flex-wrap justify-between gap-2 rounded-lg border border-slate-800 p-3 text-xs">
-                <span className="min-w-0 break-all text-slate-200">{draft.original_filename}</span>
+              <li key={draft.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 p-3 text-xs">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <img
+                    src={privatePreviews[draft.id] || DEFAULT_THUMBNAIL_URL}
+                    alt=""
+                    onError={handleThumbnailLoadError}
+                    className="h-14 w-24 shrink-0 rounded-md border border-slate-700 object-contain"
+                  />
+                  <span className="min-w-0 break-all text-slate-200">{draft.original_filename}</span>
+                </div>
                 <span className="font-semibold text-amber-200">
                   {draft.status === "pending_review" ? "Pending review" : "Upload incomplete"}
                 </span>
