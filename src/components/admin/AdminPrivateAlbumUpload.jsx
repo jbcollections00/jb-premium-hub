@@ -296,8 +296,8 @@ export default function AdminPrivateAlbumUpload() {
             status: "done",
             loaded: file.size,
             message: thumbnailSaved
-              ? "Private · Pending review · Thumbnail saved"
-              : "Private · Pending review · Default cover on reload",
+              ? "Private · Not published · Thumbnail saved"
+              : "Private · Not published · Default cover on reload",
           });
         } catch (error) {
           failures += 1;
@@ -328,7 +328,7 @@ export default function AdminPrivateAlbumUpload() {
   };
 
   const statusLabel = (item) => {
-    if (item.status === "done") return item.message || "Private · Pending review";
+    if (item.status === "done") return item.message || "Private · Not published";
     if (item.status === "thumbnail") return "Saving private thumbnail…";
     if (item.status === "failed") return item.message;
     if (item.status === "verifying") return "Verifying upload…";
@@ -344,7 +344,7 @@ export default function AdminPrivateAlbumUpload() {
         <p className="mt-1 text-xs leading-relaxed">
           Select an album and multiple video files. Uploads are stored privately,
           and tracked with per-file and overall progress. No public video links are created.
-          All uploaded videos remain Pending Review.
+          Files are not public. Availability on member pages requires content clearance.
         </p>
       </div>
 
@@ -510,7 +510,7 @@ export default function AdminPrivateAlbumUpload() {
                   <span className="min-w-0 break-all text-slate-200">{draft.original_filename}</span>
                 </div>
                 <span className="font-semibold text-amber-200">
-                  {draft.status === "pending_review" ? "Pending review" : "Upload incomplete"}
+                  {draft.status === "pending_review" ? "Private · Not published" : "Upload incomplete"}
                 </span>
               </li>
             ))}
