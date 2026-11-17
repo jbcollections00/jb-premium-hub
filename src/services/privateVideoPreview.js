@@ -51,13 +51,14 @@ export async function capturePrivateVideoPreview(file) {
   if (!(file instanceof Blob) || file.size === 0) return null;
   if (typeof document === "undefined" || typeof URL.createObjectURL !== "function") return null;
 
-  const video = document.createElement("video");
-  const blobUrl = URL.createObjectURL(file);
-  video.preload = "auto";
-  video.muted = true;
-  video.playsInline = true;
-
+  let video;
+  let blobUrl;
   try {
+    video = document.createElement("video");
+    blobUrl = URL.createObjectURL(file);
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
     // Attach the media event listener BEFORE setting src to avoid missing it.
     const metadata = awaitMediaEvent(video, "loadedmetadata");
     video.src = blobUrl;
@@ -91,9 +92,11 @@ export async function capturePrivateVideoPreview(file) {
     // Some codecs are unsupported by browsers, particularly MKV/AVI.
     return null;
   } finally {
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-    URL.revokeObjectURL(blobUrl);
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
   }
 }
