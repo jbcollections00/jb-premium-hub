@@ -146,13 +146,13 @@ async function begin(req, res, services, admin) {
       Key: key,
       ContentType: type.contentType,
     }),
-    { expiresIn: 600 }
+    { expiresIn: 3600 }
   );
   return res.status(200).json({
     draftId: id,
     uploadUrl,
     contentType: type.contentType,
-    expiresInSeconds: 600,
+    expiresInSeconds: 3600,
   });
 }
 
