@@ -29,17 +29,36 @@ const MAX_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_NAME_LENGTH = 200;
 const PRIVATE_BUCKET = "jb-premium-private-videos";
 
+// Vercel may assign multiple first-party aliases to the same deployment.
+// Accept the app's own same-origin request only for a validated project host.
+function isTrustedSameOrigin(req, origin) {
+  try {
+    const url = new URL(origin);
+    const host = String(req.headers.host || "").toLowerCase();
+    const trustedHost =
+      /^jb-premium-hub(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host) ||
+      host === "www.jb-premium-hub.vip" ||
+      host === "jb-premium-hub.vip";
+    return trustedHost && url.protocol === "https:" &&
+      url.origin === origin && url.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+}
+
 function cors(req, res) {
   const origin = req.headers.origin;
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  const permitted = !origin ||
+    ALLOWED_ORIGINS.has(origin) ||
+    isTrustedSameOrigin(req, origin);
+  if (origin && permitted) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
   res.setHeader("Cache-Control", "no-store");
-  if (origin && !ALLOWED_ORIGINS.has(origin)) return false;
-  return true;
+  return permitted;
 }
 
 function fail(res, status, message) {
