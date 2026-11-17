@@ -56,7 +56,6 @@ export async function capturePrivateVideoPreview(file) {
   video.preload = "auto";
   video.muted = true;
   video.playsInline = true;
-  video.crossOrigin = undefined;
 
   try {
     // Attach the media event listener BEFORE setting src to avoid missing it.
