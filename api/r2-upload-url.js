@@ -315,6 +315,19 @@ export default async function handler(
           ""
         );
 
+    // Never issue public-R2 PUT links for videos. All new videos must go
+    // through the separate admin-only, private, pending-review staging API.
+    const isVideo =
+      String(contentType || "").toLowerCase().startsWith("video/") ||
+      /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(safeName) ||
+      safeFolder === "videos" ||
+      safeFolder.startsWith("videos/");
+    if (isVideo) {
+      return res.status(410).json({
+        error: "Public video uploads are disabled. Use Private Album Upload.",
+      });
+    }
+
     const randomPart =
       crypto.randomUUID();
 
