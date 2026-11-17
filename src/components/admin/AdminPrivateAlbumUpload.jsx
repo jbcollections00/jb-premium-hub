@@ -46,6 +46,27 @@ export default function AdminPrivateAlbumUpload() {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [results, setResults] = useState([]);
+  const [existingDrafts, setExistingDrafts] = useState([]);
+  const [draftsLoading, setDraftsLoading] = useState(true);
+
+  const loadStaging = async () => {
+    setDraftsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("jb_media_upload_staging")
+        .select("id, album_id, original_filename, status, created_at")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      setExistingDrafts(Array.isArray(data) ? data : []);
+    } catch {
+      // Missing staging migration is expected before setup; upload requests
+      // will also fail closed until server-side staging is configured.
+      setExistingDrafts([]);
+    } finally {
+      setDraftsLoading(false);
+    }
+  };
 
   const loadAlbums = async () => {
     setLoading(true);
@@ -68,7 +89,7 @@ export default function AdminPrivateAlbumUpload() {
     }
   };
 
-  useEffect(() => { loadAlbums(); }, []);
+  useEffect(() => { loadAlbums(); loadStaging(); }, []);
 
   const selectFiles = (event) => {
     const selected = [...(event.target.files || [])];
@@ -144,6 +165,7 @@ export default function AdminPrivateAlbumUpload() {
         setResults([...completed]);
       }
       setFiles([]);
+      await loadStaging();
       const picker = document.getElementById("jb-staged-video-files");
       if (picker) picker.value = "";
     } catch (error) {
@@ -236,6 +258,40 @@ export default function AdminPrivateAlbumUpload() {
           {busy ? "Uploading privately…" : "Upload to Private Staging"}
         </button>
       </form>
+
+      <div className="rounded-xl border border-slate-700 bg-slate-950/30 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-bold text-white">
+            Private upload queue
+          </h4>
+          <button
+            type="button"
+            disabled={busy || draftsLoading}
+            onClick={loadStaging}
+            className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-200 disabled:opacity-50"
+          >
+            Refresh queue
+          </button>
+        </div>
+        {draftsLoading ? (
+          <p role="status" className="mt-3 text-xs text-slate-400">Loading private drafts…</p>
+        ) : existingDrafts.length === 0 ? (
+          <p className="mt-3 text-xs text-slate-400">
+            No staged uploads yet. Only private pending-review records will appear here.
+          </p>
+        ) : (
+          <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+            {existingDrafts.map((draft) => (
+              <li key={draft.id} className="flex flex-wrap justify-between gap-2 rounded-lg border border-slate-800 p-3 text-xs">
+                <span className="min-w-0 break-all text-slate-200">{draft.original_filename}</span>
+                <span className="font-semibold text-amber-200">
+                  {draft.status === "pending_review" ? "Pending review" : "Upload incomplete"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {results.length > 0 && (
         <div role="status" className="rounded-xl border border-emerald-400/25 bg-emerald-950/20 p-4">
