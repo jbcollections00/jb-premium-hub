@@ -43,6 +43,8 @@ test("browser creates video-frame JPEG privately and cleans temporary URLs", () 
 
 test("admin UI shows per-file images and refreshed private thumbnails, fallback logo", () => {
   assert.match(ui, /capturePrivateVideoPreview\(file\)/);
+  assert.match(ui, /previewSelectedFiles\(selected, generation\)/);
+  assert.match(ui, /preselectedJpegs\.current\.set\(index, jpeg\)/);
   assert.match(ui, /stagingRequest\("thumbnail-begin"/);
   assert.match(ui, /stagingRequest\("thumbnail-complete"/);
   assert.match(ui, /stagingRequest\("thumbnail-previews"/);
