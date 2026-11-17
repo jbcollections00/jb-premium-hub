@@ -1197,7 +1197,7 @@ export default function Home() {
         {showFreeHome && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
-              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
+              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">FREE MEMBER HOME</span>
               <h2 className="mt-2 text-xl font-extrabold text-white sm:text-2xl">Free to Watch</h2>
               <p className="mt-2 text-sm leading-relaxed text-slate-300">
                 {LEGACY_CATALOG_HOME_HOLD
@@ -1215,7 +1215,7 @@ export default function Home() {
             </div>
           </section>
         )}
-        {LEGACY_CATALOG_HOME_HOLD && (
+        {LEGACY_CATALOG_HOME_HOLD && canBrowseMemberAlbums && (
           <p role="status" className="mb-5 rounded-2xl border border-sky-500/25 bg-sky-950/20 px-5 py-4 text-sm text-sky-100">
             We are preparing a new catalog. Previously listed videos are not displayed here.
           </p>
