@@ -1,7 +1,7 @@
 // Admin-only private video upload staging.
 // Never writes public.media and never returns a public object URL.
 import { randomUUID } from "node:crypto";
-import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
 
@@ -28,6 +28,8 @@ const MIME_BY_EXTENSION = {
 const MAX_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_NAME_LENGTH = 200;
 const PRIVATE_BUCKET = "jb-premium-private-videos";
+const MAX_PREVIEW_BYTES = 1024 * 1024;
+const PREVIEW_MIME = "image/jpeg";
 
 // Vercel may assign multiple first-party aliases to the same deployment.
 // Accept the app's own same-origin request only for a validated project host.
@@ -221,6 +223,108 @@ async function complete(req, res, services, admin) {
   });
 }
 
+// All thumbnail routes are admin-authenticated and only operate on the current
+// admin's PRIVATE staged video. The signed GET is short-lived and must never be
+// used as a public Home/media thumbnail.
+const previewKey = (adminId, draftId) =>
+  "staging-thumbnails/" + adminId + "/" + draftId + ".jpg";
+
+async function ownedStagedDraft(services, admin, draftId) {
+  if (!UUID.test(String(draftId || ""))) return null;
+  const { data, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, created_by, status, preview_key")
+    .eq("id", draftId)
+    .eq("created_by", admin.id)
+    .eq("status", "pending_review")
+    .maybeSingle();
+  if (error) return null;
+  return data;
+}
+
+async function thumbnailBegin(req, res, services, admin) {
+  const { draftId, fileSize } = req.body || {};
+  if (!Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > MAX_PREVIEW_BYTES) {
+    return fail(res, 400, "Thumbnail must be a JPEG under 1 MB.");
+  }
+  const row = await ownedStagedDraft(services, admin, draftId);
+  if (!row) return fail(res, 404, "Private pending-review upload not found.");
+  const key = previewKey(admin.id, draftId);
+  const uploadUrl = await getSignedUrl(
+    services.r2,
+    new PutObjectCommand({
+      Bucket: services.bucket,
+      Key: key,
+      ContentType: PREVIEW_MIME,
+    }),
+    { expiresIn: 900 }
+  );
+  return res.status(200).json({ uploadUrl, contentType: PREVIEW_MIME });
+}
+
+async function thumbnailComplete(req, res, services, admin) {
+  const { draftId, fileSize } = req.body || {};
+  if (!Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > MAX_PREVIEW_BYTES) {
+    return fail(res, 400, "Invalid thumbnail size.");
+  }
+  const row = await ownedStagedDraft(services, admin, draftId);
+  if (!row) return fail(res, 404, "Private pending-review upload not found.");
+  const key = previewKey(admin.id, draftId);
+  let head;
+  try {
+    head = await services.r2.send(new HeadObjectCommand({
+      Bucket: services.bucket, Key: key,
+    }));
+  } catch {
+    return fail(res, 409, "Private thumbnail upload was not found.");
+  }
+  if (
+    Number(head.ContentLength) !== fileSize ||
+    (head.ContentType && head.ContentType !== PREVIEW_MIME)
+  ) return fail(res, 409, "Private thumbnail metadata does not match.");
+
+  const { error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .update({ preview_key: key, preview_uploaded_at: new Date().toISOString() })
+    .eq("id", draftId)
+    .eq("created_by", admin.id)
+    .eq("status", "pending_review");
+  if (error) return fail(res, 503, "Private thumbnail metadata update failed.");
+  return res.status(200).json({ status: "private_preview_saved" });
+}
+
+async function thumbnailPreviews(req, res, services, admin) {
+  const { draftIds } = req.body || {};
+  if (
+    !Array.isArray(draftIds) ||
+    draftIds.length > 100 ||
+    draftIds.some((id) => !UUID.test(String(id)))
+  ) return fail(res, 400, "Invalid private upload IDs.");
+  if (draftIds.length === 0) return res.status(200).json({ previews: {} });
+  const { data: rows, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, preview_key")
+    .eq("created_by", admin.id)
+    .eq("status", "pending_review")
+    .in("id", draftIds);
+  if (error) return fail(res, 503, "Private preview lookup failed.");
+
+  const previews = {};
+  for (const row of rows || []) {
+    // Sign only the deterministic staging path for this authenticated admin.
+    if (row.preview_key !== previewKey(admin.id, row.id)) continue;
+    previews[row.id] = await getSignedUrl(
+      services.r2,
+      new GetObjectCommand({
+        Bucket: services.bucket,
+        Key: row.preview_key,
+      }),
+      { expiresIn: 600 }
+    );
+  }
+  return res.status(200).json({ previews });
+}
+
 export default async function handler(req, res) {
   if (!cors(req, res)) return fail(res, 403, "Origin not permitted.");
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -239,6 +343,9 @@ export default async function handler(req, res) {
 
     if (req.body?.action === "begin") return await begin(req, res, services, admin);
     if (req.body?.action === "complete") return await complete(req, res, services, admin);
+    if (req.body?.action === "thumbnail-begin") return await thumbnailBegin(req, res, services, admin);
+    if (req.body?.action === "thumbnail-complete") return await thumbnailComplete(req, res, services, admin);
+    if (req.body?.action === "thumbnail-previews") return await thumbnailPreviews(req, res, services, admin);
     return fail(res, 400, "Unknown staging action.");
   } catch (error) {
     console.error("Private staging request failed:", error?.name || "unknown");
