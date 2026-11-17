@@ -74,7 +74,10 @@ export default function AdminPrivateAlbumUpload() {
   const pickerRef = useRef(null);
   const mountedRef = useRef(true);
 
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const updateQueue = (index, patch) => {
     if (!mountedRef.current) return;
