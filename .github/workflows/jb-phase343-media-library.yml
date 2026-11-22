@@ -1,0 +1,36 @@
+name: JB Phase 343 Media Library Grid & Bulk Delete (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'api/jb-admin-staging-upload.js'
+      - 'supabase/migrations/20261122120000_jb_admin_media_bulk_delete_v1.sql'
+      - 'scripts/tests/test-phase343-media-library-bulk-delete.mjs'
+      - '.github/workflows/jb-phase343-media-library.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  media-library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Phase 343 admin media management security regression
+        run: node --test scripts/tests/test-phase343-media-library-bulk-delete.mjs
+      - name: Previous private-media and Home regression checks
+        run: |
+          node --test scripts/tests/test-phase341-media-management.mjs
+          node --test scripts/tests/test-phase339-home-published-thumbnails.mjs
+          node --test scripts/tests/test-phase338-publishing.mjs
+          node --test scripts/tests/test-phase337-private-admin-upload.mjs
+      - name: Compile production React site
+        run: npm run build
