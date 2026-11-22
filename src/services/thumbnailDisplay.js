@@ -25,12 +25,25 @@ function isLegacyVideoHost(hostname) {
     /^pub-[a-f0-9]+\.r2\.dev$/i.test(hostname);
 }
 
-export function getThumbnailDisplayUrl(thumbnailUrl) {
+// Approved private staging covers are served through a narrow read-only
+// published-artwork endpoint when a video still has the default logo.
+// The server independently validates the publication link and exact JPEG key.
+const MEDIA_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function verifiedPublishedArt(mediaId) {
+  return typeof mediaId === "string" && MEDIA_UUID_RE.test(mediaId)
+    ? "/api/jb-published-thumbnail?id=" + mediaId
+    : DEFAULT_THUMBNAIL_URL;
+}
+
+export function getThumbnailDisplayUrl(thumbnailUrl, publishedMediaId = null) {
   if (typeof thumbnailUrl !== "string" || !thumbnailUrl.trim()) {
-    return DEFAULT_THUMBNAIL_URL;
+    return verifiedPublishedArt(publishedMediaId);
   }
 
   const raw = thumbnailUrl.trim();
+  if (raw === DEFAULT_THUMBNAIL_URL) {
+    return verifiedPublishedArt(publishedMediaId);
+  }
   // Previously generated inline covers are real, saved thumbnails too.
   // Do not replace them just because they aren't hosted on public-assets.
   if (EMBEDDED_IMAGE_RE.test(raw)) return raw;
