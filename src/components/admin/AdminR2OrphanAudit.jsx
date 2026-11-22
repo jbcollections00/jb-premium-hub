@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "../../services/supabaseClient";
 
 const SCOPES = [
   { value: "private_video", title: "Private videos" },
