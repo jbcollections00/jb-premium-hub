@@ -30,10 +30,12 @@ test("Home removes Pinay/Asian category filter and controls completely", () => {
   ]) {
     assert.doesNotMatch(home, expression);
   }
-  assert.match(home, /handleCategoryChange\("all"\)/);
-  assert.match(home, /handleCategoryChange\("free"\)/);
-  assert.match(home, /requested === "free" && FREE_PREVIEW_UI_ENABLED \? "free" : "all"/);
-  assert.match(home, /query = query\.eq\("is_free_preview", true\)/);
+  // Phase 350 replaced the old All/Free category tabs with role-aware albums.
+  assert.doesNotMatch(home, /handleCategoryChange/);
+  assert.doesNotMatch(home, />\\s*All Videos\\s*</);
+  assert.match(home, /getHomeMode\\(/);
+  assert.match(home, /jb_free_preview_catalog_v1/);
+  assert.match(home, /jb_media_publication_links/);
 });
 
 test("Home and Most Watched display an approved artwork endpoint for default cover videos", () => {
