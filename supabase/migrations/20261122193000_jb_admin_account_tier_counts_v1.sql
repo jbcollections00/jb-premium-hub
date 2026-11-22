@@ -22,9 +22,9 @@ BEGIN
   WITH eligible_profiles AS (
     SELECT p.id
     FROM public.profiles p
-    WHERE pg_catalog.nullif(pg_catalog.btrim(p.email), '') IS NOT NULL
-      AND pg_catalog.lower(pg_catalog.coalesce(p.role, '')) <> 'admin'
-      AND pg_catalog.lower(pg_catalog.coalesce(p.account_type, ''))
+    WHERE nullif(pg_catalog.btrim(p.email), '') IS NOT NULL
+      AND pg_catalog.lower(coalesce(p.role, '')) <> 'admin'
+      AND pg_catalog.lower(coalesce(p.account_type, ''))
           NOT IN ('admin', 'guest', 'anonymous')
   ), valid_grants AS (
     SELECT g.user_id, g.plan_code
