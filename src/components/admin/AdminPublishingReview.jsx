@@ -186,7 +186,7 @@ export default function AdminPublishingReview() {
           const result = await request("delete-unpublished", { draftIds: ids.slice(index, index + 50) });
           deleted += (result.deleted || []).length;
           if (result.rejected?.length) failures.push(result.rejected.length + " protected draft(s)");
-          if (result.cleanupPending?.length) failures.push(result.cleanupPending.length + " R2 object cleanup(s) pending");
+          if (result.cleanupPending?.length) failures.push(result.cleanupPending.length + " draft(s) awaiting R2 automatic cleanup");
         } catch (error) {
           failures.push(error.message || "Deletion rejected");
         }
