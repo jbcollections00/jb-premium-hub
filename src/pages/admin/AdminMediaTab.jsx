@@ -1367,7 +1367,11 @@ export default function AdminMediaTab() {
 
   const handleDeleteMediaBatch = async (mediaIds, bulk = false) => {
     if (deletingPublishedMedia || !Array.isArray(mediaIds) || !mediaIds.length) return;
-    const visibleIds = new Set(paginatedMedia.map((item) => item.id));
+    const visibleIds = new Set(
+      showDuplicatesOnly
+        ? duplicateGroups.flatMap((group) => group.items).map((item) => item.id)
+        : paginatedMedia.map((item) => item.id)
+    );
     const uniqueIds = [...new Set(mediaIds)];
     if (uniqueIds.some((id) => !visibleIds.has(id))) {
       setDeleteResultMessage("Selection changed. Refresh or select videos on the current page.");
@@ -1442,72 +1446,18 @@ export default function AdminMediaTab() {
      AUTO CLEAN DUPLICATES
   ========================================================= */
 
-  const handleAutoCleanDuplicates =
-    async () => {
-      if (
-        !window.confirm(
-          `Sigurado ka bang gusto mong burahin ang ${totalDuplicatesCount} duplicate copies?`
-        )
-      ) {
-        return;
-      }
-
-      let deletedCount =
-        0;
-
-      for (
-        const group of
-        duplicateGroups
-      ) {
-        const sorted =
-          [
-            ...group.items,
-          ].sort(
-            (a, b) =>
-              new Date(
-                b.created_at ||
-                  0
-              ) -
-              new Date(
-                a.created_at ||
-                  0
-              )
-          );
-
-        const itemsToDelete =
-          sorted.slice(
-            1
-          );
-
-        for (
-          const item of
-          itemsToDelete
-        ) {
-          const {
-            error,
-          } =
-            await supabase
-              .from(
-                "media"
-              )
-              .delete()
-              .eq(
-                "id",
-                item.id
-              );
-
-          if (!error) {
-            deletedCount++;
-          }
-        }
-      }
-
-      alert(
-        `🎉 Matagumpay na nabura ang ${deletedCount} duplicate video(s)!`
+  const handleAutoCleanDuplicates = async () => {
+    if (deletingPublishedMedia || !duplicateGroups.length) return;
+    const ids = [];
+    for (const group of duplicateGroups) {
+      // Preserve the most recently created item in each duplicate group.
+      const copies = [...group.items].sort((a, b) =>
+        new Date(b.created_at || 0) - new Date(a.created_at || 0)
       );
-
-      fetchMedia();
-    };
+      ids.push(...copies.slice(1).map((item) => item.id));
+    }
+    if (ids.length) await handleDeleteMediaBatch(ids, true);
+  };
 
   /* =========================================================
      COPY LINK
