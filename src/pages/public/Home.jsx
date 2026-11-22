@@ -73,7 +73,9 @@ export default function Home() {
 
   const [activeCategory, setActiveCategory] = useState(() => {
     if (typeof window !== "undefined") {
-      return new URLSearchParams(window.location.search).get("cat") || "all";
+      const requested = new URLSearchParams(window.location.search).get("cat");
+      // Only two supported public filters. Old category URLs become All Videos.
+      return requested === "free" && FREE_PREVIEW_UI_ENABLED ? "free" : "all";
     }
     return "all";
   });
@@ -417,11 +419,6 @@ export default function Home() {
           item.is_free_preview === true &&
           !Object.prototype.hasOwnProperty.call(item, "media_url")
         );
-        if (category === "pinay_asian") {
-          approved = approved.filter((item) =>
-            /pinay|asian/i.test(`${item.category || ""} ${item.title || ""}`)
-          );
-        }
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
@@ -431,11 +428,6 @@ export default function Home() {
       // Paid members retain the existing full-library query and privileges.
       let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
       if (category === "free") query = query.eq("is_free_preview", true);
-      if (category === "pinay_asian") {
-        query = query.or(
-          "category.eq.pinay_asian,category.ilike.%pinay%,category.ilike.%asian%,title.ilike.%pinay%,title.ilike.%asian%"
-        );
-      }
       const { data, count, error } = await query
         .order("created_at", { ascending: false })
         .range(from, to);
@@ -826,27 +818,6 @@ export default function Home() {
     url.searchParams.set("cat", catKey);
     url.searchParams.set("page", 1);
     window.history.replaceState({}, "", url);
-  };
-
-  const handleUpdateCategory = async (videoId, newCategory) => {
-    if (!isAdmin || !videoId) return;
-
-    const allowedCategories = ["general", "pinay_asian"];
-    if (!allowedCategories.includes(newCategory)) {
-      alert("Invalid category.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("media")
-      .update({ category: newCategory })
-      .eq("id", videoId);
-
-    if (error) {
-      alert("Failed to update category: " + error.message);
-    } else {
-      fetchMedia(currentPage, activeCategory);
-    }
   };
 
   // Open the selected video in the current tab without ad redirects.
@@ -1266,7 +1237,7 @@ export default function Home() {
 
                         {item.thumbnail_url ? (
                           <img
-                            src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                            src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
                             onError={handleThumbnailLoadError}
                             alt={item.title}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
@@ -1365,16 +1336,6 @@ export default function Home() {
             <span>▶</span> Free to Watch
           </button>
           )}
-          <button
-            onClick={() => handleCategoryChange("pinay_asian")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
-              activeCategory === "pinay_asian"
-                ? "bg-indigo-600 text-white"
-                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🇵🇭</span> Pinay / Asian
-          </button>
         </div>
 
         <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
@@ -1406,7 +1367,7 @@ export default function Home() {
                   <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
                     {item.thumbnail_url ? (
                       <img
-                        src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                        src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
                             onError={handleThumbnailLoadError}
                         alt={item.title}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
@@ -1487,24 +1448,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {isAdmin && (
-                  <div
-                    className="p-3 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 bg-slate-950/40"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      Tag Category:
-                    </span>
-                    <select
-                      value={item.category || "general"}
-                      onChange={(e) => handleUpdateCategory(item.id, e.target.value)}
-                      className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-bold cursor-pointer hover:border-red-500 focus:outline-none"
-                    >
-                      <option value="general">🔥 General</option>
-                      <option value="pinay_asian">🇵🇭 Pinay / Asian</option>
-                    </select>
-                  </div>
-                )}
               </div>
             ))}
           </div>

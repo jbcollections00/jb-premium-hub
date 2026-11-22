@@ -1,0 +1,34 @@
+name: JB Phase 339 Home & Published Thumbnails (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/public/Home.jsx'
+      - 'src/services/thumbnailDisplay.js'
+      - 'api/jb-published-thumbnail.js'
+      - 'scripts/tests/test-phase339-home-published-thumbnails.mjs'
+      - '.github/workflows/jb-phase339-home-thumbnails.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  home-published-thumbnails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Verify Home cleanup and private thumbnail boundaries
+        run: node --test scripts/tests/test-phase339-home-published-thumbnails.mjs
+      - name: Verify upload/publishing regression
+        run: |
+          node --test scripts/tests/test-phase337-private-admin-upload.mjs
+          node --test scripts/tests/test-phase338-publishing.mjs
+      - name: Compile production website
+        run: npm run build
