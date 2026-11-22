@@ -88,6 +88,13 @@ test("Permanent deletion audit records pending R2 cleanup on failure", () => {
   assert.match(api, /legacyStorageUnchanged\.push\(row\.deleted_media_id\)/);
   assert.match(api, /cleanup_status: allCleared \? "complete" : "pending"/);
 });
+test("Duplicate view trash and clean-extra-copies use the same guarded atomic delete", () => {
+  assert.match(ui, /showDuplicatesOnly\s*\? duplicateGroups\.flatMap/);
+  assert.match(ui, /const handleAutoCleanDuplicates = async \(\) => \{/);
+  assert.match(ui, /await handleDeleteMediaBatch\(ids, true\)/);
+  assert.doesNotMatch(ui, /\.from\(\s*["']media["']\s*\)\s*\.delete/);
+});
+
 test("No automatic deletion occurs on page load or batch selection", () => {
   const region = ui.slice(ui.indexOf("const handleDeleteMediaBatch"), ui.indexOf("const handleDeleteMedia ="));
   assert.match(region, /if \(!window\.confirm/);
