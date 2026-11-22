@@ -70,26 +70,14 @@ async function isReferenced(supabase, job) {
     throw new Error("Unknown object kind");
   }
   for (const [table, column, value] of queries) {
-    const { data, error } = await supabase.from(table).select("id", { count: "exact", head: true })
-      .eq(column, value).limit(1);
-    // Publication links have no "id" column; use staging_id there.
-    if (error) {
-      if (table !== "jb_media_publication_links") throw new Error("Reference check failed");
-      const checked = await supabase.from(table).select("staging_id")
-        .eq(column, value).limit(1);
-      if (checked.error) throw new Error("Publication reference check failed");
-      if ((checked.data || []).length) return true;
-      continue;
+    const resultColumn = table === "jb_media_publication_links" ? "staging_id" : "id";
+    const { data, error } = await supabase.from(table)
+      .select(resultColumn).eq(column, value).limit(1);
+    if (error || !Array.isArray(data)) {
+      // Fail closed: never remove a file on a failed live-reference lookup.
+      throw new Error("R2_REFERENCE_CHECK_UNAVAILABLE");
     }
-    // HEAD-only count works for media + staging and never leaks object refs.
-    if ((typeof data === "object" && data !== null && data.length > 0)) return true;
-    // Some PostgREST versions return count separately from head-only queries.
-    // Follow with explicit rows to avoid false negatives across versions.
-    const actual = await supabase.from(table)
-      .select(table === "jb_media_publication_links" ? "staging_id" : "id")
-      .eq(column, value).limit(1);
-    if (actual.error) throw new Error("Reference check failed");
-    if ((actual.data || []).length) return true;
+    if (data.length) return true;
   }
   return false;
 }
