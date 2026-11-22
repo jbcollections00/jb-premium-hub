@@ -29,8 +29,8 @@ export function mainFilter({ width, height, opacity = 0.3, speed = 0.04 } = {}) 
     `[0:v:0]scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[v0]`,
     `[1:v:0]format=rgba,scale=${markWidth}:-2,colorchannelmixer=aa=${opacity}[wm]`,
     `[2:v:0]format=rgba,scale=${logoWidth}:-2[logo]`,
-    `[v0][wm]overlay=x='${x}':y='${y}':eval=frame:format=auto[v1]`,
-    `[v1][logo]overlay=x=W-w-${margin}:y=H-h-${margin}:format=auto,format=yuv420p[vout]`,
+    `[v0][wm]overlay=x='${x}':y='${y}':eval=frame:format=auto:shortest=1[v1]`,
+    `[v1][logo]overlay=x=W-w-${margin}:y=H-h-${margin}:format=auto:shortest=1,format=yuv420p[vout]`,
   ].join(";");
 }
 export function introFilter({ width, height } = {}) {
