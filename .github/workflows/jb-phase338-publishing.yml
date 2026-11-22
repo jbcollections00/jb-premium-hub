@@ -1,0 +1,31 @@
+name: JB Phase 338 Review & Publish (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'api/jb-admin-staging-upload.js'
+      - 'src/components/admin/AdminPublishingReview.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'scripts/tests/test-phase338-publishing.mjs'
+      - '.github/workflows/jb-phase338-publishing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-publish-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify new publishing security regression tests
+        run: node --test scripts/tests/test-phase338-publishing.mjs
+      - name: Verify Phase 337 private upload regression tests
+        run: node --test scripts/tests/test-phase337-private-admin-upload.mjs
+      - name: Verify frontend build
+        run: npm run build
