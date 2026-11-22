@@ -6,6 +6,7 @@ import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
+import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } from "../../services/homeDiscovery";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
@@ -63,6 +64,10 @@ export default function Home() {
   // States para sa Most Watched Videos
   const [mostWatched, setMostWatched] = useState([]);
   const [mostWatchedLoading, setMostWatchedLoading] = useState(true);
+  const [albums, setAlbums] = useState([]);
+  const [albumsLoading, setAlbumsLoading] = useState(false);
+  const [albumError, setAlbumError] = useState("");
+  const [selectedAlbumId, setSelectedAlbumId] = useState("");
 
   // Ref para i-save ang eksaktong scroll position bago magbukas ng video
   const scrollPosRef = useRef(0);
@@ -123,6 +128,9 @@ export default function Home() {
   // The checkout entitlement is authoritative for new memberships.
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
+  const homeMode = getHomeMode(billingReady, userProfile?.id, membership, FREE_PREVIEW_UI_ENABLED);
+  const adsEnabled = shouldDisplayAds(billingReady, userProfile?.id, membership);
+  const selectedAlbum = albums.find((album) => album.id === selectedAlbumId);
   const canDownload = billingReady && membership.canDownload;
   const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
   const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
@@ -227,11 +235,45 @@ export default function Home() {
     };
   }, []);
 
+  // Album names are read only when the current member is entitled.
+  // Supabase RLS hides albums from FREE users and filters hidden albums for members.
   useEffect(() => {
-    if (!billingReady) return;
-    // Refresh the gallery when the authenticated user's entitlement resolves.
-    // An initially signed-in FREE user must not rely on full media-table RLS.
-    if (FREE_PREVIEW_UI_ENABLED && !userProfile?.id) {
+    let cancelled = false;
+    if (homeMode !== "albums") {
+      setAlbums([]);
+      setSelectedAlbumId("");
+      setAlbumsLoading(false);
+      setAlbumError("");
+      return () => { cancelled = true; };
+    }
+    setAlbumsLoading(true);
+    setAlbumError("");
+    supabase.from("jb_media_albums")
+      .select("id, name, description, is_visible, cover_style, cover_image_url")
+      .order("name", { ascending: true })
+      .limit(200)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !Array.isArray(data)) throw new Error("ALBUMS_UNAVAILABLE");
+        setAlbums(data);
+        setSelectedAlbumId((previous) =>
+          data.some((album) => album.id === previous) ? previous : (data[0]?.id || ""));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAlbums([]);
+        setSelectedAlbumId("");
+        setAlbumError("Could not load your albums. Refresh and try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setAlbumsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [homeMode, userProfile?.id]);
+
+  useEffect(() => {
+    if (homeMode === "locked" ||
+        (homeMode === "albums" && (albumsLoading || !selectedAlbumId))) {
       ++mediaFetchSerialRef.current;
       setMediaList([]);
       setTotalCount(0);
@@ -240,15 +282,11 @@ export default function Home() {
       setLoading(false);
       return;
     }
-    fetchMedia(currentPage, activeCategory);
-    if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
-      // Do not query the paid-library 'most watched' records for FREE accounts.
-      setMostWatched([]);
-      setMostWatchedLoading(false);
-    } else {
-      fetchMostWatched();
-    }
-  }, [currentPage, activeCategory, billingReady, membership.canViewAlbums, userProfile?.id]);
+    fetchMedia(currentPage);
+    if (homeMode === "albums") fetchMostWatched();
+    // FREE Most Watched is derived from the same <=20 approved RPC results
+    // inside fetchMedia; never request paid-only media records as FREE.
+  }, [currentPage, homeMode, selectedAlbumId, albumsLoading, userProfile?.id]);
 
   useEffect(() => {
     const allIds = [
@@ -394,55 +432,73 @@ export default function Home() {
     }
   };
 
-  const fetchMedia = async (page = 1, category = "all") => {
+  const fetchMedia = async (page = 1) => {
     const requestId = ++mediaFetchSerialRef.current;
     setLoading(true);
+    setMediaList([]);
     setMediaError("");
+    if (homeMode === "free") {
+      setMostWatched([]);
+      setMostWatchedLoading(true);
+    }
     const from = (page - 1) * ITEMS_PER_PAGE;
     const to = from + ITEMS_PER_PAGE - 1;
 
     try {
-      // FREE users receive only the public-facing details of the <=20 selected
-      // preview videos. A SECURITY DEFINER RPC enforces that limit despite
-      // intentionally restrictive membership RLS on the full media table.
-      // It never returns media_url; the separate Edge issuer alone authorizes
-      // playback of an approved video through the private Cloudflare Worker.
-      if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
+      if (homeMode === "free") {
+        // FREE only sees the authenticated max-20 metadata catalog.
+        // No paid media SELECT, private media_url or paid album query here.
         const { data, error } = await supabase.rpc("jb_free_preview_catalog_v1");
         if (error) throw error;
-        if (!Array.isArray(data)) throw new Error("Invalid Free to Watch catalog");
-
-        let approved = data.filter((item) =>
-          item && typeof item.id === "string" &&
-          typeof item.title === "string" &&
-          item.type === "video" &&
-          item.is_free_preview === true &&
-          !Object.prototype.hasOwnProperty.call(item, "media_url")
-        );
+        const approved = approvedFreeCatalog(data);
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
+        setMostWatched(freeMostWatched(approved));
         return;
       }
 
-      // Paid members retain the existing full-library query and privileges.
-      let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
-      if (category === "free") query = query.eq("is_free_preview", true);
-      const { data, count, error } = await query
-        .order("created_at", { ascending: false })
+      if (homeMode !== "albums" || !selectedAlbumId) {
+        throw new Error("HOME_ACCESS_UNAVAILABLE");
+      }
+
+      // Query only the selected album's published links.
+      // Both the link table and media table retain their member-level RLS.
+      const { data: links, count, error: linksError } = await supabase
+        .from("jb_media_publication_links")
+        .select("media_id", { count: "exact" })
+        .eq("album_id", selectedAlbumId)
+        .order("published_at", { ascending: false })
         .range(from, to);
-      if (error) throw error;
+      if (linksError || !Array.isArray(links)) throw new Error("ALBUM_MEDIA_UNAVAILABLE");
+      const ids = links.map((link) => link.media_id).filter(Boolean);
+      if (ids.length === 0) {
+        if (requestId !== mediaFetchSerialRef.current) return;
+        setMediaList([]);
+        setTotalCount(count ?? 0);
+        return;
+      }
+      const { data: videos, error: videosError } = await supabase.from("media")
+        .select("*")
+        .eq("type", "video")
+        .in("id", ids);
+      if (videosError || !Array.isArray(videos)) throw new Error("ALBUM_VIDEO_DATA_UNAVAILABLE");
       if (requestId !== mediaFetchSerialRef.current) return;
-      setMediaList(data || []);
-      setTotalCount(count ?? 0);
+      const byId = new Map(videos.map((video) => [video.id, video]));
+      setMediaList(ids.map((id) => byId.get(id)).filter(Boolean));
+      setTotalCount(count ?? ids.length);
     } catch (err) {
       if (requestId !== mediaFetchSerialRef.current) return;
-      console.error("Fetch media error:", err?.code || "UNAVAILABLE");
+      console.error("Home catalog unavailable:", err?.message || "UNKNOWN");
       setMediaList([]);
       setTotalCount(0);
-      setMediaError("Could not load the video catalog. Please refresh or try again.");
+      if (homeMode === "free") setMostWatched([]);
+      setMediaError("Could not load available videos. Please refresh or try again.");
     } finally {
-      if (requestId === mediaFetchSerialRef.current) setLoading(false);
+      if (requestId === mediaFetchSerialRef.current) {
+        setLoading(false);
+        if (homeMode === "free") setMostWatchedLoading(false);
+      }
     }
   };
 
@@ -503,17 +559,10 @@ export default function Home() {
     }
   };
 
-  // Count a video play for popunders only after active Standard billing access
-  // has been verified. Free users, VIPs, admins, and unresolved accounts
-  // never initiate a third-party popunder.
-  const triggerPopunderForStandard = () => {
-    if (
-      !billingReady ||
-      membership.tier !== "standard" ||
-      membership.showAds !== true ||
-      !userProfile?.id ||
-      typeof window === "undefined"
-    ) return;
+  // Signed-in FREE and STANDARD accounts use the same ad cadence.
+  // VIP, Admin and unresolved accounts never initiate a popunder.
+  const triggerPopunderForAdSupported = () => {
+    if (!adsEnabled || typeof window === "undefined") return;
 
     // Keep each account's counter separate on shared devices.
     const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
@@ -544,12 +593,11 @@ export default function Home() {
     }
   };
 
-  // Remove our loader when an account becomes VIP/admin/free. Already opened
-  // third-party popups cannot be undone; the gate prevents further loading.
+  // Remove the popunder loader when access changes to VIP/Admin/unknown.
   useEffect(() => {
-    if (billingReady && membership.tier === "standard" && membership.showAds === true) return;
+    if (adsEnabled) return;
     document.querySelector('script[data-jb-popunder="true"]')?.remove();
-  }, [billingReady, membership.tier, membership.showAds]);
+  }, [adsEnabled]);
 
   const handleVideoPlay = async () => {
     if (
@@ -565,7 +613,7 @@ export default function Home() {
     setHasRecordedCurrentView(true);
 
     // Count only a real, first play of this opened video.
-    triggerPopunderForStandard();
+    triggerPopunderForAdSupported();
 
     const mediaId = selectedMedia.id;
     const currentVal =
