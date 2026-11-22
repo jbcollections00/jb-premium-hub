@@ -106,6 +106,63 @@ test("private API rejects unauthorized requests before credentials or R2", async
   assert.equal(wrongMethod.statusCode, 405);
 });
 
+test("preview deployment origin works only with exact team-owned host", async () => {
+  const { default: handler } = await import("../../api/jb-admin-staging-upload.js");
+  const response = () => ({
+    statusCode: 200, headers: {},
+    setHeader(key, value) { this.headers[key] = value; return this; },
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.body = value; return this; },
+    end() { return this; },
+  });
+
+  // Current deployment alias from admin browser and a future alias.
+  const allowedHosts = [
+    "jb-premium-ej6gah68y-jbcollections00-7010s-projects.vercel.app",
+    "jb-premium-7k9xz-jbcollections00-7010s-projects.vercel.app",
+    "jb-premium-hub-git-phase-337-jbcollections00-7010s-projects.vercel.app",
+  ];
+  for (const host of allowedHosts) {
+    const origin = "https://" + host;
+    const preflight = response();
+    await handler({
+      method: "OPTIONS",
+      headers: { host, origin, "access-control-request-method": "POST" },
+    }, preflight);
+    assert.equal(preflight.statusCode, 204);
+    assert.equal(preflight.headers["Access-Control-Allow-Origin"], origin);
+
+    const unauthenticated = response();
+    await handler({
+      method: "POST",
+      headers: { host, origin },
+    }, unauthenticated);
+    assert.equal(unauthenticated.statusCode, 401);
+    assert.deepEqual(unauthenticated.body, { error: "Authentication required." });
+  }
+
+  const realHost = allowedHosts[0];
+  const denied = [
+    { host: realHost, origin: "https://attacker.example" },
+    { host: realHost, origin: "http://" + realHost },
+    { host: "attacker.example", origin: "https://attacker.example" },
+    {
+      host: "jb-premium-7k9xz-other-team.vercel.app",
+      origin: "https://jb-premium-7k9xz-other-team.vercel.app",
+    },
+    {
+      host: realHost + ".attacker.example",
+      origin: "https://" + realHost + ".attacker.example",
+    },
+  ];
+  for (const headers of denied) {
+    const result = response();
+    await handler({ method: "OPTIONS", headers }, result);
+    assert.equal(result.statusCode, 403);
+    assert.equal(result.headers["Access-Control-Allow-Origin"], undefined);
+  }
+});
+
 async function runPreview(portrait, duration) {
   const oldDocument = globalThis.document;
   const oldCreate = URL.createObjectURL;
