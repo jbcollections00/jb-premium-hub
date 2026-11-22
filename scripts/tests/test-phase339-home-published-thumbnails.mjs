@@ -126,6 +126,7 @@ test("Existing paid/private video playback and FREE membership logic preserved",
   assert.match(home, /requestPrivateMediaUrl/);
   assert.match(home, /requestFreePreviewUrl/);
   assert.match(home, /getBillingAccess/);
-  assert.match(home, /membership\.showAds/);
+  assert.match(home, /shouldDisplayAds/);
+  assert.match(home, /adsEnabled/);
   assert.match(home, /jb_free_preview_catalog_v1/);
 });
