@@ -356,8 +356,16 @@ async function reviewList(req, res, services, admin) {
   }
   const links = new Map((linksResult.data || []).map((link) => [link.staging_id, link]));
   const albums = new Map((albumsResult.data || []).map((album) => [album.id, album]));
+  // Include incomplete attempts when warning of duplicate filenames.
+  const { data: nameRows, error: namesError } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("original_filename")
+    .eq("created_by", admin.id)
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (namesError) return fail(res, 503, "Could not verify possible duplicate uploads.");
   const nameCounts = new Map();
-  for (const row of rows) {
+  for (const row of nameRows || []) {
     const key = row.original_filename.trim().toLowerCase();
     nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
   }
