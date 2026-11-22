@@ -30,7 +30,7 @@ test("Only existing admin RLS policy is used; no service role in frontend", () =
   assert.match(creator, /\.from\("jb_media_albums"\)/);
   assert.match(creator, /\.insert\(\{/);
   assert.match(creator, /created_by: userId/);
-  assert.match(creator, /\.select\("id, name, is_visible"\)/);
+  assert.match(creator, /\.select\("id, name, description, is_visible, cover_style"\)/);
   assert.doesNotMatch(creator, /service_role|SUPABASE_SERVICE_ROLE_KEY|fetch\(/);
   assert.doesNotMatch(upload, /SUPABASE_SERVICE_ROLE_KEY/);
 });

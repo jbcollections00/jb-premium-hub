@@ -75,6 +75,14 @@ export default function AdminPrivateAlbumUpload() {
   const [creatingAlbum, setCreatingAlbum] = useState(false);
   const [albumCreationMessage, setAlbumCreationMessage] = useState("");
   const [albumCreationError, setAlbumCreationError] = useState("");
+  const [editingAlbumId, setEditingAlbumId] = useState("");
+  const [editAlbumName, setEditAlbumName] = useState("");
+  const [editAlbumDescription, setEditAlbumDescription] = useState("");
+  const [editAlbumVisible, setEditAlbumVisible] = useState(true);
+  const [editAlbumCoverStyle, setEditAlbumCoverStyle] = useState("indigo");
+  const [savingAlbum, setSavingAlbum] = useState(false);
+  const [albumEditMessage, setAlbumEditMessage] = useState("");
+  const [albumEditError, setAlbumEditError] = useState("");
   const [files, setFiles] = useState([]);
   const [queue, setQueue] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -182,7 +190,7 @@ export default function AdminPrivateAlbumUpload() {
     try {
       const { data, error } = await supabase
         .from("jb_media_albums")
-        .select("id, name, is_visible")
+        .select("id, name, description, is_visible, cover_style")
         .order("name", { ascending: true })
         .limit(200);
       if (error) throw error;
@@ -241,7 +249,7 @@ export default function AdminPrivateAlbumUpload() {
           is_visible: newAlbumVisible,
           created_by: userId,
         })
-        .select("id, name, is_visible")
+        .select("id, name, description, is_visible, cover_style")
         .single();
       if (insertError || !album?.id) {
         throw new Error(insertError?.code === "42501"
@@ -266,6 +274,83 @@ export default function AdminPrivateAlbumUpload() {
       }
     } finally {
       if (mountedRef.current) setCreatingAlbum(false);
+    }
+  };
+
+
+  const startEditingAlbum = () => {
+    const selectedAlbum = albums.find((album) => album.id === albumId);
+    if (!selectedAlbum || busy || creatingAlbum || savingAlbum) return;
+    setEditingAlbumId(selectedAlbum.id);
+    setEditAlbumName(selectedAlbum.name || "");
+    setEditAlbumDescription(selectedAlbum.description || "");
+    setEditAlbumVisible(selectedAlbum.is_visible === true);
+    setEditAlbumCoverStyle(selectedAlbum.cover_style || "indigo");
+    setAlbumEditError("");
+    setAlbumEditMessage("");
+    setShowAlbumCreator(false);
+  };
+
+  const saveEditedAlbum = async () => {
+    if (savingAlbum || busy || creatingAlbum || !editingAlbumId) return;
+    const name = editAlbumName.trim();
+    const description = editAlbumDescription.trim();
+    const coverStyle = editAlbumCoverStyle;
+    const allowedStyles = ["indigo", "ocean", "forest", "sunset", "violet", "slate"];
+    setAlbumEditMessage("");
+    setAlbumEditError("");
+
+    if (!name || name.length > 80) {
+      setAlbumEditError("Album name must be between 1 and 80 characters.");
+      return;
+    }
+    if (description.length > 400 || !allowedStyles.includes(coverStyle)) {
+      setAlbumEditError("Invalid album description or cover color.");
+      return;
+    }
+    if (albums.some((album) => album.id !== editingAlbumId &&
+      album.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setAlbumEditError("Another album already uses that name.");
+      return;
+    }
+
+    setSavingAlbum(true);
+    try {
+      const { data: userResult, error: userError } = await supabase.auth.getUser();
+      if (userError || !userResult?.user?.id) {
+        throw new Error("Admin session expired. Sign in again.");
+      }
+      // Existing Supabase RLS requires is_current_user_admin().
+      // Only change display fields. IDs, owner, media and uploads are untouched.
+      const { data: updated, error: updateError } = await supabase
+        .from("jb_media_albums")
+        .update({
+          name,
+          description,
+          is_visible: editAlbumVisible,
+          cover_style: coverStyle,
+        })
+        .eq("id", editingAlbumId)
+        .select("id, name, description, is_visible, cover_style")
+        .single();
+
+      if (updateError || !updated?.id) {
+        throw new Error(updateError?.code === "42501"
+          ? "Only administrators can edit albums."
+          : "Could not save album changes. Check admin permissions and refresh.");
+      }
+      if (!mountedRef.current) return;
+      setAlbums((previous) => previous
+        .map((album) => album.id === updated.id ? updated : album)
+        .sort((a, b) => a.name.localeCompare(b.name)));
+      setEditingAlbumId("");
+      setAlbumEditMessage('Album "' + updated.name + '" updated. Existing videos were not changed.');
+    } catch (error) {
+      if (mountedRef.current) {
+        setAlbumEditError(error?.message || "Could not save album changes.");
+      }
+    } finally {
+      if (mountedRef.current) setSavingAlbum(false);
     }
   };
 
@@ -332,7 +417,7 @@ export default function AdminPrivateAlbumUpload() {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (busy || !albumId || files.length === 0) return;
+    if (busy || savingAlbum || editingAlbumId || !albumId || files.length === 0) return;
     if (!albums.some((album) => album.id === albumId)) {
       setErrorText("Please select a valid album.");
       return;
@@ -469,6 +554,9 @@ export default function AdminPrivateAlbumUpload() {
             disabled={busy || creatingAlbum}
             onClick={() => {
               setShowAlbumCreator((previous) => !previous);
+              setEditingAlbumId("");
+              setAlbumEditError("");
+              setAlbumEditMessage("");
               setAlbumCreationError("");
               setAlbumCreationMessage("");
             }}
@@ -570,9 +658,14 @@ export default function AdminPrivateAlbumUpload() {
           <select
             id="jb-staging-album"
             value={albumId}
-            disabled={busy || loading}
+            disabled={busy || loading || savingAlbum}
             required
-            onChange={(event) => setAlbumId(event.target.value)}
+            onChange={(event) => {
+              setAlbumId(event.target.value);
+              setEditingAlbumId("");
+              setAlbumEditError("");
+              setAlbumEditMessage("");
+            }}
             className="w-full min-w-0 flex-1 rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 text-sm text-white"
           >
             <option value="">Select an album</option>
@@ -584,13 +677,109 @@ export default function AdminPrivateAlbumUpload() {
           </select>
           <button
             type="button"
-            disabled={busy || loading}
+            disabled={busy || loading || savingAlbum}
             onClick={loadAlbums}
             className="min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-xs font-bold text-slate-200 disabled:opacity-50"
           >
             Refresh albums
           </button>
+          <button
+            type="button"
+            disabled={busy || loading || creatingAlbum || savingAlbum || !albumId}
+            onClick={startEditingAlbum}
+            className="min-h-11 rounded-xl border border-sky-400/50 bg-sky-500/10 px-4 py-2 text-xs font-bold text-sky-100 hover:bg-sky-500/20 disabled:opacity-50"
+          >
+            Edit Selected Album
+          </button>
         </div>
+
+        {albumEditMessage && (
+          <p role="status" className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+            {albumEditMessage}
+          </p>
+        )}
+        {editingAlbumId && (
+          <div aria-label="Edit selected media album"
+            className="space-y-4 rounded-xl border border-sky-400/35 bg-slate-900/70 p-4"
+          >
+            <div>
+              <h4 className="font-extrabold text-white">Edit Album</h4>
+              <p className="mt-1 text-xs text-slate-300">
+                Change this album's details without changing or deleting its videos.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="jb-edit-album-name" className="mb-1 block text-sm font-semibold text-white">
+                Album name
+              </label>
+              <input id="jb-edit-album-name" type="text" maxLength={80} required
+                value={editAlbumName}
+                onChange={(event) => setEditAlbumName(event.target.value)}
+                disabled={busy || savingAlbum}
+                className="w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="jb-edit-album-description" className="mb-1 block text-sm font-semibold text-white">
+                Description
+              </label>
+              <textarea id="jb-edit-album-description" rows={2} maxLength={400}
+                value={editAlbumDescription}
+                onChange={(event) => setEditAlbumDescription(event.target.value)}
+                disabled={busy || savingAlbum}
+                className="w-full resize-y rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="jb-edit-album-cover-style" className="mb-1 block text-sm font-semibold text-white">
+                Album cover color
+              </label>
+              <select id="jb-edit-album-cover-style" value={editAlbumCoverStyle}
+                onChange={(event) => setEditAlbumCoverStyle(event.target.value)}
+                disabled={busy || savingAlbum}
+                className="w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-white"
+              >
+                <option value="indigo">Indigo</option>
+                <option value="ocean">Ocean</option>
+                <option value="forest">Forest</option>
+                <option value="sunset">Sunset</option>
+                <option value="violet">Violet</option>
+                <option value="slate">Slate</option>
+              </select>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3 text-sm text-white">
+              <input type="checkbox" checked={editAlbumVisible}
+                onChange={(event) => setEditAlbumVisible(event.target.checked)}
+                disabled={busy || savingAlbum}
+                className="mt-1 h-4 w-4 accent-sky-500"
+              />
+              <span>
+                <strong>Visible to eligible members</strong>
+                <span className="block text-xs text-slate-300">
+                  Uncheck to hide this album from members while you prepare its content.
+                </span>
+              </span>
+            </label>
+            {albumEditError && (
+              <p role="alert" className="rounded-lg border border-rose-400/40 bg-rose-500/10 p-3 text-xs text-rose-100">
+                {albumEditError}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={saveEditedAlbum}
+                disabled={busy || savingAlbum || !editAlbumName.trim()}
+                className="min-h-11 rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-50"
+              >
+                {savingAlbum ? "Saving album…" : "Save Album Changes"}
+              </button>
+              <button type="button" disabled={savingAlbum}
+                onClick={() => { setEditingAlbumId(""); setAlbumEditError(""); }}
+                className="min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-xs font-bold text-slate-200">
+                Cancel Edit
+              </button>
+            </div>
+          </div>
+        )}
 
         <label htmlFor="jb-staged-video-files" className="block text-sm font-semibold text-white">
           Video files (bulk selection)
@@ -681,7 +870,7 @@ export default function AdminPrivateAlbumUpload() {
 
         <button
           type="submit"
-          disabled={busy || loading || !albumId || !files.length || Boolean(errorText)}
+          disabled={busy || loading || savingAlbum || Boolean(editingAlbumId) || !albumId || !files.length || Boolean(errorText)}
           className="min-h-11 w-full rounded-xl bg-sky-700 px-5 py-3 text-sm font-extrabold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
         >
           {busy ? "Uploading privately…" : "Upload Selected Files Privately"}
