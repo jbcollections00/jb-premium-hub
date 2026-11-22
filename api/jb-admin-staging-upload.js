@@ -31,7 +31,14 @@ function isTrustedSameOrigin(req, origin) {
   try {
     const url = new URL(origin);
     const host = String(req.headers.host || "").toLowerCase();
+    // Vercel's Preview URLs use the project's deployment slug and owning team,
+    // e.g. jb-premium-<deployment>-jbcollections00-7010s-projects.vercel.app.
+    // Restrict to this specific project/team and require an EXACT same-origin
+    // Host match. Do not accept arbitrary *.vercel.app origins.
+    const previewDeploymentHost =
+      /^jb-premium-[a-z0-9-]+-jbcollections00-7010s-projects\.vercel\.app$/i.test(host);
     const trustedHost =
+      previewDeploymentHost ||
       /^jb-premium-hub(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(host) ||
       host === "www.jb-premium-hub.vip" ||
       host === "jb-premium-hub.vip";
