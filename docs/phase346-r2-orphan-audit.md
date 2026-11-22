@@ -28,3 +28,13 @@
 - Unit/security tests inspect the admin authentication order, strict bucket/prefix scope, no deletion commands, source reference coverage, pagination, fail-closed behavior, and UI.
 - CI also runs Phase 343–345 regressions and Vite build.
 - The scan does not change payments, access controls, video player, thumbnails or publishing.
+
+## Phase 346B — Public thumbnail audit diagnostic
+
+Live read-only audit observation (22 Nov 2026): four private MP4s and four private preview JPEGs all had references; no suspected orphans in these two completed prefixes. Public thumbnail scan returned unconfigured scope, so **the full audit remains incomplete**. Supabase media contains two public published-thumbnail URL references and two logo references. A public asset URL alone does not prove the public R2 bucket is currently configured for the audit.
+
+- The audit accepts only a real, separately configured public R2 bucket. **Never guess a bucket name from a domain or use the private video bucket as the public bucket.**
+- Required Vercel **Production server-side** environment: `JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME` (exact Cloudflare R2 public-assets bucket), `JB_PUBLIC_THUMBNAIL_ORIGIN=https://assets.jb-premium-hub.vip`.
+- If missing or inconsistent, the `public_thumbnail` audit now returns a precise HTTP 409 explanation while the two completed private scopes remain visible. Redeploy after correcting environment variables. No credentials or file keys need to be pasted into the chat.
+- If configured but listing fails, check R2 API token's read/list permission for that public bucket; audit reports a 503 instead of falsely showing zero.
+- No deletion or automatic orphan cleanup is added in this phase.

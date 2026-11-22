@@ -93,3 +93,14 @@ test("Unauthenticated calls and attacker origins rejected before R2 access", asy
     body:{action:"orphan-audit",scope:"private_video"}},attacker);
   assert.equal(attacker.statusCode,403);
 });
+
+test("public audit configuration failures identify the missing flag and do not claim zero orphans", () => {
+  assert.match(scanner, /scope === "public_thumbnail" && !scopes\.public_thumbnail/);
+  assert.match(scanner, /if \(!publicBucket\)/);
+  assert.match(scanner, /JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME in Vercel Production/);
+  assert.match(scanner, /JB_PUBLIC_THUMBNAIL_ORIGIN to https:\/\/assets\.jb-premium-hub\.vip/);
+  assert.match(scanner, /public thumbnail bucket must be different from the private video bucket/);
+  assert.match(scanner, /return fail\(res, 409/);
+  assert.ok(scanner.indexOf("if (scope === \"public_thumbnail\" && !scopes.public_thumbnail)") <
+    scanner.indexOf("new ListObjectsV2Command"));
+});
