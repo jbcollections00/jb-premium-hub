@@ -6,9 +6,18 @@ import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
+import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } from "../../services/homeDiscovery";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
+const ALBUM_COVER_COLORS = {
+  indigo: "from-indigo-600/40 via-indigo-950/50 to-slate-950",
+  ocean: "from-cyan-600/40 via-blue-950/50 to-slate-950",
+  forest: "from-emerald-600/40 via-green-950/50 to-slate-950",
+  sunset: "from-orange-600/40 via-rose-950/50 to-slate-950",
+  violet: "from-violet-600/40 via-fuchsia-950/50 to-slate-950",
+  slate: "from-slate-600/40 via-slate-800/50 to-slate-950",
+};
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
 const POPUNDER_EVERY_N_VIDEOS = 3;
@@ -45,6 +54,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState("");
   const mediaFetchSerialRef = useRef(0);
+  const mostWatchedFetchSerialRef = useRef(0);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
@@ -63,6 +73,10 @@ export default function Home() {
   // States para sa Most Watched Videos
   const [mostWatched, setMostWatched] = useState([]);
   const [mostWatchedLoading, setMostWatchedLoading] = useState(true);
+  const [albums, setAlbums] = useState([]);
+  const [albumsLoading, setAlbumsLoading] = useState(false);
+  const [albumError, setAlbumError] = useState("");
+  const [selectedAlbumId, setSelectedAlbumId] = useState("");
 
   // Ref para i-save ang eksaktong scroll position bago magbukas ng video
   const scrollPosRef = useRef(0);
@@ -70,15 +84,6 @@ export default function Home() {
   // Immediate lock para hindi mag-double insert ang media_views kapag
   // sunod-sunod ang onPlay events bago ma-update ang React state.
   const viewRecordedRef = useRef(false);
-
-  const [activeCategory, setActiveCategory] = useState(() => {
-    if (typeof window !== "undefined") {
-      const requested = new URLSearchParams(window.location.search).get("cat");
-      // Only two supported public filters. Old category URLs become All Videos.
-      return requested === "free" && FREE_PREVIEW_UI_ENABLED ? "free" : "all";
-    }
-    return "all";
-  });
 
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== "undefined") {
@@ -123,6 +128,9 @@ export default function Home() {
   // The checkout entitlement is authoritative for new memberships.
   // Legacy VIP codes and admin status remain supported by the resolver.
   const isAdFree = membership.isAdmin || membership.tier === "vip";
+  const homeMode = getHomeMode(billingReady, userProfile?.id, membership, FREE_PREVIEW_UI_ENABLED);
+  const adsEnabled = shouldDisplayAds(billingReady, userProfile?.id, membership);
+  const selectedAlbum = albums.find((album) => album.id === selectedAlbumId);
   const canDownload = billingReady && membership.canDownload;
   const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
   const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
@@ -227,11 +235,46 @@ export default function Home() {
     };
   }, []);
 
+  // Album names are read only when the current member is entitled.
+  // Supabase RLS hides albums from FREE users and filters hidden albums for members.
   useEffect(() => {
-    if (!billingReady) return;
-    // Refresh the gallery when the authenticated user's entitlement resolves.
-    // An initially signed-in FREE user must not rely on full media-table RLS.
-    if (FREE_PREVIEW_UI_ENABLED && !userProfile?.id) {
+    let cancelled = false;
+    if (homeMode !== "albums") {
+      setAlbums([]);
+      setSelectedAlbumId("");
+      setAlbumsLoading(false);
+      setAlbumError("");
+      return () => { cancelled = true; };
+    }
+    setAlbumsLoading(true);
+    setAlbumError("");
+    supabase.from("jb_media_albums")
+      .select("id, name, description, is_visible, cover_style, cover_image_url")
+      .order("name", { ascending: true })
+      .limit(200)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !Array.isArray(data)) throw new Error("ALBUMS_UNAVAILABLE");
+        setAlbums(data);
+        setSelectedAlbumId((previous) =>
+          data.some((album) => album.id === previous) ? previous : (data[0]?.id || ""));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAlbums([]);
+        setSelectedAlbumId("");
+        setAlbumError("Could not load your albums. Refresh and try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setAlbumsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [homeMode, userProfile?.id]);
+
+  useEffect(() => {
+    if (homeMode !== "albums") ++mostWatchedFetchSerialRef.current;
+    if (homeMode === "locked" ||
+        (homeMode === "albums" && (albumsLoading || !selectedAlbumId))) {
       ++mediaFetchSerialRef.current;
       setMediaList([]);
       setTotalCount(0);
@@ -240,15 +283,11 @@ export default function Home() {
       setLoading(false);
       return;
     }
-    fetchMedia(currentPage, activeCategory);
-    if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
-      // Do not query the paid-library 'most watched' records for FREE accounts.
-      setMostWatched([]);
-      setMostWatchedLoading(false);
-    } else {
-      fetchMostWatched();
-    }
-  }, [currentPage, activeCategory, billingReady, membership.canViewAlbums, userProfile?.id]);
+    fetchMedia(currentPage);
+    if (homeMode === "albums") fetchMostWatched();
+    // FREE Most Watched is derived from the same <=20 approved RPC results
+    // inside fetchMedia; never request paid-only media records as FREE.
+  }, [currentPage, homeMode, selectedAlbumId, albumsLoading, userProfile?.id]);
 
   useEffect(() => {
     const allIds = [
@@ -376,8 +415,10 @@ export default function Home() {
   };
 
   const fetchMostWatched = async () => {
+    const requestId = ++mostWatchedFetchSerialRef.current;
     setMostWatchedLoading(true);
     try {
+      // Paid/admin only: the media table continues to enforce its existing RLS.
       const { data, error } = await supabase
         .from("media")
         .select("*")
@@ -386,63 +427,82 @@ export default function Home() {
         .limit(6);
 
       if (error) throw error;
-      setMostWatched(data || []);
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatched(data || []);
     } catch (err) {
-      console.error("Fetch most watched error:", err);
+      console.error("Most Watched unavailable:", err?.code || "UNKNOWN");
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatched([]);
     } finally {
-      setMostWatchedLoading(false);
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatchedLoading(false);
     }
   };
 
-  const fetchMedia = async (page = 1, category = "all") => {
+  const fetchMedia = async (page = 1) => {
     const requestId = ++mediaFetchSerialRef.current;
     setLoading(true);
+    setMediaList([]);
     setMediaError("");
+    if (homeMode === "free") {
+      setMostWatched([]);
+      setMostWatchedLoading(true);
+    }
     const from = (page - 1) * ITEMS_PER_PAGE;
     const to = from + ITEMS_PER_PAGE - 1;
 
     try {
-      // FREE users receive only the public-facing details of the <=20 selected
-      // preview videos. A SECURITY DEFINER RPC enforces that limit despite
-      // intentionally restrictive membership RLS on the full media table.
-      // It never returns media_url; the separate Edge issuer alone authorizes
-      // playback of an approved video through the private Cloudflare Worker.
-      if (FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums) {
+      if (homeMode === "free") {
+        // FREE only sees the authenticated max-20 metadata catalog.
+        // No paid media SELECT, private media_url or paid album query here.
         const { data, error } = await supabase.rpc("jb_free_preview_catalog_v1");
         if (error) throw error;
-        if (!Array.isArray(data)) throw new Error("Invalid Free to Watch catalog");
-
-        let approved = data.filter((item) =>
-          item && typeof item.id === "string" &&
-          typeof item.title === "string" &&
-          item.type === "video" &&
-          item.is_free_preview === true &&
-          !Object.prototype.hasOwnProperty.call(item, "media_url")
-        );
+        const approved = approvedFreeCatalog(data);
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
+        setMostWatched(freeMostWatched(approved));
         return;
       }
 
-      // Paid members retain the existing full-library query and privileges.
-      let query = supabase.from("media").select("*", { count: "exact" }).eq("type", "video");
-      if (category === "free") query = query.eq("is_free_preview", true);
-      const { data, count, error } = await query
-        .order("created_at", { ascending: false })
+      if (homeMode !== "albums" || !selectedAlbumId) {
+        throw new Error("HOME_ACCESS_UNAVAILABLE");
+      }
+
+      // Query only the selected album's published links.
+      // Both the link table and media table retain their member-level RLS.
+      const { data: links, count, error: linksError } = await supabase
+        .from("jb_media_publication_links")
+        .select("media_id", { count: "exact" })
+        .eq("album_id", selectedAlbumId)
+        .order("published_at", { ascending: false })
         .range(from, to);
-      if (error) throw error;
+      if (linksError || !Array.isArray(links)) throw new Error("ALBUM_MEDIA_UNAVAILABLE");
+      const ids = links.map((link) => link.media_id).filter(Boolean);
+      if (ids.length === 0) {
+        if (requestId !== mediaFetchSerialRef.current) return;
+        setMediaList([]);
+        setTotalCount(count ?? 0);
+        return;
+      }
+      const { data: videos, error: videosError } = await supabase.from("media")
+        .select("*")
+        .eq("type", "video")
+        .in("id", ids);
+      if (videosError || !Array.isArray(videos)) throw new Error("ALBUM_VIDEO_DATA_UNAVAILABLE");
       if (requestId !== mediaFetchSerialRef.current) return;
-      setMediaList(data || []);
-      setTotalCount(count ?? 0);
+      const byId = new Map(videos.map((video) => [video.id, video]));
+      setMediaList(ids.map((id) => byId.get(id)).filter(Boolean));
+      setTotalCount(count ?? ids.length);
     } catch (err) {
       if (requestId !== mediaFetchSerialRef.current) return;
-      console.error("Fetch media error:", err?.code || "UNAVAILABLE");
+      console.error("Home catalog unavailable:", err?.message || "UNKNOWN");
       setMediaList([]);
       setTotalCount(0);
-      setMediaError("Could not load the video catalog. Please refresh or try again.");
+      if (homeMode === "free") setMostWatched([]);
+      setMediaError("Could not load available videos. Please refresh or try again.");
     } finally {
-      if (requestId === mediaFetchSerialRef.current) setLoading(false);
+      if (requestId === mediaFetchSerialRef.current) {
+        setLoading(false);
+        if (homeMode === "free") setMostWatchedLoading(false);
+      }
     }
   };
 
@@ -503,17 +563,10 @@ export default function Home() {
     }
   };
 
-  // Count a video play for popunders only after active Standard billing access
-  // has been verified. Free users, VIPs, admins, and unresolved accounts
-  // never initiate a third-party popunder.
-  const triggerPopunderForStandard = () => {
-    if (
-      !billingReady ||
-      membership.tier !== "standard" ||
-      membership.showAds !== true ||
-      !userProfile?.id ||
-      typeof window === "undefined"
-    ) return;
+  // Signed-in FREE and STANDARD accounts use the same ad cadence.
+  // VIP, Admin and unresolved accounts never initiate a popunder.
+  const triggerPopunderForAdSupported = () => {
+    if (!adsEnabled || typeof window === "undefined") return;
 
     // Keep each account's counter separate on shared devices.
     const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
@@ -544,12 +597,11 @@ export default function Home() {
     }
   };
 
-  // Remove our loader when an account becomes VIP/admin/free. Already opened
-  // third-party popups cannot be undone; the gate prevents further loading.
+  // Remove the popunder loader when access changes to VIP/Admin/unknown.
   useEffect(() => {
-    if (billingReady && membership.tier === "standard" && membership.showAds === true) return;
+    if (adsEnabled) return;
     document.querySelector('script[data-jb-popunder="true"]')?.remove();
-  }, [billingReady, membership.tier, membership.showAds]);
+  }, [adsEnabled]);
 
   const handleVideoPlay = async () => {
     if (
@@ -565,7 +617,7 @@ export default function Home() {
     setHasRecordedCurrentView(true);
 
     // Count only a real, first play of this opened video.
-    triggerPopunderForStandard();
+    triggerPopunderForAdSupported();
 
     const mediaId = selectedMedia.id;
     const currentVal =
@@ -810,14 +862,19 @@ export default function Home() {
     }
   };
 
-  const handleCategoryChange = (catKey) => {
-    setActiveCategory(catKey);
+  const handleSelectAlbum = (id) => {
+    if (homeMode !== "albums" || !albums.some((album) => album.id === id)) return;
+    setSelectedAlbumId(id);
     setCurrentPage(1);
-
+    setMediaList([]);
+    setTotalCount(0);
+    setMediaError("");
     const url = new URL(window.location.href);
-    url.searchParams.set("cat", catKey);
-    url.searchParams.set("page", 1);
+    url.searchParams.delete("cat");
+    url.searchParams.delete("v");
+    url.searchParams.set("page", "1");
     window.history.replaceState({}, "", url);
+    document.getElementById("jb-home-gallery")?.scrollIntoView({ behavior: "smooth" });
   };
 
   // Open the selected video in the current tab without ad redirects.
@@ -827,6 +884,11 @@ export default function Home() {
       e.stopPropagation();
     }
 
+    // FREE cards and recommendations must belong to the approved catalog.
+    if (homeMode === "locked" || !item?.id ||
+        (homeMode === "free" && (!item.is_free_preview ||
+          ![...mediaList, ...mostWatched].some((video) => video.id === item.id)))) return;
+
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
     setAutoPlay(false);
     setSelectedMedia(item);
@@ -834,7 +896,7 @@ export default function Home() {
     const url = new URL(window.location.href);
     url.searchParams.set("v", item.id);
     url.searchParams.set("page", currentPage);
-    url.searchParams.set("cat", activeCategory);
+    url.searchParams.delete("cat");
     url.searchParams.delete("step");
     url.searchParams.delete("autoplay");
     window.history.replaceState({}, "", url);
@@ -1126,7 +1188,21 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
+        {homeMode === "locked" ? (
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-8 text-center" aria-label="Member home sign-in">
+            <h1 className="text-xl font-extrabold text-white">
+              {billingReady ? "Sign in to explore videos" : "Checking membership…"}
+            </h1>
+            <p className="mt-2 text-sm text-slate-300">
+              Video recommendations are shown only after your account access is verified.
+            </p>
+            {billingReady && !userProfile?.id && (
+              <Link to="/login" className="jbh-btn mt-4 inline-flex">Sign in</Link>
+            )}
+          </section>
+        ) : (
+        <>
+        {homeMode === "free" && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
               <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
@@ -1134,11 +1210,81 @@ export default function Home() {
               <p className="mt-2 text-sm leading-relaxed text-slate-300">Watch these videos as often as you like. Explore membership options whenever you're ready for the full collection.</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => handleCategoryChange("free")} className="jbh-btn">Explore free videos</button>
+              <button type="button" onClick={() => document.getElementById("jb-home-gallery")?.scrollIntoView({ behavior: "smooth" })} className="jbh-btn">Explore free videos</button>
               <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
             </div>
           </section>
         )}
+        {/* Admin, Standard and VIP see album names instead of Free to Watch. */}
+        {homeMode === "albums" && (
+          <section className="mb-8" aria-label="Member Albums">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-extrabold text-white sm:text-2xl">Your Albums</h2>
+                <p className="mt-1 text-xs text-slate-300">Select an album to browse its published videos.</p>
+              </div>
+              <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-bold text-indigo-200">
+                {albums.length} albums
+              </span>
+            </div>
+            {albumsLoading ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="h-36 animate-pulse rounded-2xl border border-slate-700 bg-slate-900/80"/>
+                ))}
+              </div>
+            ) : albumError ? (
+              <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-900/10 p-4 text-sm text-rose-200">
+                {albumError}
+              </p>
+            ) : albums.length === 0 ? (
+              <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-sm text-slate-300">
+                No albums available yet. Albums appear here when an admin creates them.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {albums.map((album) => (
+                  <button type="button" key={album.id}
+                    onClick={() => handleSelectAlbum(album.id)}
+                    aria-pressed={selectedAlbumId === album.id}
+                    className={`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 ${
+                      selectedAlbumId === album.id
+                        ? "border-indigo-300 ring-2 ring-indigo-500/40"
+                        : "border-slate-700 hover:border-indigo-400/60"
+                    }`}
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-br ${
+                      ALBUM_COVER_COLORS[album.cover_style] || ALBUM_COVER_COLORS.indigo
+                    }`}/>
+                    {album.cover_image_url && (
+                      <img src={album.cover_image_url} alt="" loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover opacity-35"/>
+                    )}
+                    <div className="relative z-10 flex h-full flex-col justify-between gap-3">
+                      <span className="text-2xl" aria-hidden="true">▣</span>
+                      <span>
+                        <span className="block break-words text-sm font-extrabold text-white sm:text-base">
+                          {album.name}
+                        </span>
+                        {album.description && (
+                          <span className="mt-1 block line-clamp-2 text-xs text-slate-200">
+                            {album.description}
+                          </span>
+                        )}
+                        {isAdmin && !album.is_visible && (
+                          <span className="mt-1 inline-flex rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
+                            Hidden album
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
@@ -1152,7 +1298,7 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-xl md:text-2xl font-black text-white tracking-wide">
-                    Most watched
+                    {homeMode === "free" ? "Most Watched — Free" : "Most Watched"}
                   </h2>
                   <span className="rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
                     Trending
@@ -1224,7 +1370,7 @@ export default function Home() {
                   >
                     <div>
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
-                        {item.is_free_preview && (
+                        {homeMode === "free" && (
                           <span className="absolute right-2 top-2 z-10 rounded-lg bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-white">FREE</span>
                         )}
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
@@ -1258,11 +1404,11 @@ export default function Home() {
                         )}
 
                         <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      item.is_free_preview
+                      homeMode === "free"
                         ? "border-emerald-300/30 bg-emerald-500/90 text-white"
                         : "border-white/10 bg-black/75 text-slate-200"
                     }`}>
-                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                      {homeMode === "free" ? "Free to Watch" : "Member library"}
                     </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
@@ -1305,40 +1451,16 @@ export default function Home() {
         </div>
 
         {/* VAULT MEDIA LIST HEADER */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl md:text-2xl font-bold text-white">Media library</h1>
+        <div id="jb-home-gallery" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 scroll-mt-24">
+          <h1 className="text-xl md:text-2xl font-bold text-white">
+            {homeMode === "free" ? "Free to Watch" : selectedAlbum?.name || "Album Videos"}
+          </h1>
           <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
             Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
           </span>
         </div>
 
-        {/* CATEGORY TABS */}
-        <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
-          <button
-            onClick={() => handleCategoryChange("all")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
-              activeCategory === "all"
-                ? "bg-indigo-600 text-white"
-                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🔥</span> All Videos
-          </button>
-          {FREE_PREVIEW_UI_ENABLED && (
-          <button
-            onClick={() => handleCategoryChange("free")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
-              activeCategory === "free"
-                ? "bg-emerald-600 text-white"
-                : "bg-slate-900 border border-emerald-500/25 text-emerald-200 hover:bg-emerald-500/10"
-            }`}
-          >
-            <span>▶</span> Free to Watch
-          </button>
-          )}
-        </div>
-
-        <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
+        <AdSlot position="middle" enabled={adsEnabled} />
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
@@ -1348,11 +1470,13 @@ export default function Home() {
         ) : mediaError ? (
           <div role="alert" className="text-center py-16 bg-slate-900/40 rounded-2xl border border-rose-400/30">
             <p className="font-semibold text-rose-200">{mediaError}</p>
-            <button type="button" onClick={() => fetchMedia(currentPage, activeCategory)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
+            <button type="button" onClick={() => fetchMedia(currentPage)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
           </div>
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-            <p className="text-slate-400">{FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums ? "Wala pang napiling Free to Watch videos sa kategoryang ito." : "Wala pang available na videos sa kategoryang ito."}</p>
+            <p className="text-slate-400">{homeMode === "free"
+              ? "Wala pang napiling Free to Watch videos. Maghihintay muna tayo ng pagpili ng admin."
+              : "Wala pang published videos sa album na ito."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -1387,11 +1511,11 @@ export default function Home() {
                       </div>
                     )}
                     <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      item.is_free_preview
+                      homeMode === "free"
                         ? "border-emerald-300/30 bg-emerald-500/90 text-white"
                         : "border-white/10 bg-black/75 text-slate-200"
                     }`}>
-                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                      {homeMode === "free" ? "Free to Watch" : "Member library"}
                     </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
@@ -1491,6 +1615,8 @@ export default function Home() {
             </button>
           </div>
         )}
+        </>
+        )}
 
       </div>
 
@@ -1562,7 +1688,7 @@ export default function Home() {
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
                     mainVideoUrl={isSelectedFreePreview ? freePlayback.url : PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
-                    isAdFree={billingReady ? !membership.showAds : false}
+                    isAdFree={billingReady ? !adsEnabled : false}
                     accountType={userProfile?.account_type}
                     vipUntil={userProfile?.vip_until}
                     userProfile={userProfile}
