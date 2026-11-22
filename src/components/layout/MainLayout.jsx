@@ -3,12 +3,13 @@ import { Outlet, useLocation } from "react-router-dom";
 
 import { supabase } from "../../services/supabaseClient";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
+import { shouldDisplayAds } from "../../services/homeDiscovery";
 import Header from "./Header";
 import Footer from "./Footer";
 import SocialBar from "../SocialBar";
 
 /**
- * Show an ad only once an authenticated Standard entitlement has been checked.
+ * Show Home ads only after authenticated FREE/Standard access has been checked.
  *
  * Previously the app injected the third-party script when getSession() was
  * initially null. Ad scripts can leave their own DOM behind even after their
@@ -52,11 +53,9 @@ export default function MainLayout() {
         }
 
         const membership = resolveMemberPresentation(profile, billingResult.access);
-        // Ads are exclusive to verified active Standard members, not VIP,
-        // admin, free, or accounts whose membership cannot be resolved.
-        setShowSocialBar(
-          membership.tier === "standard" && membership.showAds === true
-        );
+        // FREE and STANDARD use the same Home social ads.
+        // Admin/VIP and unresolved memberships stay strictly ad-free.
+        setShowSocialBar(shouldDisplayAds(true, session.user.id, membership));
       } catch (error) {
         if (active && version === requestVersion) {
           console.error("Could not determine ad eligibility:", error);
