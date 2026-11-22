@@ -6,6 +6,8 @@ const USERS_PER_PAGE = 50;
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
+  const [membershipTiersById, setMembershipTiersById] = useState({});
+  const [membershipTierError, setMembershipTierError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("ALL");
@@ -98,8 +100,44 @@ export default function AdminUsers() {
       }
 
       setUsers(allProfiles);
+
+      // Fetch effective memberships in bounded admin-only batches. The legacy
+      // profile.account_type field does NOT prove an active paid membership.
+      const tiers = {};
+      try {
+        for (let offset = 0; offset < allProfiles.length; offset += 200) {
+          const batch = allProfiles.slice(offset, offset + 200);
+          const ids = batch.map((user) => user.id);
+          const { data: resolved, error: tierError } = await supabase.rpc(
+            "jb_admin_user_membership_tiers_v1",
+            { p_user_ids: ids }
+          );
+          if (tierError) throw tierError;
+          if (!Array.isArray(resolved)) throw new Error("Invalid membership response.");
+          for (const entry of resolved) {
+            if (!ids.includes(entry?.user_id) ||
+                !["FREE", "STANDARD", "VIP", "ADMIN", "GUEST"].includes(entry?.tier)) {
+              throw new Error("Unexpected membership response.");
+            }
+            tiers[entry.user_id] = entry.tier;
+          }
+        }
+        if (!allProfiles.every((user) => Object.hasOwn(tiers, user.id))) {
+          throw new Error("Incomplete membership response.");
+        }
+        setMembershipTiersById(tiers);
+        setMembershipTierError(false);
+      } catch (tierError) {
+        console.error("Unable to load current membership tiers:", tierError?.code || tierError?.message);
+        // Fail closed: never fall back to 'Profile: standard' or invent FREE.
+        setMembershipTiersById({});
+        setMembershipTierError(true);
+        setFilterType("ALL");
+      }
     } catch (err) {
       console.error("Error fetching users:", err.message);
+      setMembershipTiersById({});
+      setMembershipTierError(true);
     } finally {
       setLoading(false);
     }
@@ -199,13 +237,10 @@ export default function AdminUsers() {
       (u.email && u.email.toLowerCase().includes(searchLower)) ||
       (u.id && u.id.toLowerCase().includes(searchLower));
 
-    const accountType = (u.account_type || u.role || "").toUpperCase();
-    const isAdmin = accountType === "ADMIN";
-    const isVip = accountType === "VIP";
-
-    if (filterType === "ADMIN") return matchesSearch && isAdmin;
-    if (filterType === "VIP") return matchesSearch && isVip;
-    if (filterType === "STANDARD") return matchesSearch && !isVip && !isAdmin;
+    const tier = membershipTiersById[u.id];
+    if (["ADMIN", "VIP", "STANDARD", "FREE"].includes(filterType)) {
+      return matchesSearch && tier === filterType;
+    }
     if (filterType === "ONLINE") return matchesSearch && onlineUserIds.has(u.id);
 
     return matchesSearch;
@@ -245,12 +280,19 @@ export default function AdminUsers() {
           >
             <option value="ALL">All Accounts ({users.length})</option>
             <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
-            <option value="ADMIN">Admins Only</option>
-            <option value="VIP">VIP profiles</option>
-            <option value="STANDARD">Regular profiles</option>
+            <option value="ADMIN" disabled={membershipTierError}>Admins Only</option>
+            <option value="FREE" disabled={membershipTierError}>FREE Account Users</option>
+            <option value="STANDARD" disabled={membershipTierError}>STANDARD Account Users</option>
+            <option value="VIP" disabled={membershipTierError}>VIP Account Users</option>
           </select>
         </div>
       </div>
+
+      {membershipTierError && !loading && (
+        <div role="status" className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs text-amber-100">
+          Membership tier data is temporarily unavailable. User profiles remain visible, but no FREE, STANDARD or VIP status is guessed. Refresh the page to retry.
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-12 text-gray-500 text-xs">Loading user profiles...</div>
@@ -261,7 +303,7 @@ export default function AdminUsers() {
               <thead className="bg-gray-950 text-gray-400 font-semibold border-b border-gray-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="p-4">User Details</th>
-                  <th className="p-4">Profile type</th>
+                  <th className="p-4">Account User</th>
                   <th className="p-4">Status</th>
                   <th className="p-4">Joined Date</th>
                   <th className="p-4 text-right">Actions</th>
@@ -277,8 +319,15 @@ export default function AdminUsers() {
                 ) : (
                   paginatedUsers.map((u) => {
                     const isOnline = onlineUserIds.has(u.id);
-                    const isVip = (u.account_type || "").toUpperCase() === "VIP";
+                    const currentTier = membershipTiersById[u.id];
                     const isAdminUser = (u.role || "").toLowerCase() === "admin" || (u.account_type || "").toLowerCase() === "admin";
+                    const tierStyle = currentTier === "VIP"
+                      ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                      : currentTier === "STANDARD"
+                        ? "bg-sky-500/10 text-sky-300 border-sky-500/30"
+                        : currentTier === "FREE"
+                          ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                          : "bg-slate-500/10 text-slate-300 border-slate-500/30";
 
                     return (
                       <tr key={u.id} className="hover:bg-gray-800/40 transition-colors">
@@ -287,10 +336,8 @@ export default function AdminUsers() {
                           <div className="text-[10px] text-gray-500 font-mono truncate max-w-xs">{u.id}</div>
                         </td>
                         <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                            isVip ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                          }`}>
-                            Profile: {u.account_type || 'unknown'}
+                          <span title="Current effective membership access" className={`inline-block rounded-full border px-2.5 py-1 text-[10px] font-bold ${tierStyle}`}>
+                            {currentTier || "Unavailable"}
                           </span>
                         </td>
                         <td className="p-4">
@@ -376,7 +423,7 @@ export default function AdminUsers() {
         <AdminMembershipModal
           key={membershipUser.id}
           user={membershipUser}
-          onClose={() => setMembershipUser(null)}
+          onClose={() => { setMembershipUser(null); fetchUsers(); }}
         />
       )}
     </div>
