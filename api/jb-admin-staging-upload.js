@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
-import { processCleanupJobs, getCleanupSummary } from "./_r2-cleanup.js";
+import { processCleanupJobs, getCleanupSummary } from "../server/r2-cleanup.js";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
