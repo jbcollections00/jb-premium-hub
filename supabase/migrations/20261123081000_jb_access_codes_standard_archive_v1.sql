@@ -91,6 +91,14 @@ begin
 end;
 $$;
 
+-- Compatibility alias for the currently deployed UI, which still calls this
+-- legacy function name until the new Access Codes page ships.
+create or replace function public.admin_delete_vip_access_code(p_code_id uuid)
+returns boolean language sql security invoker set search_path = ''
+as $
+  select public.jb_admin_delete_unused_access_code_v1(p_code_id);
+$;
+
 -- Never allow bypassing the redeemed-code history protection through
 -- the public Data API, even where legacy DELETE policies exist.
 create or replace function public.jb_protect_redeemed_access_codes_v1()
@@ -205,10 +213,10 @@ end;
 $$;
 
 revoke all on function public.jb_admin_create_access_code_v1(text,integer,text) from public,anon;
-revoke all on function public.jb_admin_delete_unused_access_code_v1(uuid) from public,anon;
+revoke all on function public.jb_admin_delete_unused_access_code_v1(uuid) from public,anon;\nrevoke all on function public.admin_delete_vip_access_code(uuid) from public,anon;
 revoke all on function public.redeem_access_code(text) from public,anon;
 revoke all on function public.jb_protect_redeemed_access_codes_v1() from public,anon,authenticated;\nrevoke all on function public.jb_stamp_access_code_issuer_v1() from public,anon,authenticated;
 grant execute on function public.jb_admin_create_access_code_v1(text,integer,text) to authenticated,service_role;
-grant execute on function public.jb_admin_delete_unused_access_code_v1(uuid) to authenticated,service_role;
+grant execute on function public.jb_admin_delete_unused_access_code_v1(uuid) to authenticated,service_role;\ngrant execute on function public.admin_delete_vip_access_code(uuid) to authenticated,service_role;
 grant execute on function public.redeem_access_code(text) to authenticated,service_role;
 notify pgrst, 'reload schema';
