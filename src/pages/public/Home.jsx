@@ -1407,15 +1407,15 @@ export default function Home() {
                   <button type="button" key={album.id}
                     onClick={() => handleSelectAlbum(album.id)}
                     aria-pressed={selectedAlbumId === album.id}
-                    className={\`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 \${
+                    className={`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 ${
                       selectedAlbumId === album.id
                         ? "border-indigo-300 ring-2 ring-indigo-500/40"
                         : "border-slate-700 hover:border-indigo-400/60"
-                    }\`}
+                    }`}
                   >
-                    <div className={\`absolute inset-0 bg-gradient-to-br \${
+                    <div className={`absolute inset-0 bg-gradient-to-br ${
                       ALBUM_COVER_COLORS[album.cover_style] || ALBUM_COVER_COLORS.indigo
-                    }\`}/>
+                    }`}/>
                     {album.cover_image_url && (
                       <img src={album.cover_image_url} alt="" loading="lazy"
                         className="absolute inset-0 h-full w-full object-cover opacity-35"/>
