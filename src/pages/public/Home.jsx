@@ -1237,7 +1237,7 @@ export default function Home() {
 
                         {item.thumbnail_url ? (
                           <img
-                            src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                            src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
                             onError={handleThumbnailLoadError}
                             alt={item.title}
                             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
@@ -1367,7 +1367,7 @@ export default function Home() {
                   <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
                     {item.thumbnail_url ? (
                       <img
-                        src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                        src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
                             onError={handleThumbnailLoadError}
                         alt={item.title}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
