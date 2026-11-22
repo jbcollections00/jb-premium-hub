@@ -37,6 +37,9 @@ export default function AdminDashboard() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mobileNavOpen]);
   const [users, setUsers] = useState([]);
+  // Current LIVE and complimentary membership access, not legacy profiles.account_type.
+  const [tierCounts, setTierCounts] = useState(null);
+  const [tierCountsError, setTierCountsError] = useState(false);
   const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [tickets, setTickets] = useState([]);
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
@@ -115,6 +118,23 @@ export default function AdminDashboard() {
       setUsers(allUsers);
     } catch (err) {
       console.error("Error in chunked users fetch:", err);
+    }
+
+    // An admin-only RPC reports effective membership tiers. An old profile
+    // with account_type="standard" is not a paid STANDARD subscriber.
+    try {
+      const { data: tiers, error: tierError } = await supabase.rpc('jb_admin_account_tier_counts_v1');
+      if (tierError) throw tierError;
+      const keys = ['free', 'standard', 'vip'];
+      if (!tiers || !keys.every((key) =>
+        Number.isSafeInteger(tiers[key]) && tiers[key] >= 0
+      )) throw new Error('Membership counts unavailable.');
+      setTierCounts({ free: tiers.free, standard: tiers.standard, vip: tiers.vip });
+      setTierCountsError(false);
+    } catch (error) {
+      console.error('Dashboard account tiers unavailable:', error?.code || 'ERROR');
+      setTierCounts(null);
+      setTierCountsError(true);
     }
 
     // Exact count for Vault Videos
@@ -201,32 +221,20 @@ export default function AdminDashboard() {
     }
   };
 
-  // Profile categories are not the same as paid billing entitlements.
-  // Keep them separate, mutually exclusive, and exhaustive for this dashboard.
-  const profileCounts = users.reduce((counts, user) => {
-    const type = String(user.account_type || "").toLowerCase();
-    const role = String(user.role || "").toLowerCase();
-    if (user.is_anonymous || !user.email || type === 'guest' || type === 'anonymous') counts.guest += 1;
-    else if (type === 'admin' || role === 'admin') counts.admin += 1;
-    else if (type === 'vip') counts.vip += 1;
-    else if (type === 'standard' || !type) counts.regular += 1;
-    else counts.other += 1;
-    return counts;
-  }, { vip: 0, regular: 0, guest: 0, admin: 0, other: 0 });
-
-  const vipUsersCount = profileCounts.vip;
-  const regularUsersCount = profileCounts.regular;
-  const adminUsersCount = profileCounts.admin;
-  // Guest accounts stay in the database, but are excluded from the admin overview.
-  const registeredProfileCount = users.length - profileCounts.guest;
+  // All registered profiles, including the administrator, are counted
+  // in Registered Profiles. FREE/STANDARD/VIP are current non-admin users.
+  const registeredProfileCount = users.filter((user) => {
+    const type = String(user.account_type || '').toLowerCase();
+    return Boolean(user.email) && !user.is_anonymous &&
+      type !== 'guest' && type !== 'anonymous';
+  }).length;
   const pendingTicketsCount = tickets.filter((t) => t.status === 'pending').length;
 
-  const pieChartData = [
-    { name: 'VIP profiles', value: vipUsersCount, color: '#d4b5ff' },
-    { name: 'Regular profiles', value: regularUsersCount, color: '#61c5ff' },
-    { name: 'Admin profiles', value: adminUsersCount, color: '#65e6c6' },
-    { name: 'Other profiles', value: profileCounts.other, color: '#94a3b8' },
-  ].filter(item => item.value > 0);
+  const pieChartData = tierCounts ? [
+    { name: 'Free Account Users', value: tierCounts.free, color: '#61c5ff' },
+    { name: 'Standard Account Users', value: tierCounts.standard, color: '#65e6c6' },
+    { name: 'VIP Account Users', value: tierCounts.vip, color: '#d4b5ff' },
+  ].filter((item) => item.value > 0) : [];
 
   const getLast7DaysData = () => {
     const result = [];
@@ -264,9 +272,9 @@ export default function AdminDashboard() {
   const overviewCards = [
     { label: 'Registered profiles', value: registeredProfileCount, tone: 'indigo' },
     { label: 'Online now', value: onlineUserIds.size, tone: 'mint' },
-    { label: 'VIP profiles', value: vipUsersCount, tone: 'violet' },
-    { label: 'Regular profiles', value: regularUsersCount, tone: 'blue' },
-    { label: 'Admin profiles', value: adminUsersCount, tone: 'sky' },
+    { label: 'VIP Account Users', value: tierCounts?.vip ?? null, tone: 'violet' },
+    { label: 'Free Account Users', value: tierCounts?.free ?? null, tone: 'blue' },
+    { label: 'Standard Account Users', value: tierCounts?.standard ?? null, tone: 'sky' },
     { label: 'Media items', value: totalMediaCount, tone: 'cyan' },
     { label: 'Open tickets', value: pendingTicketsCount, tone: 'rose' },
   ];
@@ -368,11 +376,17 @@ export default function AdminDashboard() {
                 <div key={card.label} className={`jbh-admin-kpi jbh-admin-kpi-${card.tone} relative overflow-hidden rounded-[20px] p-4 sm:p-5`}>
                   <p className="relative z-10 text-[10px] font-bold uppercase leading-snug tracking-[.12em] text-slate-200/80 sm:text-[11px]">{card.label}</p>
                   <p className="relative z-10 mt-3 text-[28px] font-extrabold leading-none tracking-tight text-white sm:text-3xl">
-                    {card.value.toLocaleString()}
+                    {card.value === null ? '—' : card.value.toLocaleString()}
                   </p>
                 </div>
               ))}
             </section>
+
+            {tierCountsError && (
+              <p role="status" className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs text-amber-100">
+                Current membership totals could not be verified. Refresh the dashboard; no estimated subscriber counts are shown.
+              </p>
+            )}
 
             <button type="button" onClick={() => setActiveTab('billing')}
               className="jbh-admin-panel flex w-full flex-wrap items-center justify-between gap-4 rounded-2xl p-5 text-left transition-colors hover:border-sky-300/50">
@@ -385,11 +399,11 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
               <section className="jbh-admin-panel flex flex-col justify-between rounded-[24px] p-5 sm:p-6">
                 <div>
-                  <h2 className="text-base font-extrabold text-white">Account profiles</h2>
-                  <p className="mt-1 text-xs text-slate-300/75">Registered account categories</p>
+                  <h2 className="text-base font-extrabold text-white">Account membership tiers</h2>
+                  <p className="mt-1 text-xs text-slate-300/75">Current Free, Standard, VIP access · Excludes admins</p>
                 </div>
                 <div className="my-4 flex h-56 items-center justify-center">
-                  {registeredProfileCount > 0 && pieChartData.length > 0 ? (
+                  {tierCounts && pieChartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={pieChartData} innerRadius={61} outerRadius={87}
@@ -402,14 +416,14 @@ export default function AdminDashboard() {
                       </PieChart>
                     </ResponsiveContainer>
                   ) : (
-                    <p className="text-sm text-slate-400">No registered profile data yet</p>
+                    <p className="text-sm text-slate-400">{tierCountsError ? 'Membership totals unavailable' : 'No account memberships to display'}</p>
                   )}
                 </div>
                 <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 border-t border-white/15 pt-4 text-xs">
                   {pieChartData.map((entry) => (
                     <span key={entry.name} className="inline-flex items-center gap-2 text-slate-200">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                      {entry.name.replace(" profiles", "")} ({entry.value})
+                      {entry.name} ({entry.value})
                     </span>
                   ))}
                 </div>
