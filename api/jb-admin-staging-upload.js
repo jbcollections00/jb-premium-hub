@@ -754,7 +754,9 @@ async function loadAllAuditReferences(client, table, columns, maxRows = 20000) {
   const pageSize = 500;
   for (let offset = 0; offset <= maxRows; offset += pageSize) {
     const { data, error } = await client
-      .from(table).select(columns).range(offset, offset + pageSize - 1);
+      .from(table).select(columns)
+      .order(table === "jb_media_publication_links" ? "staging_id" : "id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
     if (error || !Array.isArray(data)) {
       throw new Error("Reference list unavailable: " + table);
     }
