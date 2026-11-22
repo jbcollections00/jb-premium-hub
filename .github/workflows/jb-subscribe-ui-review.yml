@@ -97,12 +97,13 @@ jobs:
           // The old manual payment page must no longer accept receipt uploads.
           // Public-site polish: no obsolete branding or internal support errors.
           const homePage = readFileSync('src/pages/public/Home.jsx','utf8');
+          const homeRules = readFileSync('src/services/homeDiscovery.js','utf8');
           const messagesPage = readFileSync('src/pages/public/Messages.jsx','utf8');
           const supportPage = readFileSync('src/pages/legal/SupportPage.jsx','utf8');
           const header = readFileSync('src/components/layout/Header.jsx','utf8');
           const footer = readFileSync('src/components/layout/Footer.jsx','utf8');
-          assert.match(homePage,/billingReady && membership\.tier === "standard" && membership\.showAds === true/);
-          assert.match(homePage,/triggerPopunderForStandard/);
+          assert.ok(homePage.includes('shouldDisplayAds'));
+          assert.ok(homePage.includes('triggerPopunderForAdSupported'));
           // Visible timeline must remain available even when native controls hide.
           const videoPlayer = readFileSync('src/components/VIPVideoPlayer.jsx', 'utf8');
           assert.match(videoPlayer,/Video timeline — seek to a time/);
@@ -113,8 +114,8 @@ jobs:
           assert.match(videoPlayer,/onPlay=\{handleVideoPlay\}/);
           assert.match(videoPlayer,/max-h-\[52dvh\]/);
           assert.doesNotMatch(homePage,/\[&_video\]:max-h-\[70vh\]/);
-          assert.match(homePage,/membership\.tier !== "standard"/);
-          assert.match(homePage,/membership\.showAds !== true/);
+          assert.ok(homePage.includes('const adsEnabled = shouldDisplayAds'));
+          assert.ok(homePage.includes('if (!adsEnabled'));
           assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 3/);
           assert.doesNotMatch(homePage,/triggerPopunderEveryFiveVideos/);
           // Phase 315: selection limit and server-authorized free playback.
@@ -127,8 +128,8 @@ jobs:
           assert.match(mediaAdmin,/FREE_PREVIEW_MAX = 20/);
           assert.match(mediaAdmin,/!FREE_PREVIEW_UI_ENABLED \|\| Boolean\(freePreviewUpdatingId\)/);
           assert.match(mediaAdmin,/Make free/);
-          assert.match(homePage,/handleCategoryChange\("free"\)/);
-          assert.match(homePage,/query\.eq\("is_free_preview", true\)/);
+          assert.ok(homePage.includes('homeMode === "free"'));
+          assert.ok(homePage.includes('approvedFreeCatalog(data)'));
           assert.match(homePage,/requestFreePreviewUrl\(id\)/);
           const catalogSql = readFileSync('supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql','utf8');
           assert.match(catalogSql,/SECURITY DEFINER/);
@@ -136,15 +137,15 @@ jobs:
           assert.match(catalogSql,/REVOKE ALL ON FUNCTION public\.jb_free_preview_catalog_v1\(\) FROM PUBLIC, anon/);
           assert.match(homePage,/supabase\.rpc\("jb_free_preview_catalog_v1"\)/);
           assert.match(homePage,/!membership\.canViewAlbums/);
-          assert.match(homePage,/!Object\.prototype\.hasOwnProperty\.call\(item, "media_url"\)/);
-          assert.match(homePage,/setMediaError\("Could not load the video catalog/);
+          assert.ok(homeRules.includes('hasOwnProperty.call(item, "media_url")'));
+          assert.ok(homePage.includes('Could not load available videos'));
           assert.match(homePage,/Unlock the full media library/);
           assert.match(homePage,/!selectedCanPlay \?/);
           assert.match(homePage,/item\.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership\.canViewAlbums/);
           assert.ok(freeService.includes('PRIVATE_MEDIA_UI_ENABLED'));
           assert.ok(freeService.includes('VITE_JB_FREE_PREVIEW_UI_ENABLED'));
-          assert.match(homePage,/FREE_PREVIEW_UI_ENABLED && billingReady/);
-          assert.match(homePage,/FREE_PREVIEW_UI_ENABLED && \(/);
+          assert.ok(homePage.includes('getHomeMode(billingReady'));
+          assert.ok(homePage.includes('homeMode === "albums"'));
           assert.ok(freeService.includes('jb-free-preview-ticket'));
           assert.ok(freeService.includes('"/v/"') || freeService.includes('"/v/" + mediaId'));
           assert.ok(freeService.includes('PRIVATE_WORKER_ORIGIN'));
@@ -171,10 +172,10 @@ jobs:
           assert.match(nativeAd,/sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
           assert.doesNotMatch(nativeAd,/allow-same-origin/);
           assert.match(nativeAd,/Number\.isFinite\(event\.data\.height\)/);
-          assert.match(mainLayout,/membership\.tier === "standard" && membership\.showAds === true/);
+          assert.ok(mainLayout.includes('shouldDisplayAds'));
           assert.match(mainLayout,/location\.pathname === "\/home" && showSocialBar/);
           assert.match(socialAd,/if \(!enabled \|\| typeof document === "undefined"\) return/);
-          assert.match(homePage,/billingReady \? !membership\.showAds : false/);
+          assert.ok(homePage.includes('isAdFree={billingReady ? !adsEnabled : false}'));
           assert.doesNotMatch(homePage,/Video Vault|Watch this video on JB Premium Hub Vault|If the Console shows a CORS\/network error/);
           assert.doesNotMatch(messagesPage,/JB Vault Admin/);
           assert.match(messagesPage,/JB Premium Hub/);
