@@ -58,7 +58,7 @@ export function resolveFreePreviewMediaKey(raw: unknown, mediaId: string):
 
   if (raw.startsWith('r2:')) {
     // Don't allow escaped path components, traversal, fragments, or parameters.
-    if (!raw.startsWith('r2://') || /[%\\\\?#]/.test(raw)) return null;
+    if (!raw.startsWith('r2://') || raw.includes('%') || raw.includes('\\') || raw.includes('?') || raw.includes('#')) return null;
     try {
       const parsed = new URL(raw);
       if (parsed.protocol !== 'r2:' ||
