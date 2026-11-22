@@ -141,6 +141,7 @@ export default function AdminPrivateAlbumUpload() {
       (deleteAll ? "This includes ALL currently eligible unpublished drafts. " : "") +
       "Published videos are protected. This cannot be undone."
     )) return;
+    if (deleteAll && window.prompt("Type DELETE ALL to permanently remove all eligible unpublished drafts:") !== "DELETE ALL") return;
     setDeletingDrafts(true);
     setCleanupMessage("");
     let deleted = 0;
