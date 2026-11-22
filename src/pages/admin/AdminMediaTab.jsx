@@ -18,6 +18,7 @@ import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError
 import AdminPrivateAlbumUpload from "../../components/admin/AdminPrivateAlbumUpload";
 import AdminPublishingReview from "../../components/admin/AdminPublishingReview";
 import AdminR2OrphanAudit from "../../components/admin/AdminR2OrphanAudit";
+import AdminR2CleanupQueue from "../../components/admin/AdminR2CleanupQueue";
 
 // Public signer must never be used to upload protected video assets.
 const LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED = true;
@@ -1419,7 +1420,7 @@ export default function AdminMediaTab() {
         const deleted = Array.isArray(result.deleted) ? result.deleted : [];
         deletedCount += deleted.length;
         if (Array.isArray(result.cleanupPending) && result.cleanupPending.length) {
-          warnings.push(result.cleanupPending.length + " private R2 cleanup(s) pending");
+          warnings.push(result.cleanupPending.length + " R2 cleanup(s) queued for automatic retry");
         }
         if (Array.isArray(result.legacyStorageUnchanged) && result.legacyStorageUnchanged.length) {
           warnings.push(result.legacyStorageUnchanged.length + " legacy/external storage object(s) untouched");
@@ -1729,6 +1730,7 @@ export default function AdminMediaTab() {
           <AdminPrivateAlbumUpload />
           <AdminPublishingReview />
           <AdminR2OrphanAudit />
+          <AdminR2CleanupQueue />
         </div>
       )}
 

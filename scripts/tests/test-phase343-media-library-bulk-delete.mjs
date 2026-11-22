@@ -6,6 +6,8 @@ import stagingHandler from "../../api/jb-admin-staging-upload.js";
 const read = (path) => readFileSync(new URL("../../" + path, import.meta.url), "utf8");
 const sql = read("supabase/migrations/20261122120000_jb_admin_media_bulk_delete_v1.sql");
 const api = read("api/jb-admin-staging-upload.js");
+const cleanupSql = read("supabase/migrations/20261122213000_jb_r2_cleanup_outbox_v1.sql");
+const worker = read("server/r2-cleanup.js");
 const ui = read("src/pages/admin/AdminMediaTab.jsx");
 
 test("Media Library limits results to 50 per page", () => {
@@ -79,16 +81,20 @@ test("R2 deletion paths are derived only from trusted staging data", () => {
   assert.match(sql, /'staging\/' \|\| v_stage\.created_by/);
   assert.match(sql, /'staging-thumbnails\/' \|\| v_stage\.created_by/);
   assert.match(sql, /is distinct from \('r2:\/\/jb-premium-private-videos\/'/);
-  assert.match(api, /new DeleteObjectCommand\(\{\s*Bucket: services\.bucket, Key: key/);
+  assert.match(cleanupSql, /CONSTRAINT jb_r2_cleanup_jobs_exact_ownership CHECK/);
+  assert.match(worker, /new DeleteObjectCommand\(\{ Bucket: bucket, Key: key \}\)/);
   assert.doesNotMatch(api.slice(api.indexOf("async function deletePublishedMedia")), /req\.body\.video_key/);
 });
-test("Permanent deletion audit records pending R2 cleanup on failure", () => {
+test("Permanent deletion audit and durable R2 retry jobs are stored atomically", () => {
   assert.match(sql, /create table if not exists public\.jb_admin_media_delete_audit/);
   assert.match(sql, /cleanup_status text not null default 'pending'/);
-  assert.match(api, /cleanupPending\.push\(row\.deleted_media_id\)/);
-  assert.match(api, /legacyStorageUnchanged\.push\(row\.deleted_media_id\)/);
-  assert.match(api, /cleanup_status: allCleared \? "complete" : "pending"/);
+  assert.match(cleanupSql, /CREATE TABLE IF NOT EXISTS public\.jb_r2_cleanup_jobs/);
+  assert.match(cleanupSql, /CREATE OR REPLACE FUNCTION public\.jb_r2_finish_cleanup_v1/);
+  assert.match(cleanupSql, /UPDATE public\.jb_admin_media_delete_audit a/);
+  assert.match(api, /cleanupPending/);
+  assert.match(worker, /jb_r2_claim_cleanup_v1/);
 });
+
 test("Duplicate view trash and clean-extra-copies use the same guarded atomic delete", () => {
   assert.match(ui, /showDuplicatesOnly\s*\? duplicateGroups\.flatMap/);
   assert.match(ui, /const handleAutoCleanDuplicates = async \(\) => \{/);

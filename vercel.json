@@ -8,5 +8,11 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/jb-r2-cleanup-cron",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

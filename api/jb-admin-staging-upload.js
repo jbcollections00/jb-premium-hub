@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
+import { processCleanupJobs, getCleanupSummary } from "../server/r2-cleanup.js";
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
@@ -444,70 +445,45 @@ async function queueList(req, res, services, admin) {
 
 async function deleteUnpublished(req, res, services, admin) {
   const draftIds = req.body?.draftIds;
-  if (!Array.isArray(draftIds) || !draftIds.length ||
-      draftIds.length > 50 || draftIds.some((id) => typeof id !== "string" || !UUID.test(id)) ||
+  if (!Array.isArray(draftIds) || draftIds.length < 1 || draftIds.length > 50 ||
+      draftIds.some(id => typeof id !== "string" || !UUID.test(id)) ||
       new Set(draftIds).size !== draftIds.length) {
     return fail(res, 400, "Select 1–50 unique unpublished video drafts.");
   }
-  const { data: rows, error } = await services.supabase
-    .from("jb_media_upload_staging")
-    .select("id, created_by, storage_key, status, created_at, preview_key")
-    .eq("created_by", admin.id).in("id", draftIds);
-  if (error) return fail(res, 503, "Could not verify staging ownership.");
-  if (!rows || rows.length !== draftIds.length) {
-    return fail(res, 409, "Some drafts are missing or not owned by this admin. Refresh the queue.");
-  }
-  const { data: links, error: linkError } = await services.supabase
-    .from("jb_media_publication_links")
-    .select("staging_id").in("staging_id", draftIds);
-  if (linkError) return fail(res, 503, "Could not verify publication links.");
-  if (links?.length) return fail(res, 409, "Published videos cannot be deleted from staging.");
 
-  // A presigned PUT can be valid for one hour. Never delete a newly
-  // created/in-progress draft until that lease has expired plus a buffer.
-  const now = Date.now();
-  for (const row of rows) {
-    const stale = Number.isFinite(Date.parse(row.created_at)) &&
-      now - Date.parse(row.created_at) > 65 * 60 * 1000;
-    if (row.status !== "pending_review" &&
-        !(row.status === "awaiting_upload" && stale)) {
-      return fail(res, 409, "Active uploads cannot be deleted yet. Retry after upload URL expiry.");
+  // Phase 347: delete and durable outbox insertion commit ATOMICALLY.
+  // No delete is attempted for a published draft or active upload lease.
+  const { data, error } = await services.supabase.rpc(
+    "jb_admin_delete_unpublished_drafts_v1", {
+      p_draft_ids: draftIds, p_admin_id: admin.id,
     }
-    const exactKey = "staging/" + admin.id + "/" + row.id + ".mp4";
-    if (row.storage_key !== exactKey ||
-        (row.preview_key && row.preview_key !== previewKey(admin.id, row.id))) {
-      return fail(res, 409, "Unsafe staging object reference. No files were deleted.");
-    }
+  );
+  if (error) {
+    console.error("Atomic draft cleanup rejected:", error?.code || "UNKNOWN");
+    return fail(res, 409, "Draft deletion rejected; refresh queue and check upload permissions.");
+  }
+  const deleted = Array.isArray(data) ? data.map(r => r.deleted_draft_id) : [];
+  if (deleted.length !== draftIds.length ||
+      !draftIds.every(id => deleted.includes(id))) {
+    return fail(res, 503, "Draft delete confirmation incomplete; refresh queue.");
   }
 
-  const deleted = [];
-  const rejected = [];
-  const cleanupPending = [];
-  for (const row of rows) {
-    // Database comes first: FK ON DELETE RESTRICT prevents deletion if a
-    // concurrent publisher has created a media publication link.
-    const { data: removed, error: deleteError } = await services.supabase
-      .from("jb_media_upload_staging")
-      .delete().eq("id", row.id).eq("created_by", admin.id)
-      .eq("status", row.status).select("id");
-    if (deleteError || removed?.length !== 1) {
-      rejected.push(row.id);
-      continue;
-    }
-    deleted.push(row.id);
-    for (const key of [row.storage_key, row.preview_key].filter(Boolean)) {
-      try {
-        await services.r2.send(new DeleteObjectCommand({
-          Bucket: services.bucket, Key: key,
-        }));
-      } catch (error) {
-        // Never claim the backing R2 object was removed if its DELETE failed.
-        cleanupPending.push(row.id);
-        console.error("Unpublished R2 cleanup requires retry:", error?.name || "unknown");
-      }
-    }
+  // Best-effort immediate worker; durable DB jobs remain for scheduled retry
+  // even when this function times out or Cloudflare fails.
+  let cleanupPending = [...deleted];
+  try {
+    await processCleanupJobs(services, { entityIds: deleted, maxJobs: 12 });
+    const summary = await getCleanupSummary(services.supabase, deleted);
+    cleanupPending = summary.pendingEntityIds;
+  } catch (error) {
+    console.error("Draft R2 cleanup queued for retry:", error?.message || "UNKNOWN");
   }
-  return res.status(200).json({ deleted, rejected, cleanupPending: [...new Set(cleanupPending)] });
+  return res.status(200).json({
+    deleted,
+    rejected: [],
+    cleanupPending,
+    cleanupQueued: true,
+  });
 }
 
 async function reviewVideo(req, res, services, admin) {
@@ -677,7 +653,7 @@ async function publishReviewed(req, res, services, admin) {
 async function deletePublishedMedia(req, res, services, admin) {
   const ids = req.body?.mediaIds;
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 ||
-      ids.some((id) => typeof id !== "string" || !UUID.test(id)) ||
+      ids.some(id => typeof id !== "string" || !UUID.test(id)) ||
       new Set(ids).size !== ids.length) {
     return fail(res, 400, "Select between 1 and 10 unique published media records.");
   }
@@ -685,61 +661,70 @@ async function deletePublishedMedia(req, res, services, admin) {
     return fail(res, 400, "Deletion confirmation required.");
   }
 
-  const { data, error } = await services.supabase.rpc("jb_admin_delete_published_media_v1", {
-    p_media_ids: ids,
-    p_admin_id: admin.id,
-  });
+  // The RPC validates every selected media record, then atomically removes
+  // database rows and creates exact-key R2 cleanup jobs. No object is deleted
+  // until this transaction succeeds.
+  const { data, error } = await services.supabase.rpc(
+    "jb_admin_delete_published_media_v1", {
+      p_media_ids: ids,
+      p_admin_id: admin.id,
+    });
   if (error) {
     console.error("Atomic admin media delete rejected:", error?.code || "UNKNOWN");
     return fail(res, 409, "Media deletion rejected. Refresh the library and verify all selected items.");
   }
-
   const rows = Array.isArray(data) ? data : [];
-  if (rows.length !== ids.length || !rows.every((row) => ids.includes(row.deleted_media_id))) {
+  if (rows.length !== ids.length ||
+      !ids.every(id => rows.some(row => row.deleted_media_id === id))) {
     console.error("Unexpected admin media delete RPC confirmation count.");
     return fail(res, 503, "Database deletion confirmation incomplete. Refresh the library.");
   }
 
-  const cleanupPending = [];
-  const legacyStorageUnchanged = [];
-  for (const row of rows) {
-    if (!row.private_video_key) {
-      // Legacy/external CDN objects are not owned by the private R2 staging
-      // store and must not be deleted by guessing a path.
-      legacyStorageUnchanged.push(row.deleted_media_id);
-      continue;
-    }
-    const keys = [row.private_video_key, row.private_thumbnail_key].filter(Boolean);
-    let allCleared = true;
-    for (const key of keys) {
-      try {
-        await services.r2.send(new DeleteObjectCommand({
-          Bucket: services.bucket, Key: key,
-        }));
-      } catch (error) {
-        allCleared = false;
-        console.error("Published private media R2 delete pending:", error?.name || "UNKNOWN");
-      }
-    }
-    const { error: auditError } = await services.supabase
-      .from("jb_admin_media_delete_audit")
-      .update({
-        cleanup_status: allCleared ? "complete" : "pending",
-        cleanup_updated_at: new Date().toISOString(),
-        cleanup_error: allCleared ? null : "R2 delete could not be confirmed. Retry operational cleanup.",
-      })
-      .eq("media_id", row.deleted_media_id)
-      .eq("deleted_by", admin.id);
-    if (!allCleared || auditError) {
-      cleanupPending.push(row.deleted_media_id);
-      if (auditError) console.error("Media deletion audit update failed:", auditError.code || "UNKNOWN");
-    }
+  const legacyStorageUnchanged = rows
+    .filter(row => !row.private_video_key)
+    .map(row => row.deleted_media_id);
+  let cleanupPending = rows
+    .filter(row => row.private_video_key)
+    .map(row => row.deleted_media_id);
+  try {
+    await processCleanupJobs(services, { entityIds: ids, maxJobs: 12 });
+    const summary = await getCleanupSummary(services.supabase, ids);
+    cleanupPending = summary.pendingEntityIds;
+  } catch (error) {
+    console.error("Published media R2 cleanup deferred to cron:", error?.message || "UNKNOWN");
   }
   return res.status(200).json({
-    deleted: rows.map((row) => row.deleted_media_id),
+    deleted: rows.map(row => row.deleted_media_id),
     cleanupPending,
     legacyStorageUnchanged,
+    cleanupQueued: true,
   });
+}
+
+async function cleanupStatus(req, res, services) {
+  try {
+    const summary = await getCleanupSummary(services.supabase);
+    return res.status(200).json({ ...summary, readOnly: true });
+  } catch (error) {
+    console.error("R2 cleanup status unavailable:", error?.message || "UNKNOWN");
+    return fail(res, 503, "Could not read R2 cleanup status.");
+  }
+}
+
+async function retryPendingCleanup(req, res, services) {
+  try {
+    const result = await processCleanupJobs(services, { maxJobs: 20 });
+    const summary = await getCleanupSummary(services.supabase);
+    return res.status(200).json({
+      ok: true,
+      ...result,
+      counts: summary.counts,
+      pendingEntityIds: summary.pendingEntityIds,
+    });
+  } catch (error) {
+    console.error("Manual R2 cleanup retry failed:", error?.message || "UNKNOWN");
+    return fail(res, 503, "Could not process pending R2 cleanup jobs.");
+  }
 }
 
 
@@ -936,6 +921,8 @@ export default async function handler(req, res) {
     if (req.body?.action === "delete-unpublished") return await deleteUnpublished(req, res, services, admin);
     if (req.body?.action === "delete-published-media") return await deletePublishedMedia(req, res, services, admin);
     if (req.body?.action === "orphan-audit") return await scanR2Orphans(req, res, services, admin);
+    if (req.body?.action === "cleanup-status") return await cleanupStatus(req, res, services);
+    if (req.body?.action === "retry-pending-r2-cleanup") return await retryPendingCleanup(req, res, services);
     if (req.body?.action === "review-video") return await reviewVideo(req, res, services, admin);
     if (req.body?.action === "publish") return await publishReviewed(req, res, services, admin);
     return fail(res, 400, "Unknown staging action.");

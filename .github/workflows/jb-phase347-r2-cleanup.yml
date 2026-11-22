@@ -1,0 +1,45 @@
+name: JB Phase 347 R2 Atomic Cleanup (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'api/jb-admin-staging-upload.js'
+      - 'api/jb-r2-cleanup-cron.js'
+      - 'server/r2-cleanup.js'
+      - 'src/components/admin/AdminR2CleanupQueue.jsx'
+      - 'src/components/admin/AdminPublishingReview.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'supabase/migrations/20261122213000_jb_r2_cleanup_outbox_v1.sql'
+      - 'scripts/tests/test-phase347-r2-automatic-cleanup.mjs'
+      - 'scripts/tests/test-phase343-media-library-bulk-delete.mjs'
+      - 'scripts/tests/test-phase341-media-management.mjs'
+      - '.github/workflows/jb-phase347-r2-cleanup.yml'
+      - 'vercel.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-r2-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Phase 347 transactional-delete and worker-mock tests
+        run: node --test scripts/tests/test-phase347-r2-automatic-cleanup.mjs
+      - name: Existing bulk delete, review and audit regressions
+        run: |
+          node --test scripts/tests/test-phase343-media-library-bulk-delete.mjs
+          node --test scripts/tests/test-phase341-media-management.mjs
+          node --test scripts/tests/test-phase346-r2-orphan-audit.mjs
+      - name: Users, dashboard and membership regressions
+        run: |
+          node --test scripts/tests/test-phase344-dashboard-membership-cards.mjs
+          node --test scripts/tests/test-phase345-users-membership-tiers.mjs
+      - name: Production build (no deploy)
+        run: npm run build
