@@ -117,6 +117,11 @@ export default function AdminR2OrphanAudit() {
       <p className="mt-3 text-xs font-semibold text-emerald-300">
         Read-only: This tool never deletes, modifies, or automatically cleans files.
       </p>
+      <p className="mt-2 text-xs text-slate-400">
+        Published thumbnail scanning requires a configured separate public R2 bucket
+        and its matching server-side assets origin. If this is not configured,
+        the private scopes remain valid but the full three-scope audit stays incomplete.
+      </p>
       {lastScanned && <p className="mt-2 text-xs text-slate-400">Completed: {lastScanned}</p>}
       {errorText && <p role="alert" className="mt-3 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-xs text-amber-100">
         {errorText} {reports.length > 0 ? "Previous scopes may be complete, but the full audit is NOT complete." : ""}
