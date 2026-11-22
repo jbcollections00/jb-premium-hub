@@ -206,11 +206,14 @@ jobs:
           assert.match(admin,/import AdminBillingTab from/);
           assert.match(admin,/activeTab === 'billing'/);
           assert.match(admin,/activeTab === 'dashboard'/);
-          assert.match(admin,/const profileCounts = users.reduce/);
-          assert.match(admin,/Registered account categories/);
-          assert.match(admin,/Regular profiles/);
-          assert.match(admin,/Admin profiles/);
-          assert.match(admin,/registeredProfileCount = users.length - profileCounts.guest/);
+          // Phase 344: actual active membership entitlements, not legacy profile labels.
+          assert.match(admin,/const registeredProfileCount = users.filter/);
+          assert.match(admin,/supabase\.rpc\('jb_admin_account_tier_counts_v1'\)/);
+          assert.match(admin,/Account membership tiers/);
+          assert.match(admin,/label: 'Free Account Users'/);
+          assert.match(admin,/label: 'Standard Account Users'/);
+          assert.match(admin,/label: 'VIP Account Users'/);
+          assert.doesNotMatch(admin,/label: 'Regular profiles'|label: 'Admin profiles'/);
           assert.match(admin,/src="\/jb-logo\.png"/);
           assert.match(admin,/jbh-admin-kpi/);
           assert.match(admin,/jbh-admin-hero/);
