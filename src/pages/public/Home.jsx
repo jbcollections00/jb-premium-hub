@@ -10,6 +10,14 @@ import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } f
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
+const ALBUM_COVER_COLORS = {
+  indigo: "from-indigo-600/40 via-indigo-950/50 to-slate-950",
+  ocean: "from-cyan-600/40 via-blue-950/50 to-slate-950",
+  forest: "from-emerald-600/40 via-green-950/50 to-slate-950",
+  sunset: "from-orange-600/40 via-rose-950/50 to-slate-950",
+  violet: "from-violet-600/40 via-fuchsia-950/50 to-slate-950",
+  slate: "from-slate-600/40 via-slate-800/50 to-slate-950",
+};
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
 const POPUNDER_EVERY_N_VIDEOS = 3;
@@ -75,15 +83,6 @@ export default function Home() {
   // Immediate lock para hindi mag-double insert ang media_views kapag
   // sunod-sunod ang onPlay events bago ma-update ang React state.
   const viewRecordedRef = useRef(false);
-
-  const [activeCategory, setActiveCategory] = useState(() => {
-    if (typeof window !== "undefined") {
-      const requested = new URLSearchParams(window.location.search).get("cat");
-      // Only two supported public filters. Old category URLs become All Videos.
-      return requested === "free" && FREE_PREVIEW_UI_ENABLED ? "free" : "all";
-    }
-    return "all";
-  });
 
   const [currentPage, setCurrentPage] = useState(() => {
     if (typeof window !== "undefined") {
@@ -858,14 +857,19 @@ export default function Home() {
     }
   };
 
-  const handleCategoryChange = (catKey) => {
-    setActiveCategory(catKey);
+  const handleSelectAlbum = (id) => {
+    if (homeMode !== "albums" || !albums.some((album) => album.id === id)) return;
+    setSelectedAlbumId(id);
     setCurrentPage(1);
-
+    setMediaList([]);
+    setTotalCount(0);
+    setMediaError("");
     const url = new URL(window.location.href);
-    url.searchParams.set("cat", catKey);
-    url.searchParams.set("page", 1);
+    url.searchParams.delete("cat");
+    url.searchParams.delete("v");
+    url.searchParams.set("page", "1");
     window.history.replaceState({}, "", url);
+    document.getElementById("jb-home-gallery")?.scrollIntoView({ behavior: "smooth" });
   };
 
   // Open the selected video in the current tab without ad redirects.
@@ -875,6 +879,11 @@ export default function Home() {
       e.stopPropagation();
     }
 
+    // FREE cards and recommendations must belong to the approved catalog.
+    if (homeMode === "locked" || !item?.id ||
+        (homeMode === "free" && (!item.is_free_preview ||
+          ![...mediaList, ...mostWatched].some((video) => video.id === item.id)))) return;
+
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
     setAutoPlay(false);
     setSelectedMedia(item);
@@ -882,7 +891,7 @@ export default function Home() {
     const url = new URL(window.location.href);
     url.searchParams.set("v", item.id);
     url.searchParams.set("page", currentPage);
-    url.searchParams.set("cat", activeCategory);
+    url.searchParams.delete("cat");
     url.searchParams.delete("step");
     url.searchParams.delete("autoplay");
     window.history.replaceState({}, "", url);
