@@ -2365,7 +2365,7 @@ export default function AdminMediaTab() {
                         <div className="relative aspect-video w-full bg-slate-950 flex items-center justify-center overflow-hidden border-b border-slate-800/80">
 
                           <img
-                            src={getThumbnailDisplayUrl(item.thumbnail_url)}
+                            src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
                             onError={handleThumbnailLoadError}
                             alt={item.title ? `Thumbnail for ${item.title}` : "Media thumbnail"}
                             className="h-full w-full object-contain p-2"

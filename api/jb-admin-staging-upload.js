@@ -1,7 +1,7 @@
 // Admin-only private video upload staging.
 // Never writes public.media and never returns a public object URL.
 import { randomUUID } from "node:crypto";
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
 
@@ -354,7 +354,7 @@ async function reviewList(req, res, services, admin) {
   if (linksResult.error || albumsResult.error) {
     return fail(res, 503, "Could not verify review queue publication status.");
   }
-  const links = new Map((linksResult.data || []).map((link) => [link.staging_id, link]));
+  const publishedIds = new Set((linksResult.data || []).map((link) => link.staging_id));
   const albums = new Map((albumsResult.data || []).map((album) => [album.id, album]));
   // Include incomplete attempts when warning of duplicate filenames.
   const { data: nameRows, error: namesError } = await services.supabase
@@ -372,6 +372,7 @@ async function reviewList(req, res, services, admin) {
 
   const items = [];
   for (const row of rows) {
+    if (publishedIds.has(row.id)) continue; // Published videos only live in Media Manager.
     let thumbnail = null;
     if (
       row.preview_uploaded_at &&
@@ -391,12 +392,122 @@ async function reviewList(req, res, services, admin) {
       sizeBytes: Number(row.size_bytes),
       uploadedAt: row.uploaded_at,
       thumbnail,
-      published: links.has(row.id),
-      mediaId: links.get(row.id)?.media_id || null,
       possibleDuplicate: (nameCounts.get(row.original_filename.trim().toLowerCase()) || 0) > 1,
     });
   }
   return res.status(200).json({ items });
+}
+
+// Both administrative draft lists exclude already-linked/published media.
+// Reject on any publication lookup failure rather than expose protected drafts.
+async function queueList(req, res, services, admin) {
+  const { data: rows, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, original_filename, status, created_at, preview_key, preview_uploaded_at")
+    .eq("created_by", admin.id)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) return fail(res, 503, "Private upload queue unavailable.");
+  if (!rows?.length) return res.status(200).json({ items: [] });
+  const { data: links, error: linkError } = await services.supabase
+    .from("jb_media_publication_links").select("staging_id")
+    .in("staging_id", rows.map((row) => row.id));
+  if (linkError) return fail(res, 503, "Could not verify publication status.");
+  const published = new Set((links || []).map((link) => link.staging_id));
+  const items = [];
+  const now = Date.now();
+  for (const row of rows) {
+    if (published.has(row.id)) continue;
+    let thumbnail = null;
+    if (row.status === "pending_review" &&
+        row.preview_uploaded_at &&
+        row.preview_key === previewKey(admin.id, row.id)) {
+      thumbnail = await getSignedUrl(
+        services.r2,
+        new GetObjectCommand({ Bucket: services.bucket, Key: row.preview_key }),
+        { expiresIn: 600 }
+      );
+    }
+    items.push({
+      id: row.id,
+      original_filename: row.original_filename,
+      status: row.status,
+      created_at: row.created_at,
+      thumbnail,
+      canDelete: row.status === "pending_review" ||
+        (row.status === "awaiting_upload" &&
+          now - Date.parse(row.created_at) > 65 * 60 * 1000),
+    });
+  }
+  return res.status(200).json({ items });
+}
+
+async function deleteUnpublished(req, res, services, admin) {
+  const draftIds = req.body?.draftIds;
+  if (!Array.isArray(draftIds) || !draftIds.length ||
+      draftIds.length > 50 || draftIds.some((id) => typeof id !== "string" || !UUID.test(id)) ||
+      new Set(draftIds).size !== draftIds.length) {
+    return fail(res, 400, "Select 1–50 unique unpublished video drafts.");
+  }
+  const { data: rows, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, created_by, storage_key, status, created_at, preview_key")
+    .eq("created_by", admin.id).in("id", draftIds);
+  if (error) return fail(res, 503, "Could not verify staging ownership.");
+  if (!rows || rows.length !== draftIds.length) {
+    return fail(res, 409, "Some drafts are missing or not owned by this admin. Refresh the queue.");
+  }
+  const { data: links, error: linkError } = await services.supabase
+    .from("jb_media_publication_links")
+    .select("staging_id").in("staging_id", draftIds);
+  if (linkError) return fail(res, 503, "Could not verify publication links.");
+  if (links?.length) return fail(res, 409, "Published videos cannot be deleted from staging.");
+
+  // A presigned PUT can be valid for one hour. Never delete a newly
+  // created/in-progress draft until that lease has expired plus a buffer.
+  const now = Date.now();
+  for (const row of rows) {
+    const stale = Number.isFinite(Date.parse(row.created_at)) &&
+      now - Date.parse(row.created_at) > 65 * 60 * 1000;
+    if (row.status !== "pending_review" &&
+        !(row.status === "awaiting_upload" && stale)) {
+      return fail(res, 409, "Active uploads cannot be deleted yet. Retry after upload URL expiry.");
+    }
+    const exactKey = "staging/" + admin.id + "/" + row.id + ".mp4";
+    if (row.storage_key !== exactKey ||
+        (row.preview_key && row.preview_key !== previewKey(admin.id, row.id))) {
+      return fail(res, 409, "Unsafe staging object reference. No files were deleted.");
+    }
+  }
+
+  const deleted = [];
+  const rejected = [];
+  const cleanupPending = [];
+  for (const row of rows) {
+    // Database comes first: FK ON DELETE RESTRICT prevents deletion if a
+    // concurrent publisher has created a media publication link.
+    const { data: removed, error: deleteError } = await services.supabase
+      .from("jb_media_upload_staging")
+      .delete().eq("id", row.id).eq("created_by", admin.id)
+      .eq("status", row.status).select("id");
+    if (deleteError || removed?.length !== 1) {
+      rejected.push(row.id);
+      continue;
+    }
+    deleted.push(row.id);
+    for (const key of [row.storage_key, row.preview_key].filter(Boolean)) {
+      try {
+        await services.r2.send(new DeleteObjectCommand({
+          Bucket: services.bucket, Key: key,
+        }));
+      } catch (error) {
+        // Never claim the backing R2 object was removed if its DELETE failed.
+        cleanupPending.push(row.id);
+        console.error("Unpublished R2 cleanup requires retry:", error?.name || "unknown");
+      }
+    }
+  }
+  return res.status(200).json({ deleted, rejected, cleanupPending: [...new Set(cleanupPending)] });
 }
 
 async function reviewVideo(req, res, services, admin) {
@@ -578,6 +689,8 @@ export default async function handler(req, res) {
     if (req.body?.action === "thumbnail-complete") return await thumbnailComplete(req, res, services, admin);
     if (req.body?.action === "thumbnail-previews") return await thumbnailPreviews(req, res, services, admin);
     if (req.body?.action === "review-list") return await reviewList(req, res, services, admin);
+    if (req.body?.action === "queue-list") return await queueList(req, res, services, admin);
+    if (req.body?.action === "delete-unpublished") return await deleteUnpublished(req, res, services, admin);
     if (req.body?.action === "review-video") return await reviewVideo(req, res, services, admin);
     if (req.body?.action === "publish") return await publishReviewed(req, res, services, admin);
     return fail(res, 400, "Unknown staging action.");

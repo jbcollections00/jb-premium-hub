@@ -75,6 +75,9 @@ export default function AdminPrivateAlbumUpload() {
   const [errorText, setErrorText] = useState("");
   const [existingDrafts, setExistingDrafts] = useState([]);
   const [privatePreviews, setPrivatePreviews] = useState({});
+  const [selectedDraftIds, setSelectedDraftIds] = useState([]);
+  const [deletingDrafts, setDeletingDrafts] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState("");
   const [draftsLoading, setDraftsLoading] = useState(true);
   const pickerRef = useRef(null);
   const mountedRef = useRef(true);
@@ -103,30 +106,69 @@ export default function AdminPrivateAlbumUpload() {
   const loadStaging = async () => {
     setDraftsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("jb_media_upload_staging")
-        .select("id, album_id, original_filename, status, created_at")
-        .order("created_at", { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      const rows = Array.isArray(data) ? data : [];
-      if (mountedRef.current) setExistingDrafts(rows);
-      // Use fresh admin-authorized short-lived GET links after refresh.
-      // This does not generate public thumbnails, video playback or catalog access.
-      const ids = rows.filter((row) => row.status === "pending_review").map((row) => row.id);
-      try {
-        const response = await stagingRequest("thumbnail-previews", { draftIds: ids });
-        if (mountedRef.current) setPrivatePreviews(response.previews || {});
-      } catch {
-        // Staging remains readable if private thumbnails are not configured yet.
-        if (mountedRef.current) setPrivatePreviews({});
+      // Server excludes all published media through trusted publication links.
+      const data = await stagingRequest("queue-list");
+      const rows = Array.isArray(data.items) ? data.items : [];
+      if (mountedRef.current) {
+        setExistingDrafts(rows);
+        setSelectedDraftIds((ids) => ids.filter((id) =>
+          rows.some((row) => row.id === id && row.canDelete)
+        ));
+        setPrivatePreviews(Object.fromEntries(
+          rows.filter((row) => row.thumbnail).map((row) => [row.id, row.thumbnail])
+        ));
       }
     } catch {
-      if (mountedRef.current) setExistingDrafts([]);
+      if (mountedRef.current) {
+        setExistingDrafts([]);
+        setSelectedDraftIds([]);
+        setPrivatePreviews({});
+      }
     } finally {
       if (mountedRef.current) setDraftsLoading(false);
     }
   };
+
+  const deleteDrafts = async (ids, deleteAll = false) => {
+    if (busy || deletingDrafts || !ids.length) return;
+    const eligible = existingDrafts.filter((row) => row.canDelete && ids.includes(row.id));
+    if (eligible.length !== ids.length) {
+      setCleanupMessage("Some videos are no longer eligible for deletion. Refresh the queue.");
+      return;
+    }
+    if (!window.confirm(
+      "Permanently delete " + ids.length + " UNPUBLISHED private upload(s) and their saved thumbnails? " +
+      (deleteAll ? "This includes ALL currently eligible unpublished drafts. " : "") +
+      "Published videos are protected. This cannot be undone."
+    )) return;
+    if (deleteAll && window.prompt("Type DELETE ALL to permanently remove all eligible unpublished drafts:") !== "DELETE ALL") return;
+    setDeletingDrafts(true);
+    setCleanupMessage("");
+    let deleted = 0;
+    const errors = [];
+    try {
+      for (let index = 0; index < ids.length; index += 50) {
+        const result = await stagingRequest("delete-unpublished", {
+          draftIds: ids.slice(index, index + 50),
+        });
+        deleted += (result.deleted || []).length;
+        if (result.rejected?.length) errors.push(result.rejected.length + " protected/rejected");
+        if (result.cleanupPending?.length) errors.push(result.cleanupPending.length + " R2 cleanup pending");
+      }
+      setCleanupMessage(deleted + " unpublished upload(s) deleted." +
+        (errors.length ? " Attention: " + errors.join(", ") + "." : ""));
+    } catch (error) {
+      setCleanupMessage("Deletion stopped: " + (error.message || "Unknown error") +
+        ". Refresh the queue to see which items remain.");
+    } finally {
+      setSelectedDraftIds([]);
+      setDeletingDrafts(false);
+      await loadStaging();
+      window.dispatchEvent(new Event("jb-staging-changed"));
+    }
+  };
+
+  const eligibleDraftIds = existingDrafts.filter((row) => row.canDelete).map((row) => row.id);
 
   const loadAlbums = async () => {
     setLoading(true);
@@ -154,6 +196,11 @@ export default function AdminPrivateAlbumUpload() {
   };
 
   useEffect(() => { loadAlbums(); loadStaging(); }, []);
+  useEffect(() => {
+    const refreshHandler = () => { if (!busy && !deletingDrafts) loadStaging(); };
+    window.addEventListener("jb-staging-changed", refreshHandler);
+    return () => window.removeEventListener("jb-staging-changed", refreshHandler);
+  }, [busy, deletingDrafts]);
 
   const totalBytes = useMemo(
     () => queue.reduce((total, item) => total + item.size, 0),
@@ -484,16 +531,38 @@ export default function AdminPrivateAlbumUpload() {
 
       <div className="rounded-xl border border-slate-700 bg-slate-950/30 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 className="text-sm font-bold text-white">Private upload queue</h4>
+          <h4 className="text-sm font-bold text-white">Private upload queue · Unpublished only</h4>
           <button
             type="button"
-            disabled={busy || draftsLoading}
+            disabled={busy || draftsLoading || deletingDrafts}
             onClick={loadStaging}
             className="min-h-10 rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-200 disabled:opacity-50"
           >
             Refresh queue
           </button>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-200">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" aria-label="Select all eligible unpublished drafts"
+              checked={eligibleDraftIds.length > 0 && eligibleDraftIds.every((id) => selectedDraftIds.includes(id))}
+              disabled={busy || deletingDrafts || !eligibleDraftIds.length}
+              onChange={(event) => setSelectedDraftIds(event.target.checked ? eligibleDraftIds : [])}
+            />
+            Select all eligible ({eligibleDraftIds.length})
+          </label>
+          <button type="button" disabled={busy || deletingDrafts || !selectedDraftIds.length}
+            onClick={() => deleteDrafts(selectedDraftIds)}
+            className="rounded-lg border border-rose-400/40 px-3 py-2 font-bold text-rose-200 disabled:opacity-40">
+            Delete selected ({selectedDraftIds.length})
+          </button>
+          <button type="button" disabled={busy || deletingDrafts || !eligibleDraftIds.length}
+            onClick={() => deleteDrafts(eligibleDraftIds, true)}
+            className="rounded-lg border border-rose-400/40 px-3 py-2 font-bold text-rose-200 disabled:opacity-40">
+            Delete all unpublished
+          </button>
+        </div>
+        {cleanupMessage && <p role="status" className="mt-2 text-xs text-amber-200">{cleanupMessage}</p>}
+        <p className="mt-1 text-[11px] text-slate-400">Only unpublished drafts can be deleted here. In-progress uploads are locked until their upload links expire.</p>
         {draftsLoading ? (
           <p role="status" className="mt-3 text-xs text-slate-400">Loading private drafts…</p>
         ) : existingDrafts.length === 0 ? (
@@ -503,6 +572,12 @@ export default function AdminPrivateAlbumUpload() {
             {existingDrafts.map((draft) => (
               <li key={draft.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 p-3 text-xs">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <input type="checkbox" aria-label={"Select unpublished draft " + draft.original_filename}
+                    checked={selectedDraftIds.includes(draft.id)}
+                    disabled={!draft.canDelete || busy || deletingDrafts}
+                    onChange={(event) => setSelectedDraftIds((previous) => event.target.checked
+                      ? [...previous, draft.id] : previous.filter((id) => id !== draft.id))}
+                  />
                   <img
                     src={privatePreviews[draft.id] || DEFAULT_THUMBNAIL_URL}
                     alt=""
@@ -512,7 +587,7 @@ export default function AdminPrivateAlbumUpload() {
                   <span className="min-w-0 break-all text-slate-200">{draft.original_filename}</span>
                 </div>
                 <span className="font-semibold text-amber-200">
-                  {draft.status === "pending_review" ? "Private · Not published" : "Upload incomplete"}
+                  {draft.status === "pending_review" ? "Private · Not published" : draft.canDelete ? "Upload incomplete" : "Upload incomplete · Active upload protected"}
                 </span>
               </li>
             ))}

@@ -1,0 +1,36 @@
+name: JB Phase 341 Admin Media Management (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'api/jb-admin-staging-upload.js'
+      - 'src/components/admin/AdminPrivateAlbumUpload.jsx'
+      - 'src/components/admin/AdminPublishingReview.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'scripts/tests/test-phase341-media-management.mjs'
+      - '.github/workflows/jb-phase341-media-management.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  media-management:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Phase 341 regression and security tests
+        run: node --test scripts/tests/test-phase341-media-management.mjs
+      - name: Previous private upload, publishing and Home regressions
+        run: |
+          node --test scripts/tests/test-phase337-private-admin-upload.mjs
+          node --test scripts/tests/test-phase338-publishing.mjs
+          node --test scripts/tests/test-phase339-home-published-thumbnails.mjs
+      - name: Production frontend compilation
+        run: npm run build
