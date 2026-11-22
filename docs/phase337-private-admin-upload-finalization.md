@@ -33,3 +33,11 @@ This branch integrates the previously tested Phase 333N **private staging only**
 
 ## Rollback
 Revert the Phase 337 frontend/API commit. The pre-existing Phase 336 paid and FREE playback issuer deployments are independent and must remain unchanged.
+
+## Phase 337B — Vercel Preview origin fix
+
+The first real two-file Preview test demonstrated that the frontend thumbnails and queue loaded correctly, but both signed upload requests failed before R2 with `HTTP 403 Origin not permitted` and `0% transferred`. The initial handler trusted a different Vercel hostname style from the generated deployment alias.
+
+The API now recognizes **this project's own Vercel preview deployment host family** (`jb-premium-<deployment>-jbcollections00-7010s-projects.vercel.app`) and the previous narrow naming style. It additionally requires `Origin` to be HTTPS and to exactly match the request `Host`. Other team/project hosts, HTTP, and attacker/spoofed origins remain denied. JWT and admin verification are unchanged.
+
+Retest the newer PR #51 Preview deployment (not the old cached URL) with two original, cleared MP4 files. Before uploading, check the staging endpoint's CORS status without sending a token: `OPTIONS` from a matching Preview origin should return `204`, while unauthenticated `POST` should return `401`. A real admin `begin` still requires valid admin JWT. Do not put JWTs or signed R2 links in screenshots.
