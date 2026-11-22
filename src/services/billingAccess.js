@@ -23,7 +23,8 @@ export function normalizeBillingAccess(raw) {
   const active = expiry !== null && expiry.getTime() > Date.now();
   if (tier === 'free') {
     if (row.can_view_albums || row.can_download) throw new Error('Invalid free entitlement');
-    return { tier: 'free', canViewAlbums: false, canDownload: false, showAds: false, expiresAt: null };
+    // FREE accounts now see ad-supported previews; no paid entitlements are granted.
+    return { tier: 'free', canViewAlbums: false, canDownload: false, showAds: true, expiresAt: null };
   }
   if (!active || !row.can_view_albums ||
       row.can_download !== (tier === 'vip') ||
@@ -63,5 +64,5 @@ export function resolveMemberPresentation(profile, billing) {
   // Preserve previously issued VIP codes independently of PayMongo.
   if (isLegacyVip) return { tier: 'vip', canViewAlbums: true, canDownload: true, showAds: false, isAdmin: false };
   if (billing?.tier === 'standard') return { ...billing, isAdmin: false };
-  return { tier: 'free', canViewAlbums: false, canDownload: false, showAds: false, isAdmin: false };
+  return { tier: 'free', canViewAlbums: false, canDownload: false, showAds: true, isAdmin: false };
 }
