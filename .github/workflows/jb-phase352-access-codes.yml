@@ -1,0 +1,24 @@
+name: Phase 352 Access Codes Validation
+on:
+  push:
+    branches: [fix/phase352-access-codes-standard-expired]
+  pull_request:
+    paths:
+      - 'src/pages/admin/AccessCodesTab.jsx'
+      - 'supabase/migrations/20261123081000_jb_access_codes_standard_archive_v1.sql'
+      - 'scripts/tests/test-phase352-access-codes.mjs'
+      - '.github/workflows/jb-phase352-access-codes.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test scripts/tests/test-phase352-access-codes.mjs
+      - run: npm run build
