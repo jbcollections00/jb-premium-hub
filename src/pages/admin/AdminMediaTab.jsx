@@ -100,7 +100,11 @@ export default function AdminMediaTab() {
     setCurrentPage,
   ] = useState(1);
 
-  const itemsPerPage = 30;
+  // 50 member-library records per admin page; selection is restricted to the visible page.
+  const itemsPerPage = 50;
+  const [selectedMediaIds, setSelectedMediaIds] = useState([]);
+  const [deletingPublishedMedia, setDeletingPublishedMedia] = useState(false);
+  const [deleteResultMessage, setDeleteResultMessage] = useState("");
 
   /* =========================================================
      IGNORED DUPLICATES
@@ -166,6 +170,12 @@ export default function AdminMediaTab() {
     searchQuery,
     showDuplicatesOnly,
   ]);
+
+  // Never keep invisible selected items when changing page, filters or tabs.
+  useEffect(() => {
+    setSelectedMediaIds([]);
+    setDeleteResultMessage("");
+  }, [currentPage, searchQuery, showDuplicatesOnly, activeTab]);
 
   /* =========================================================
      FETCH MEDIA
@@ -1349,38 +1359,84 @@ export default function AdminMediaTab() {
     };
 
   /* =========================================================
-     DELETE ONE
+     ADMIN-ONLY MEDIA DELETION (SINGLE / BULK)
+     Atomic database deletion + trusted private-R2 cleanup.
+     Never delete a media row directly: published videos have
+     ON DELETE RESTRICT publication links.
   ========================================================= */
 
-  const handleDeleteMedia =
-    async (
-      id
-    ) => {
-      if (
-        !window.confirm(
-          "Sigurado ka bang gusto mong burahin ang video na ito?"
-        )
-      ) {
-        return;
-      }
+  const handleDeleteMediaBatch = async (mediaIds, bulk = false) => {
+    if (deletingPublishedMedia || !Array.isArray(mediaIds) || !mediaIds.length) return;
+    const visibleIds = new Set(paginatedMedia.map((item) => item.id));
+    const uniqueIds = [...new Set(mediaIds)];
+    if (uniqueIds.some((id) => !visibleIds.has(id))) {
+      setDeleteResultMessage("Selection changed. Refresh or select videos on the current page.");
+      return;
+    }
 
-      const {
-        error,
-      } =
-        await supabase
-          .from(
-            "media"
-          )
-          .delete()
-          .eq(
-            "id",
-            id
-          );
+    if (!window.confirm(
+      "Permanently delete " + uniqueIds.length + " SELECTED published video(s) from the member library? " +
+      "This removes their publication, comments, reactions and view history. " +
+      "Linked private R2 files will be cleaned up. THIS CANNOT BE UNDONE."
+    )) return;
 
-      if (!error) {
-        fetchMedia();
+    if (bulk && window.prompt(
+      "To confirm BULK deletion, type DELETE " + uniqueIds.length + " exactly:"
+    ) !== "DELETE " + uniqueIds.length) return;
+
+    setDeletingPublishedMedia(true);
+    setDeleteResultMessage("");
+    let deletedCount = 0;
+    const warnings = [];
+    try {
+      const { data: sessionResult, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionResult?.session?.access_token) {
+        throw new Error("Admin session expired. Sign in again.");
       }
-    };
+      const base = String(import.meta.env.VITE_R2_SIGNER_URL || "").replace(/\/+$/, "");
+      const endpoint = (base ? base : "") + "/api/jb-admin-staging-upload";
+      // Keep the synchronous R2 cleanup requests below serverless time limits.
+      for (let i = 0; i < uniqueIds.length; i += 10) {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + sessionResult.session.access_token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "delete-published-media",
+            mediaIds: uniqueIds.slice(i, i + 10),
+            confirmDeletion: true,
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Media deletion rejected.");
+        const deleted = Array.isArray(result.deleted) ? result.deleted : [];
+        deletedCount += deleted.length;
+        if (Array.isArray(result.cleanupPending) && result.cleanupPending.length) {
+          warnings.push(result.cleanupPending.length + " private R2 cleanup(s) pending");
+        }
+        if (Array.isArray(result.legacyStorageUnchanged) && result.legacyStorageUnchanged.length) {
+          warnings.push(result.legacyStorageUnchanged.length + " legacy/external storage object(s) untouched");
+        }
+      }
+      setDeleteResultMessage(
+        deletedCount + " selected video(s) removed from the member library." +
+        (warnings.length ? " Note: " + warnings.join("; ") + "." : "")
+      );
+    } catch (error) {
+      setDeleteResultMessage(
+        "Deletion stopped after " + deletedCount + " video(s): " +
+        (error.message || "Unknown error") + ". Refresh the library before trying again."
+      );
+    } finally {
+      setSelectedMediaIds([]);
+      setDeletingPublishedMedia(false);
+      await fetchMedia();
+    }
+  };
+
+  const handleDeleteMedia = async (id) => handleDeleteMediaBatch([id], false);
 
   /* =========================================================
      AUTO CLEAN DUPLICATES
@@ -1509,6 +1565,11 @@ export default function AdminMediaTab() {
       filteredMedia.length /
         itemsPerPage
     );
+
+  useEffect(() => {
+    // If deletion removes the last page, stay on the final existing page.
+    setCurrentPage((page) => Math.min(Math.max(totalPages, 1), page));
+  }, [totalPages]);
 
   const paginatedMedia =
     useMemo(
@@ -2336,6 +2397,29 @@ export default function AdminMediaTab() {
           ) : (
 
             <>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700/70 bg-slate-900/60 p-3 sm:p-4">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-200">
+                  <label className="inline-flex items-center gap-2 font-semibold">
+                    <input type="checkbox" aria-label="Select all 50 or fewer videos on this page"
+                      checked={paginatedMedia.length > 0 && paginatedMedia.every((item) => selectedMediaIds.includes(item.id))}
+                      disabled={deletingPublishedMedia || paginatedMedia.length === 0}
+                      onChange={(event) => setSelectedMediaIds(event.target.checked ? paginatedMedia.map((item) => item.id) : [])}
+                      className="h-4 w-4 accent-indigo-500"
+                    />
+                    Select current page ({paginatedMedia.length})
+                  </label>
+                  <span className="text-slate-400">{selectedMediaIds.length} selected · 50 per page</span>
+                </div>
+                <button type="button"
+                  disabled={deletingPublishedMedia || selectedMediaIds.length === 0}
+                  onClick={() => handleDeleteMediaBatch(selectedMediaIds, true)}
+                  className="min-h-10 rounded-lg border border-rose-400/50 bg-rose-900/20 px-4 py-2 text-xs font-bold text-rose-200 hover:bg-rose-800/30 disabled:cursor-not-allowed disabled:opacity-40">
+                  {deletingPublishedMedia ? "Deleting…" : "Delete selected (" + selectedMediaIds.length + ")"}
+                </button>
+              </div>
+              {deleteResultMessage && (
+                <p role="status" className="rounded-lg border border-amber-400/30 p-3 text-xs text-amber-100">{deleteResultMessage}</p>
+              )}
               {paginatedMedia.length ===
               0 ? (
 
@@ -2347,7 +2431,7 @@ export default function AdminMediaTab() {
 
               ) : (
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
 
                   {paginatedMedia.map(
                     (
@@ -2377,6 +2461,17 @@ export default function AdminMediaTab() {
                               FREE TO WATCH
                             </span>
                           )}
+                          <label className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/40 bg-slate-950/90 px-2 py-1.5 text-[10px] font-bold text-white">
+                            <input type="checkbox" className="h-4 w-4 accent-indigo-500"
+                              aria-label={"Select media " + (item.title || item.id)}
+                              checked={selectedMediaIds.includes(item.id)}
+                              disabled={deletingPublishedMedia}
+                              onChange={(event) => setSelectedMediaIds((ids) => event.target.checked
+                                ? [...ids.filter((id) => id !== item.id), item.id]
+                                : ids.filter((id) => id !== item.id))}
+                            />
+                            Select
+                          </label>
                           <div className="absolute top-2 left-2">
 
                             <span className="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-700/70 text-[9px] font-bold uppercase tracking-wider text-slate-300">
