@@ -312,7 +312,7 @@ jobs:
           assert.match(layout,/getBillingAccess\(\)/);
           // Prevent premature third-party ad script injection on VIP or account pages.
           assert.match(layout,/location\.pathname === "\/home" && showSocialBar/);
-          assert.match(layout,/membership\.tier === "standard" && membership\.showAds === true/);
+          assert.match(layout,/shouldDisplayAds/);
           assert.doesNotMatch(layout,/setShowSocialBar\(\s*true\s*\)/);
           // Payment history is auth-scoped, read-only, and excludes secrets.
           const profile = readFileSync('src/pages/public/Profile.jsx','utf8');
