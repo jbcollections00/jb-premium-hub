@@ -23,7 +23,8 @@ test("Media selection is restricted to currently visible page and resets on filt
   assert.match(ui, /Select current page/);
   assert.match(ui, /aria-label="Select all 50 or fewer videos on this page"/);
   assert.match(ui, /paginatedMedia\.map\(\(item\) => item\.id\)/);
-  assert.match(ui, /const visibleIds = new Set\(paginatedMedia\.map/);
+  assert.match(ui, /const visibleIds = new Set\(/);
+  assert.match(ui, /paginatedMedia\.map\(\(item\) => item\.id\)/);
   assert.match(ui, /useEffect\(\(\) => \{\s*setSelectedMediaIds\(\[\]\)/);
   assert.match(ui, /\[currentPage, searchQuery, showDuplicatesOnly, activeTab\]/);
 });
