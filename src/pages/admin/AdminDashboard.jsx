@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, Users, X } from 'lucide-react';
+import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, ImagePlus, Users, X } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -24,6 +24,7 @@ import './adminWorkspace.css';
 import ChatReports from './ChatReports';
 import ChatAnalytics from './ChatAnalytics';
 import AdminEventControl from '../../components/admin/AdminEventControl';
+import AdminVideoBranding from '../../components/admin/AdminVideoBranding';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -267,6 +268,7 @@ export default function AdminDashboard() {
     { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'codes', icon: KeyRound, label: 'Access codes' },
     { id: 'upload', icon: Clapperboard, label: 'Media manager' },
+    { id: 'branding', icon: ImagePlus, label: 'Video branding' },
   ];
 
   const overviewCards = [
@@ -462,6 +464,7 @@ export default function AdminDashboard() {
         {activeTab === 'chat-analytics' && <ChatAnalytics />}
         {activeTab === 'codes' && <AccessCodesTab />}
         {activeTab === 'upload' && <AdminMediaTab />}
+        {activeTab === 'branding' && <AdminVideoBranding />}
       </main>
     </div>
   );
