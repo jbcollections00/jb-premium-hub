@@ -1,0 +1,33 @@
+name: JB Phase 337 Private Upload — Tests (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'api/jb-admin-staging-upload.js'
+      - 'api/r2-upload-url.js'
+      - 'src/components/admin/AdminPrivateAlbumUpload.jsx'
+      - 'src/pages/admin/AdminDashboard.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'src/services/privateVideoPreview.js'
+      - 'scripts/tests/test-phase337-private-admin-upload.mjs'
+      - '.github/workflows/jb-phase337-private-upload.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-upload-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Test private upload security, progress, thumbnails, and mobile navigation
+        run: node --test scripts/tests/test-phase337-private-admin-upload.mjs
+      - name: Verify production build
+        run: npm run build
