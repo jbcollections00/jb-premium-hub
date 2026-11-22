@@ -1,0 +1,33 @@
+name: JB Phase 349 Admin Album Editing (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/components/admin/AdminPrivateAlbumUpload.jsx'
+      - 'scripts/tests/test-phase349-edit-admin-albums.mjs'
+      - '.github/workflows/jb-phase349-edit-albums.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Phase 349 edit album safety and form tests
+        run: node --test scripts/tests/test-phase349-edit-admin-albums.mjs
+      - name: Existing Phase 348 create album regression
+        run: node --test scripts/tests/test-phase348-create-admin-album.mjs
+      - name: Upload, publish, automatic R2 cleanup regression
+        run: |
+          node --test scripts/tests/test-phase341-media-management.mjs
+          node --test scripts/tests/test-phase347-r2-automatic-cleanup.mjs
+      - name: Production Vite build
+        run: npm run build
