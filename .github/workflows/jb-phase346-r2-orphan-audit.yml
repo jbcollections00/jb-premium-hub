@@ -1,0 +1,34 @@
+name: JB Phase 346 R2 Orphan Audit (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'api/jb-admin-staging-upload.js'
+      - 'src/components/admin/AdminR2OrphanAudit.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'scripts/tests/test-phase346-r2-orphan-audit.mjs'
+      - '.github/workflows/jb-phase346-r2-orphan-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Phase 346 orphan audit, security and fail-closed tests
+        run: node --test scripts/tests/test-phase346-r2-orphan-audit.mjs
+      - name: Phase 343–345 regression suite
+        run: |
+          node --test scripts/tests/test-phase343-media-library-bulk-delete.mjs
+          node --test scripts/tests/test-phase344-dashboard-membership-cards.mjs
+          node --test scripts/tests/test-phase345-users-membership-tiers.mjs
+      - name: Build production app
+        run: npm run build
