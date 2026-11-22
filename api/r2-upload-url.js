@@ -315,6 +315,19 @@ export default async function handler(
           ""
         );
 
+    // Never issue a PUBLIC R2 presigned PUT for video content. Protected
+    // videos use the separate authenticated private staging upload endpoint.
+    const videoUpload =
+      String(contentType || "").toLowerCase().startsWith("video/") ||
+      /\.(mp4|mov|webm|mkv|avi|m4v|flv|wmv|3gp|ts)$/i.test(safeName) ||
+      safeFolder === "videos" ||
+      safeFolder.startsWith("videos/");
+    if (videoUpload) {
+      return res.status(410).json({
+        error: "Public video uploads are disabled. Use Private Album Upload.",
+      });
+    }
+
     const randomPart =
       crypto.randomUUID();
 
