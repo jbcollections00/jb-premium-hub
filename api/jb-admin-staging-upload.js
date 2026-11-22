@@ -781,8 +781,26 @@ async function scanR2Orphans(req, res, services, admin) {
       process.env.JB_PUBLIC_THUMBNAIL_ORIGIN === "https://assets.jb-premium-hub.vip") {
     scopes.public_thumbnail = { bucket: publicBucket, prefix: "thumbnails/published/" };
   }
+  if (scope === "public_thumbnail" && !scopes.public_thumbnail) {
+    // Explain exactly why published covers could not be audited. This must
+    // NOT be reported as a clean scan or as zero orphan public objects.
+    if (!publicBucket) {
+      return fail(res, 409,
+        "Published thumbnail audit is not configured: set JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME in Vercel Production to the exact public R2 bucket name.");
+    }
+    if (!/^[a-z0-9][a-z0-9._-]{1,62}$/.test(publicBucket)) {
+      return fail(res, 409,
+        "Published thumbnail audit configuration invalid: check JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME in Vercel Production.");
+    }
+    if (publicBucket === services.bucket) {
+      return fail(res, 409,
+        "Published thumbnail audit configuration unsafe: the public thumbnail bucket must be different from the private video bucket.");
+    }
+    return fail(res, 409,
+      "Published thumbnail audit origin not configured: set JB_PUBLIC_THUMBNAIL_ORIGIN to https://assets.jb-premium-hub.vip in Vercel Production.");
+  }
   if (!Object.hasOwn(scopes, scope)) {
-    return fail(res, 400, "Unknown or unconfigured R2 audit scope.");
+    return fail(res, 400, "Unknown R2 audit scope.");
   }
   const cursor = req.body?.cursor;
   if (cursor !== undefined &&
