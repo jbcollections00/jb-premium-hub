@@ -1,0 +1,28 @@
+name: Phase 351 Video Branding Validation
+on:
+  push:
+    branches: [feature/video-branding-phase351]
+  pull_request:
+    paths:
+      - 'scripts/video-branding/**'
+      - 'scripts/tests/test-phase351-video-branding.mjs'
+      - 'src/components/admin/AdminVideoBranding.jsx'
+      - 'src/pages/admin/AdminDashboard.jsx'
+      - 'api/jb-video-branding.js'
+      - '.github/workflows/jb-phase351-video-branding.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test scripts/tests/test-phase351-video-branding.mjs
+      - run: node --check api/jb-video-branding.js
+      - run: node --check scripts/video-branding/process.mjs
+      - run: npm run build
