@@ -54,6 +54,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState("");
   const mediaFetchSerialRef = useRef(0);
+  const mostWatchedFetchSerialRef = useRef(0);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
@@ -271,6 +272,7 @@ export default function Home() {
   }, [homeMode, userProfile?.id]);
 
   useEffect(() => {
+    if (homeMode !== "albums") ++mostWatchedFetchSerialRef.current;
     if (homeMode === "locked" ||
         (homeMode === "albums" && (albumsLoading || !selectedAlbumId))) {
       ++mediaFetchSerialRef.current;
@@ -413,8 +415,10 @@ export default function Home() {
   };
 
   const fetchMostWatched = async () => {
+    const requestId = ++mostWatchedFetchSerialRef.current;
     setMostWatchedLoading(true);
     try {
+      // Paid/admin only: the media table continues to enforce its existing RLS.
       const { data, error } = await supabase
         .from("media")
         .select("*")
@@ -423,11 +427,12 @@ export default function Home() {
         .limit(6);
 
       if (error) throw error;
-      setMostWatched(data || []);
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatched(data || []);
     } catch (err) {
-      console.error("Fetch most watched error:", err);
+      console.error("Most Watched unavailable:", err?.code || "UNKNOWN");
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatched([]);
     } finally {
-      setMostWatchedLoading(false);
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatchedLoading(false);
     }
   };
 
@@ -1210,6 +1215,76 @@ export default function Home() {
             </div>
           </section>
         )}
+        {/* Admin, Standard and VIP see album names instead of Free to Watch. */}
+        {homeMode === "albums" && (
+          <section className="mb-8" aria-label="Member Albums">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-extrabold text-white sm:text-2xl">Your Albums</h2>
+                <p className="mt-1 text-xs text-slate-300">Select an album to browse its published videos.</p>
+              </div>
+              <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-bold text-indigo-200">
+                {albums.length} albums
+              </span>
+            </div>
+            {albumsLoading ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="h-36 animate-pulse rounded-2xl border border-slate-700 bg-slate-900/80"/>
+                ))}
+              </div>
+            ) : albumError ? (
+              <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-900/10 p-4 text-sm text-rose-200">
+                {albumError}
+              </p>
+            ) : albums.length === 0 ? (
+              <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-sm text-slate-300">
+                No albums available yet. Albums appear here when an admin creates them.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {albums.map((album) => (
+                  <button type="button" key={album.id}
+                    onClick={() => handleSelectAlbum(album.id)}
+                    aria-pressed={selectedAlbumId === album.id}
+                    className={`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 ${
+                      selectedAlbumId === album.id
+                        ? "border-indigo-300 ring-2 ring-indigo-500/40"
+                        : "border-slate-700 hover:border-indigo-400/60"
+                    }`}
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-br ${
+                      ALBUM_COVER_COLORS[album.cover_style] || ALBUM_COVER_COLORS.indigo
+                    }`}/>
+                    {album.cover_image_url && (
+                      <img src={album.cover_image_url} alt="" loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover opacity-35"/>
+                    )}
+                    <div className="relative z-10 flex h-full flex-col justify-between gap-3">
+                      <span className="text-2xl" aria-hidden="true">▣</span>
+                      <span>
+                        <span className="block break-words text-sm font-extrabold text-white sm:text-base">
+                          {album.name}
+                        </span>
+                        {album.description && (
+                          <span className="mt-1 block line-clamp-2 text-xs text-slate-200">
+                            {album.description}
+                          </span>
+                        )}
+                        {isAdmin && !album.is_visible && (
+                          <span className="mt-1 inline-flex rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
+                            Hidden album
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
@@ -1374,76 +1449,6 @@ export default function Home() {
             </div>
           )}
         </div>
-
-        {/* Admin, Standard and VIP see album names instead of Free to Watch. */}
-        {homeMode === "albums" && (
-          <section className="mb-8" aria-label="Member Albums">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-extrabold text-white sm:text-2xl">Your Albums</h2>
-                <p className="mt-1 text-xs text-slate-300">Select an album to browse its published videos.</p>
-              </div>
-              <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-bold text-indigo-200">
-                {albums.length} albums
-              </span>
-            </div>
-            {albumsLoading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((n) => (
-                  <div key={n} className="h-36 animate-pulse rounded-2xl border border-slate-700 bg-slate-900/80"/>
-                ))}
-              </div>
-            ) : albumError ? (
-              <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-900/10 p-4 text-sm text-rose-200">
-                {albumError}
-              </p>
-            ) : albums.length === 0 ? (
-              <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-sm text-slate-300">
-                No albums available yet. Albums appear here when an admin creates them.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {albums.map((album) => (
-                  <button type="button" key={album.id}
-                    onClick={() => handleSelectAlbum(album.id)}
-                    aria-pressed={selectedAlbumId === album.id}
-                    className={`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 ${
-                      selectedAlbumId === album.id
-                        ? "border-indigo-300 ring-2 ring-indigo-500/40"
-                        : "border-slate-700 hover:border-indigo-400/60"
-                    }`}
-                  >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${
-                      ALBUM_COVER_COLORS[album.cover_style] || ALBUM_COVER_COLORS.indigo
-                    }`}/>
-                    {album.cover_image_url && (
-                      <img src={album.cover_image_url} alt="" loading="lazy"
-                        className="absolute inset-0 h-full w-full object-cover opacity-35"/>
-                    )}
-                    <div className="relative z-10 flex h-full flex-col justify-between gap-3">
-                      <span className="text-2xl" aria-hidden="true">▣</span>
-                      <span>
-                        <span className="block break-words text-sm font-extrabold text-white sm:text-base">
-                          {album.name}
-                        </span>
-                        {album.description && (
-                          <span className="mt-1 block line-clamp-2 text-xs text-slate-200">
-                            {album.description}
-                          </span>
-                        )}
-                        {isAdmin && !album.is_visible && (
-                          <span className="mt-1 inline-flex rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
-                            Hidden album
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
 
         {/* VAULT MEDIA LIST HEADER */}
         <div id="jb-home-gallery" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 scroll-mt-24">
