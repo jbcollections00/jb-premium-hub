@@ -4,6 +4,23 @@
 alter table public.access_codes
   add column if not exists issued_by uuid references auth.users(id) on delete set null;
 
+-- Backward-compatible with the currently deployed VIP generator until the new UI deploys.
+create or replace function public.jb_stamp_access_code_issuer_v1()
+returns trigger language plpgsql security definer set search_path = ''
+as $
+begin
+  if new.issued_by is null and (select auth.uid()) is not null
+     and (select public.is_current_user_admin()) is true then
+    new.issued_by := (select auth.uid());
+  end if;
+  return new;
+end;
+$;
+drop trigger if exists jb_stamp_access_code_issuer_v1 on public.access_codes;
+create trigger jb_stamp_access_code_issuer_v1
+before insert on public.access_codes for each row
+execute function public.jb_stamp_access_code_issuer_v1();
+
 create or replace function public.jb_admin_create_access_code_v1(
   p_type text, p_duration_days integer default 30, p_custom_code text default null
 )
@@ -190,7 +207,7 @@ $$;
 revoke all on function public.jb_admin_create_access_code_v1(text,integer,text) from public,anon;
 revoke all on function public.jb_admin_delete_unused_access_code_v1(uuid) from public,anon;
 revoke all on function public.redeem_access_code(text) from public,anon;
-revoke all on function public.jb_protect_redeemed_access_codes_v1() from public,anon,authenticated;
+revoke all on function public.jb_protect_redeemed_access_codes_v1() from public,anon,authenticated;\nrevoke all on function public.jb_stamp_access_code_issuer_v1() from public,anon,authenticated;
 grant execute on function public.jb_admin_create_access_code_v1(text,integer,text) to authenticated,service_role;
 grant execute on function public.jb_admin_delete_unused_access_code_v1(uuid) to authenticated,service_role;
 grant execute on function public.redeem_access_code(text) to authenticated,service_role;
