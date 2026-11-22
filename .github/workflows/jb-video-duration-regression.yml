@@ -1,0 +1,23 @@
+name: JB Video Duration — Regression (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/components/VIPVideoPlayer.jsx'
+      - 'scripts/test-video-duration-regression.mjs'
+      - '.github/workflows/jb-video-duration-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  duration-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify player metadata behavior, role restrictions and RLS updates
+        run: node --test scripts/test-video-duration-regression.mjs
