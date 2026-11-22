@@ -2,7 +2,7 @@
  * PRIVATE admin-only preview thumbnails. No network/video publishing.
  * For supported browser-decodable MP4: landscape = one frame;
  * portrait = 3 portrait frames merged side-by-side into one JPEG.
- * Start near 22s when possible (avoid intro), with a short-video fallback.
+ * Original uploaded media contains MAIN VIDEO only; system intro is added later.\n * Capture just after main video starts, before adding any branding.
  * Returns Blob or null; the uploader displays the default JB logo on failure.
  */
 const MAX_W = 720;
@@ -36,15 +36,9 @@ function seekTo(video, target) {
 
 function getPositions(duration, portrait) {
   if (!Number.isFinite(duration) || duration <= 0) return portrait ? [0, 0, 0] : [0];
-  const last = Math.max(0, duration - 0.25);
-  const start = Math.min(last, duration > 24 ? 22 : duration * 0.45);
-  if (!portrait) return [start];
-  const remaining = Math.max(0, last - start);
-  return [
-    start,
-    Math.min(last, start + remaining * 0.45),
-    Math.min(last, start + remaining * 0.9),
-  ];
+  const last = Math.max(0, duration - 0.1);
+  const points = portrait ? [0.25, 1.25, 2.25] : [0.25];
+  return points.map((point) => Math.min(last, point));
 }
 
 function jpegBlob(canvas, quality) {
