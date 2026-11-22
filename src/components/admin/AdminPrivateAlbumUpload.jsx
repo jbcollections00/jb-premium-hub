@@ -68,6 +68,13 @@ const fileProgress = (item) => item.size > 0
 export default function AdminPrivateAlbumUpload() {
   const [albums, setAlbums] = useState([]);
   const [albumId, setAlbumId] = useState("");
+  const [showAlbumCreator, setShowAlbumCreator] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState("");
+  const [newAlbumDescription, setNewAlbumDescription] = useState("");
+  const [newAlbumVisible, setNewAlbumVisible] = useState(true);
+  const [creatingAlbum, setCreatingAlbum] = useState(false);
+  const [albumCreationMessage, setAlbumCreationMessage] = useState("");
+  const [albumCreationError, setAlbumCreationError] = useState("");
   const [files, setFiles] = useState([]);
   const [queue, setQueue] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -192,6 +199,73 @@ export default function AdminPrivateAlbumUpload() {
       }
     } finally {
       if (mountedRef.current) setLoading(false);
+    }
+  };
+
+  // New albums use the existing authenticated admin-only RLS INSERT policy.
+  // Do not send a service-role credential or create an album automatically.
+  const createAlbum = async (event) => {
+    event.preventDefault();
+    if (creatingAlbum || busy) return;
+    const name = newAlbumName.trim();
+    const description = newAlbumDescription.trim();
+
+    setAlbumCreationError("");
+    setAlbumCreationMessage("");
+    if (!name || name.length > 80) {
+      setAlbumCreationError("Album name must be between 1 and 80 characters.");
+      return;
+    }
+    if (description.length > 400) {
+      setAlbumCreationError("Album description must be 400 characters or fewer.");
+      return;
+    }
+    if (albums.some((album) => album.name.trim().toLocaleLowerCase() ===
+        name.toLocaleLowerCase())) {
+      setAlbumCreationError("An album with this name already exists. Select it instead.");
+      return;
+    }
+
+    setCreatingAlbum(true);
+    try {
+      const { data: userResult, error: userError } = await supabase.auth.getUser();
+      const userId = userResult?.user?.id;
+      if (userError || !userId) throw new Error("Admin sign-in expired. Please log in again.");
+
+      // RLS requires current admin AND created_by = auth.uid().
+      const { data: album, error: insertError } = await supabase
+        .from("jb_media_albums")
+        .insert({
+          name,
+          description,
+          is_visible: newAlbumVisible,
+          created_by: userId,
+        })
+        .select("id, name, is_visible")
+        .single();
+      if (insertError || !album?.id) {
+        throw new Error(insertError?.code === "42501"
+          ? "Only administrators can create albums."
+          : "Could not create album. Check your admin access and try again.");
+      }
+      if (!mountedRef.current) return;
+      setAlbums((previous) => [
+        ...previous.filter((item) => item.id !== album.id),
+        album,
+      ].sort((a, b) => a.name.localeCompare(b.name)));
+      setAlbumId(album.id);
+      setNewAlbumName("");
+      setNewAlbumDescription("");
+      setNewAlbumVisible(true);
+      setShowAlbumCreator(false);
+      setAlbumCreationMessage('Album "' + album.name + '" created and selected. You can now upload videos.');
+      setErrorText("");
+    } catch (error) {
+      if (mountedRef.current) {
+        setAlbumCreationError(error?.message || "Could not create the album.");
+      }
+    } finally {
+      if (mountedRef.current) setCreatingAlbum(false);
     }
   };
 
@@ -389,13 +463,98 @@ export default function AdminPrivateAlbumUpload() {
   return (
     <section className="min-w-0 space-y-5" aria-label="Private video upload to album">
       <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 p-4 text-sm text-sky-100">
-        <h3 className="font-extrabold">Private Album Upload</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-extrabold">Private Album Upload</h3>
+          <button type="button"
+            disabled={busy || creatingAlbum}
+            onClick={() => {
+              setShowAlbumCreator((previous) => !previous);
+              setAlbumCreationError("");
+              setAlbumCreationMessage("");
+            }}
+            className="min-h-10 rounded-xl border border-sky-300/50 bg-sky-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-sky-500 disabled:opacity-50"
+          >
+            {showAlbumCreator ? "Close album creator" : "+ Create New Album"}
+          </button>
+        </div>
         <p className="mt-1 text-xs leading-relaxed">
           Select an album and multiple video files. Uploads are stored privately,
           and tracked with per-file and overall progress. No public video links are created.
           Files are not public. Availability on member pages requires content clearance.
         </p>
       </div>
+
+      {albumCreationMessage && (
+        <p role="status" className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+          {albumCreationMessage}
+        </p>
+      )}
+      {showAlbumCreator && (
+        <form onSubmit={createAlbum}
+          aria-label="Create a new media album"
+          className="space-y-4 rounded-2xl border border-sky-400/40 bg-slate-900/70 p-4 sm:p-5"
+        >
+          <div>
+            <h4 className="font-extrabold text-white">Create a new album</h4>
+            <p className="mt-1 text-xs text-slate-300">
+              This creates an empty album. New videos will go to the selected album after upload.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="jb-new-album-name" className="mb-1 block text-sm font-semibold text-white">
+              Album name
+            </label>
+            <input id="jb-new-album-name" type="text" required maxLength={80}
+              value={newAlbumName}
+              onChange={(event) => setNewAlbumName(event.target.value)}
+              disabled={creatingAlbum || busy}
+              placeholder="e.g. Learning Videos"
+              className="w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-white"
+            />
+          </div>
+          <div>
+            <label htmlFor="jb-new-album-description" className="mb-1 block text-sm font-semibold text-white">
+              Description (optional)
+            </label>
+            <textarea id="jb-new-album-description" rows={2} maxLength={400}
+              value={newAlbumDescription}
+              onChange={(event) => setNewAlbumDescription(event.target.value)}
+              disabled={creatingAlbum || busy}
+              placeholder="Briefly describe the album content"
+              className="w-full resize-y rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-white"
+            />
+          </div>
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-white">
+            <input type="checkbox" checked={newAlbumVisible}
+              onChange={(event) => setNewAlbumVisible(event.target.checked)}
+              disabled={creatingAlbum || busy}
+              className="mt-1 h-4 w-4 accent-sky-500"
+            />
+            <span>
+              <strong>Visible to eligible members</strong>
+              <span className="block text-xs text-slate-300">
+                Uncheck to keep the album hidden while preparing its content.
+              </span>
+            </span>
+          </label>
+          {albumCreationError && (
+            <p role="alert" className="rounded-lg border border-rose-400/40 bg-rose-500/10 p-3 text-xs text-rose-100">
+              {albumCreationError}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-3">
+            <button type="submit" disabled={creatingAlbum || busy || !newAlbumName.trim()}
+              className="min-h-11 rounded-xl bg-sky-600 px-5 py-2 text-sm font-extrabold text-white hover:bg-sky-500 disabled:opacity-50">
+              {creatingAlbum ? "Creating album…" : "Create Album"}
+            </button>
+            <button type="button" disabled={creatingAlbum}
+              onClick={() => { setShowAlbumCreator(false); setAlbumCreationError(""); }}
+              className="min-h-11 rounded-xl border border-slate-600 px-5 py-2 text-sm font-bold text-slate-200">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       {errorText && (
         <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-950/40 p-3 text-sm text-rose-100">
