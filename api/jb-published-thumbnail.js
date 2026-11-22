@@ -10,6 +10,25 @@ const PRIVATE_BUCKET = "jb-premium-private-videos";
 const MAX_JPEG_BYTES = 1024 * 1024;
 const NO_STORE = "private, no-store, max-age=0";
 
+/**
+ * Pure authorization boundary: only a published media row linked to a matching
+ * staged MP4 may expose that staging record's exact generated JPEG preview.
+ */
+export function approvedThumbnailKey(media, link, staged, mediaId) {
+  if (!MEDIA_ID.test(String(mediaId || "")) ||
+      media?.id !== mediaId || media?.type !== "video" ||
+      !link?.staging_id || !MEDIA_ID.test(link.staging_id) ||
+      staged?.id !== link.staging_id ||
+      !staged.created_by || !MEDIA_ID.test(staged.created_by) ||
+      !staged.uploaded_at || !staged.preview_uploaded_at) return null;
+  const expectedVideo = "staging/" + staged.created_by + "/" + staged.id + ".mp4";
+  const expectedPreview = "staging-thumbnails/" + staged.created_by + "/" + staged.id + ".jpg";
+  if (staged.storage_key !== expectedVideo ||
+      staged.preview_key !== expectedPreview ||
+      media.media_url !== "r2://" + PRIVATE_BUCKET + "/" + expectedVideo) return null;
+  return expectedPreview;
+}
+
 function reject(res, status) {
   res.setHeader("Cache-Control", NO_STORE);
   return res.status(status).end();
@@ -53,16 +72,8 @@ export default async function handler(req, res) {
       .select("id, created_by, uploaded_at, preview_key, preview_uploaded_at, storage_key")
       .eq("id", link.staging_id).maybeSingle();
     if (error) return reject(res, 503);
-    if (!staged?.created_by || !MEDIA_ID.test(staged.created_by) ||
-        !staged.uploaded_at || !staged.preview_uploaded_at) return reject(res, 404);
-
-    const expectedVideo = "staging/" + staged.created_by + "/" + staged.id + ".mp4";
-    const expectedPreview = "staging-thumbnails/" + staged.created_by + "/" + staged.id + ".jpg";
-    if (staged.storage_key !== expectedVideo ||
-        staged.preview_key !== expectedPreview ||
-        media.media_url !== "r2://" + PRIVATE_BUCKET + "/" + expectedVideo) {
-      return reject(res, 404);
-    }
+    const expectedPreview = approvedThumbnailKey(media, link, staged, input);
+    if (!expectedPreview) return reject(res, 404);
 
     const client = new S3Client({
       region: "auto",
