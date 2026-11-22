@@ -1183,7 +1183,21 @@ export default function Home() {
   return (
     <div className="jbh-page min-h-screen text-white">
       <div className="max-w-7xl mx-auto">
-        {FREE_PREVIEW_UI_ENABLED && billingReady && !membership.canViewAlbums && userProfile?.id && (
+        {homeMode === "locked" ? (
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-8 text-center" aria-label="Member home sign-in">
+            <h1 className="text-xl font-extrabold text-white">
+              {billingReady ? "Sign in to explore videos" : "Checking membership…"}
+            </h1>
+            <p className="mt-2 text-sm text-slate-300">
+              Video recommendations are shown only after your account access is verified.
+            </p>
+            {billingReady && !userProfile?.id && (
+              <Link to="/login" className="jbh-btn mt-4 inline-flex">Sign in</Link>
+            )}
+          </section>
+        ) : (
+        <>
+        {homeMode === "free" && (
           <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
             <div className="max-w-xl">
               <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
@@ -1191,7 +1205,7 @@ export default function Home() {
               <p className="mt-2 text-sm leading-relaxed text-slate-300">Watch these videos as often as you like. Explore membership options whenever you're ready for the full collection.</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => handleCategoryChange("free")} className="jbh-btn">Explore free videos</button>
+              <button type="button" onClick={() => document.getElementById("jb-home-gallery")?.scrollIntoView({ behavior: "smooth" })} className="jbh-btn">Explore free videos</button>
               <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
             </div>
           </section>
@@ -1209,7 +1223,7 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-xl md:text-2xl font-black text-white tracking-wide">
-                    Most watched
+                    {homeMode === "free" ? "Most Watched — Free" : "Most Watched"}
                   </h2>
                   <span className="rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
                     Trending
@@ -1281,7 +1295,7 @@ export default function Home() {
                   >
                     <div>
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
-                        {item.is_free_preview && (
+                        {homeMode === "free" && (
                           <span className="absolute right-2 top-2 z-10 rounded-lg bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-white">FREE</span>
                         )}
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
@@ -1315,11 +1329,11 @@ export default function Home() {
                         )}
 
                         <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      item.is_free_preview
+                      homeMode === "free"
                         ? "border-emerald-300/30 bg-emerald-500/90 text-white"
                         : "border-white/10 bg-black/75 text-slate-200"
                     }`}>
-                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                      {homeMode === "free" ? "Free to Watch" : "Member library"}
                     </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
@@ -1369,33 +1383,7 @@ export default function Home() {
           </span>
         </div>
 
-        {/* CATEGORY TABS */}
-        <div className="flex items-center gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none">
-          <button
-            onClick={() => handleCategoryChange("all")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
-              activeCategory === "all"
-                ? "bg-indigo-600 text-white"
-                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>🔥</span> All Videos
-          </button>
-          {FREE_PREVIEW_UI_ENABLED && (
-          <button
-            onClick={() => handleCategoryChange("free")}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
-              activeCategory === "free"
-                ? "bg-emerald-600 text-white"
-                : "bg-slate-900 border border-emerald-500/25 text-emerald-200 hover:bg-emerald-500/10"
-            }`}
-          >
-            <span>▶</span> Free to Watch
-          </button>
-          )}
-        </div>
-
-        <AdSlot position="middle" enabled={billingReady && membership.tier === "standard" && membership.showAds === true} />
+        <AdSlot position="middle" enabled={adsEnabled} />
 
         {/* MAIN VIDEO GRID */}
         {loading ? (
@@ -1405,11 +1393,13 @@ export default function Home() {
         ) : mediaError ? (
           <div role="alert" className="text-center py-16 bg-slate-900/40 rounded-2xl border border-rose-400/30">
             <p className="font-semibold text-rose-200">{mediaError}</p>
-            <button type="button" onClick={() => fetchMedia(currentPage, activeCategory)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
+            <button type="button" onClick={() => fetchMedia(currentPage)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
           </div>
         ) : mediaList.length === 0 ? (
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-            <p className="text-slate-400">{FREE_PREVIEW_UI_ENABLED && !membership.canViewAlbums ? "Wala pang napiling Free to Watch videos sa kategoryang ito." : "Wala pang available na videos sa kategoryang ito."}</p>
+            <p className="text-slate-400">{homeMode === "free"
+              ? "Wala pang napiling Free to Watch videos. Maghihintay muna tayo ng pagpili ng admin."
+              : "Wala pang published videos sa album na ito."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -1444,11 +1434,11 @@ export default function Home() {
                       </div>
                     )}
                     <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      item.is_free_preview
+                      homeMode === "free"
                         ? "border-emerald-300/30 bg-emerald-500/90 text-white"
                         : "border-white/10 bg-black/75 text-slate-200"
                     }`}>
-                      {item.is_free_preview ? "Free to Watch" : membership.canViewAlbums ? "Member library" : "Members only"}
+                      {homeMode === "free" ? "Free to Watch" : "Member library"}
                     </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
@@ -1548,6 +1538,8 @@ export default function Home() {
             </button>
           </div>
         )}
+        </>
+        )}
 
       </div>
 
@@ -1619,7 +1611,7 @@ export default function Home() {
                     mediaId={selectedMedia.id}
                     currentDuration={selectedMedia.duration}
                     mainVideoUrl={isSelectedFreePreview ? freePlayback.url : PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
-                    isAdFree={billingReady ? !membership.showAds : false}
+                    isAdFree={billingReady ? !adsEnabled : false}
                     accountType={userProfile?.account_type}
                     vipUntil={userProfile?.vip_until}
                     userProfile={userProfile}
