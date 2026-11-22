@@ -2,7 +2,7 @@
 // Vercel Cron calls GET with Authorization: Bearer <CRON_SECRET>.
 // No browser/admin JWT, query string or user-supplied R2 key can trigger this.
 import { timingSafeEqual } from "node:crypto";
-import { getCleanupServices, processCleanupJobs } from "./_r2-cleanup.js";
+import { getCleanupServices, processCleanupJobs } from "../server/r2-cleanup.js";
 
 export const config = { maxDuration: 60 };
 
