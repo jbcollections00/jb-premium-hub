@@ -18,7 +18,7 @@
  *   JB_PRIVATE_MEDIA_HMAC_SECRET (same as deployed Worker; length >=48).
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { signTicket, privateKeyFromMediaUrl } from './ticket.ts';
+import { signTicket, resolveFreePreviewMediaKey } from './ticket.ts';
 
 const WORKER_ORIGIN = 'https://jb-premium-private-media-v1.jbnetproxy.workers.dev';
 const ALLOWED_ORIGINS = new Set([
@@ -130,8 +130,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return respond(403, { error: 'This video requires a membership' }, origin);
     }
 
-    const key = privateKeyFromMediaUrl(video.media_url);
-    if (!key) return respond(503, { error: 'Private video key unavailable' }, origin);
+    const resolved = resolveFreePreviewMediaKey(video.media_url, mediaId);
+    if (!resolved) return respond(503, { error: 'Private video key unavailable' }, origin);
 
     const now = Math.floor(Date.now() / 1000);
     const ticket = await signTicket(signingSecret, {
@@ -142,7 +142,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
       sub: userData.user.id,
       iat: now,
       exp: now + PLAY_TTL_SECONDS,
-      key,
+      key: resolved.key,
+      ...(resolved.storage ? { storage: resolved.storage } : {}),
     });
     const path = '/v/' + mediaId + '/play';
     const url = WORKER_ORIGIN + path + '?ticket=' + encodeURIComponent(ticket);
