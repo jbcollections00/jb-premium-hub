@@ -240,16 +240,23 @@ export default function VIPVideoPlayer({
   };
 
   const handleLoadedMetadata = async (e) => {
-    setIsSeekReady(Number.isFinite(e.currentTarget.duration) && e.currentTarget.duration > 0);
-    setPlaybackDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0);
+    // The browser can display duration for every viewer without a database write.
+    const duration = e.currentTarget.duration;
+    setIsSeekReady(Number.isFinite(duration) && duration > 0);
+    setPlaybackDuration(Number.isFinite(duration) ? duration : 0);
     setPlaybackTime(Number.isFinite(e.currentTarget.currentTime) ? e.currentTarget.currentTime : 0);
-    const durationInSeconds = Math.round(e.target.duration);
+
+    // Only admins may persist missing media duration. The update still passes
+    // through Supabase RLS, so client-supplied profile fields confer no rights.
+    // Never call the service-role-only set_media_duration_if_missing RPC here.
+    const isAdminForDuration =
+      String(userProfile?.role || "").toLowerCase() === "admin" ||
+      String(userProfile?.account_type || accountType || "").toLowerCase() === "admin";
+    const durationInSeconds = Math.round(duration);
     const storedDuration = Number(currentDuration || 0);
 
-    const targetMediaId = mediaId;
-    const targetVideoUrl = mainVideoUrl;
-
     if (
+      !isAdminForDuration ||
       !mediaId ||
       hasSavedDurationRef.current ||
       !Number.isFinite(durationInSeconds) ||
@@ -260,14 +267,18 @@ export default function VIPVideoPlayer({
       return;
     }
 
+    const targetMediaId = mediaId;
+    const targetVideoUrl = mainVideoUrl;
+    hasSavedDurationRef.current = true;
+
     try {
-      const { data, error } = await supabase.rpc(
-        'set_media_duration_if_missing',
-        {
-          p_media_id: mediaId,
-          p_duration: durationInSeconds,
-        }
-      );
+      const { data, error } = await supabase
+        .from("media")
+        .update({ duration: durationInSeconds })
+        .eq("id", targetMediaId)
+        .or("duration.is.null,duration.eq.0")
+        .select("id")
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -275,10 +286,8 @@ export default function VIPVideoPlayer({
         currentMediaIdRef.current === targetMediaId &&
         currentVideoUrlRef.current === targetVideoUrl
       ) {
-        hasSavedDurationRef.current = true;
-
-        if (data === true && typeof onDurationUpdate === "function") {
-          onDurationUpdate(mediaId, durationInSeconds);
+        if (data && typeof onDurationUpdate === "function") {
+          onDurationUpdate(targetMediaId, durationInSeconds);
         }
       }
     } catch (err) {
@@ -288,7 +297,7 @@ export default function VIPVideoPlayer({
       ) {
         hasSavedDurationRef.current = false;
       }
-      console.error("Auto-update video duration error:", err);
+      console.error("Admin media duration update failed:", err);
     }
   };
 
