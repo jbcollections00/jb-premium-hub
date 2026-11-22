@@ -16,6 +16,7 @@ import {
 import { FREE_PREVIEW_UI_ENABLED } from "../../services/freePreview";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 import AdminPrivateAlbumUpload from "../../components/admin/AdminPrivateAlbumUpload";
+import AdminPublishingReview from "../../components/admin/AdminPublishingReview";
 
 // Public signer must never be used to upload protected video assets.
 const LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED = true;
@@ -1714,6 +1715,7 @@ export default function AdminMediaTab() {
       {activeTab === "upload" && (
         <div className="jbh-admin-panel space-y-5 p-4 sm:p-7">
           <AdminPrivateAlbumUpload />
+          <AdminPublishingReview />
         </div>
       )}
 

@@ -326,6 +326,236 @@ async function thumbnailPreviews(req, res, services, admin) {
   return res.status(200).json({ previews });
 }
 
+
+// Phase 338 — Admin-controlled review and publishing. No client receives
+// service-role credentials and no staging object is published automatically.
+const LOGO_COVER = "https://assets.jb-premium-hub.vip/thumbnails/logo_JBCollections.png";
+const PUBLISHED_COVER_PREFIX = "https://assets.jb-premium-hub.vip/thumbnails/published/";
+
+async function reviewList(req, res, services, admin) {
+  const { data: rows, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, album_id, original_filename, size_bytes, status, created_at, uploaded_at, created_by, preview_key, preview_uploaded_at")
+    .eq("created_by", admin.id)
+    .eq("status", "pending_review")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) return fail(res, 503, "Could not load review queue.");
+  if (!rows?.length) return res.status(200).json({ items: [] });
+
+  const ids = rows.map((row) => row.id);
+  const albumIds = [...new Set(rows.map((row) => row.album_id))];
+  const [linksResult, albumsResult] = await Promise.all([
+    services.supabase.from("jb_media_publication_links")
+      .select("staging_id, media_id").in("staging_id", ids),
+    services.supabase.from("jb_media_albums")
+      .select("id, name, is_visible").in("id", albumIds),
+  ]);
+  if (linksResult.error || albumsResult.error) {
+    return fail(res, 503, "Could not verify review queue publication status.");
+  }
+  const links = new Map((linksResult.data || []).map((link) => [link.staging_id, link]));
+  const albums = new Map((albumsResult.data || []).map((album) => [album.id, album]));
+  // Include incomplete attempts when warning of duplicate filenames.
+  const { data: nameRows, error: namesError } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("original_filename")
+    .eq("created_by", admin.id)
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (namesError) return fail(res, 503, "Could not verify possible duplicate uploads.");
+  const nameCounts = new Map();
+  for (const row of nameRows || []) {
+    const key = row.original_filename.trim().toLowerCase();
+    nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+  }
+
+  const items = [];
+  for (const row of rows) {
+    let thumbnail = null;
+    if (
+      row.preview_uploaded_at &&
+      row.preview_key === previewKey(admin.id, row.id)
+    ) {
+      thumbnail = await getSignedUrl(
+        services.r2,
+        new GetObjectCommand({ Bucket: services.bucket, Key: row.preview_key }),
+        { expiresIn: 600 }
+      );
+    }
+    items.push({
+      id: row.id,
+      filename: row.original_filename,
+      albumName: albums.get(row.album_id)?.name || "Unknown album",
+      albumVisible: albums.get(row.album_id)?.is_visible === true,
+      sizeBytes: Number(row.size_bytes),
+      uploadedAt: row.uploaded_at,
+      thumbnail,
+      published: links.has(row.id),
+      mediaId: links.get(row.id)?.media_id || null,
+      possibleDuplicate: (nameCounts.get(row.original_filename.trim().toLowerCase()) || 0) > 1,
+    });
+  }
+  return res.status(200).json({ items });
+}
+
+async function reviewVideo(req, res, services, admin) {
+  const { draftId } = req.body || {};
+  if (!UUID.test(String(draftId || ""))) return fail(res, 400, "Invalid staged media ID.");
+  const { data: row, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, created_by, status, storage_key, size_bytes, mime_type, uploaded_at")
+    .eq("id", draftId)
+    .eq("created_by", admin.id)
+    .eq("status", "pending_review")
+    .maybeSingle();
+  if (error || !row || !row.uploaded_at) return fail(res, 404, "Video not available for review.");
+  if (
+    row.storage_key !== "staging/" + admin.id + "/" + draftId + ".mp4" ||
+    row.mime_type !== "video/mp4"
+  ) return fail(res, 409, "Invalid private video reference.");
+
+  let metadata;
+  try {
+    metadata = await services.r2.send(new HeadObjectCommand({
+      Bucket: services.bucket, Key: row.storage_key,
+    }));
+  } catch {
+    return fail(res, 409, "Private video is missing from R2.");
+  }
+  if (Number(metadata.ContentLength) !== Number(row.size_bytes) ||
+      (metadata.ContentType && metadata.ContentType !== "video/mp4")) {
+    return fail(res, 409, "Private video metadata mismatch.");
+  }
+  const url = await getSignedUrl(
+    services.r2,
+    new GetObjectCommand({ Bucket: services.bucket, Key: row.storage_key }),
+    { expiresIn: 300 }
+  );
+  return res.status(200).json({ url, expiresInSeconds: 300 });
+}
+
+async function publishCoverIfAvailable(services, admin, row) {
+  const publicBucket = String(process.env.JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME || "").trim();
+  // Fail safe: do not copy a preview to an unknown or private bucket.
+  if (!publicBucket ||
+      !/^[a-z0-9][a-z0-9._-]{1,62}$/.test(publicBucket) ||
+      publicBucket === services.bucket ||
+      process.env.JB_PUBLIC_THUMBNAIL_ORIGIN !== "https://assets.jb-premium-hub.vip") {
+    return { url: LOGO_COVER, saved: false };
+  }
+  const expectedKey = previewKey(admin.id, row.id);
+  if (row.preview_key !== expectedKey || !row.preview_uploaded_at) {
+    return { url: LOGO_COVER, saved: false };
+  }
+
+  try {
+    const info = await services.r2.send(new HeadObjectCommand({
+      Bucket: services.bucket, Key: expectedKey,
+    }));
+    if (!Number.isSafeInteger(Number(info.ContentLength)) ||
+        Number(info.ContentLength) < 1 ||
+        Number(info.ContentLength) > MAX_PREVIEW_BYTES ||
+        info.ContentType !== PREVIEW_MIME) {
+      return { url: LOGO_COVER, saved: false };
+    }
+    const object = await services.r2.send(new GetObjectCommand({
+      Bucket: services.bucket, Key: expectedKey,
+    }));
+    if (!object.Body) return { url: LOGO_COVER, saved: false };
+    const publishedKey = "thumbnails/published/" + row.id + ".jpg";
+    await services.r2.send(new PutObjectCommand({
+      Bucket: publicBucket, Key: publishedKey, Body: object.Body,
+      ContentType: PREVIEW_MIME, ContentLength: Number(info.ContentLength),
+      CacheControl: "public, max-age=3600",
+    }));
+    const uploaded = await services.r2.send(new HeadObjectCommand({
+      Bucket: publicBucket, Key: publishedKey,
+    }));
+    if (Number(uploaded.ContentLength) !== Number(info.ContentLength)) {
+      return { url: LOGO_COVER, saved: false };
+    }
+    return { url: PUBLISHED_COVER_PREFIX + row.id + ".jpg", saved: true };
+  } catch (error) {
+    console.error("Admin publication cover copy failed:", error?.name || "unknown");
+    return { url: LOGO_COVER, saved: false };
+  }
+}
+
+async function publishReviewed(req, res, services, admin) {
+  const { draftId, rightsConfirmed, duplicateAcknowledged } = req.body || {};
+  if (!UUID.test(String(draftId || ""))) return fail(res, 400, "Invalid staged media ID.");
+  if (rightsConfirmed !== true) {
+    return fail(res, 400, "Confirm that you have permission to publish this video.");
+  }
+
+  const { data: row, error: readError } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id, created_by, status, storage_key, size_bytes, mime_type, uploaded_at, preview_key, preview_uploaded_at, original_filename, album_id")
+    .eq("id", draftId).eq("created_by", admin.id).maybeSingle();
+  if (readError || !row) return fail(res, 404, "Staged video not found.");
+  if (
+    row.status !== "pending_review" || !row.uploaded_at ||
+    row.storage_key !== "staging/" + admin.id + "/" + draftId + ".mp4" ||
+    row.mime_type !== "video/mp4" ||
+    Number(row.size_bytes) <= 0
+  ) return fail(res, 409, "Staged video is not eligible for publication.");
+
+  const { data: linked, error: linkError } = await services.supabase
+    .from("jb_media_publication_links")
+    .select("media_id").eq("staging_id", draftId).maybeSingle();
+  if (linkError) return fail(res, 503, "Could not check existing publication.");
+  if (linked?.media_id) {
+    return res.status(200).json({ published: true, mediaId: linked.media_id, alreadyPublished: true });
+  }
+
+  // Duplicate-name attestation applies even to abandoned draft attempts.
+  const { data: duplicates, error: duplicateError } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id")
+    .eq("created_by", admin.id)
+    .eq("original_filename", row.original_filename)
+    .neq("id", draftId)
+    .limit(1);
+  if (duplicateError) return fail(res, 503, "Could not verify duplicate uploads.");
+  if (duplicates?.length && duplicateAcknowledged !== true) {
+    return fail(res, 409, "Another draft has the same filename. Confirm the duplicate before publishing.");
+  }
+
+  // HEAD check must precede publication. Never rely only on the database row.
+  let head;
+  try {
+    head = await services.r2.send(new HeadObjectCommand({
+      Bucket: services.bucket, Key: row.storage_key,
+    }));
+  } catch {
+    return fail(res, 409, "Private video object is not available.");
+  }
+  if (
+    Number(head.ContentLength) !== Number(row.size_bytes) ||
+    (head.ContentType && head.ContentType !== "video/mp4")
+  ) return fail(res, 409, "Private video verification failed.");
+
+  // Optional public thumbnail copy is fail-closed and falls back to the JB logo.
+  const cover = await publishCoverIfAvailable(services, admin, row);
+  const { data, error } = await services.supabase.rpc("jb_publish_staged_media_v1", {
+    p_staging_id: draftId,
+    p_publisher_id: admin.id,
+    p_thumbnail_url: cover.url,
+  });
+  if (error) {
+    console.error("Trusted video publication failed:", error.code || "unknown");
+    return fail(res, 409, "Publication was rejected. Verify album visibility and staging permissions.");
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.media_id) return fail(res, 503, "Could not confirm published media.");
+  return res.status(200).json({
+    published: true, mediaId: result.media_id,
+    alreadyPublished: result.was_created === false,
+    thumbnailSavedToPublic: cover.saved,
+  });
+}
+
 export default async function handler(req, res) {
   if (!cors(req, res)) return fail(res, 403, "Origin not permitted.");
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -347,6 +577,9 @@ export default async function handler(req, res) {
     if (req.body?.action === "thumbnail-begin") return await thumbnailBegin(req, res, services, admin);
     if (req.body?.action === "thumbnail-complete") return await thumbnailComplete(req, res, services, admin);
     if (req.body?.action === "thumbnail-previews") return await thumbnailPreviews(req, res, services, admin);
+    if (req.body?.action === "review-list") return await reviewList(req, res, services, admin);
+    if (req.body?.action === "review-video") return await reviewVideo(req, res, services, admin);
+    if (req.body?.action === "publish") return await publishReviewed(req, res, services, admin);
     return fail(res, 400, "Unknown staging action.");
   } catch (error) {
     console.error("Private staging request failed:", error?.name || "unknown");
