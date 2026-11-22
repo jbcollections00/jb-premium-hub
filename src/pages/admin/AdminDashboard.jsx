@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, MessageSquare, Users } from 'lucide-react';
+import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, Users, X } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -27,6 +27,15 @@ import AdminEventControl from '../../components/admin/AdminEventControl';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileNavOpen]);
   const [users, setUsers] = useState([]);
   const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [tickets, setTickets] = useState([]);
@@ -263,10 +272,35 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="jbh-app jbh-admin flex min-h-screen flex-col text-slate-100 lg:flex-row">
-      <aside className="jbh-admin-sidebar z-20 flex w-full flex-shrink-0 flex-col gap-4 border-b border-white/10 px-4 py-4 sm:px-6 lg:sticky lg:top-0 lg:h-screen lg:w-[278px] lg:justify-between lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
+    <div className="jbh-app jbh-admin flex min-h-screen min-w-0 flex-col text-slate-100 lg:flex-row">
+      <header className="jbh-admin-sidebar sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-white/10 px-4 lg:hidden">
+        <div className="flex min-w-0 items-center gap-3">
+          <img src="/jb-logo.png" alt="" className="h-9 w-9 shrink-0 object-contain" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-white">JB PREMIUM HUB</p>
+            <p className="text-[11px] text-slate-300">Admin Workspace</p>
+          </div>
+        </div>
+        <button type="button" aria-controls="jbh-admin-sidebar"
+          aria-expanded={mobileNavOpen}
+          aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+          onClick={() => setMobileNavOpen((open) => !open)}
+          className="rounded-xl border border-white/20 p-2.5 text-white">
+          {mobileNavOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </header>
+      {mobileNavOpen && (
+        <button type="button" className="fixed inset-0 z-40 bg-slate-950/75 lg:hidden"
+          aria-label="Close admin navigation" onClick={() => setMobileNavOpen(false)} />
+      )}
+      <aside id="jbh-admin-sidebar"
+        className={`jbh-admin-sidebar fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(19rem,calc(100vw-2rem))] flex-shrink-0 flex-col justify-between gap-4 overflow-y-auto border-r border-white/10 px-4 py-5 transition-transform duration-200 lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:w-[278px] lg:translate-x-0 lg:px-5 lg:py-6 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="min-w-0">
           <div className="mb-5 flex items-center gap-3 px-1 lg:mb-8">
+            <button type="button" onClick={() => setMobileNavOpen(false)}
+              aria-label="Close sidebar" className="order-last ml-auto rounded-lg border border-white/20 p-2 text-slate-200 lg:hidden">
+              <X size={19} />
+            </button>
             <span className="jbh-admin-brand-mark flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl p-1.5">
               <img src="/jb-logo.png" alt="JB Collections logo" className="h-full w-full object-contain" />
             </span>
@@ -276,7 +310,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <p className="hidden px-3 pb-3 text-[10px] font-bold uppercase tracking-[.19em] text-slate-400/70 lg:block">Workspace</p>
-          <nav className="flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0" aria-label="Admin workspace navigation">
+          <nav className="flex flex-col gap-1.5" aria-label="Admin workspace navigation">
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
               const Icon = item.icon;
@@ -284,16 +318,16 @@ export default function AdminDashboard() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => { setActiveTab(item.id); setMobileNavOpen(false); }}
                   title={item.label}
                   aria-current={isActive ? 'page' : undefined}
-                  className={`jbh-admin-nav-item group flex min-h-10 shrink-0 items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-colors sm:text-sm lg:w-full ${
+                  className={`jbh-admin-nav-item group flex min-h-11 w-full shrink-0 items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-colors sm:text-sm lg:w-full ${
                     isActive ? 'jbh-admin-nav-active text-white' : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <Icon size={18} className={isActive ? 'text-sky-200' : 'text-slate-400'} aria-hidden="true" />
-                    <span className="whitespace-nowrap lg:truncate">{item.label}</span>
+                    <span className="whitespace-nowrap truncate">{item.label}</span>
                   </span>
                   {item.badge > 0 && (
                     <span className="rounded-full bg-rose-400/20 px-2 py-0.5 text-[10px] font-bold text-rose-200">
