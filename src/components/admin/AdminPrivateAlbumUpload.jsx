@@ -561,7 +561,7 @@ export default function AdminPrivateAlbumUpload() {
             Delete all unpublished
           </button>
         </div>
-        {cleanupMessage && <p role="status" className="mt-2 text-xs text-amber-200">{cleanupMessage}</p>
+        {cleanupMessage && <p role="status" className="mt-2 text-xs text-amber-200">{cleanupMessage}</p>}
         <p className="mt-1 text-[11px] text-slate-400">Only unpublished drafts can be deleted here. In-progress uploads are locked until their upload links expire.</p>
         {draftsLoading ? (
           <p role="status" className="mt-3 text-xs text-slate-400">Loading private drafts…</p>
