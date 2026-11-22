@@ -1,7 +1,7 @@
 // Admin-only private video upload staging.
 // Never writes public.media and never returns a public object URL.
 import { randomUUID } from "node:crypto";
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
 
@@ -742,6 +742,154 @@ async function deletePublishedMedia(req, res, services, admin) {
   });
 }
 
+
+/**
+ * Phase 346 — READ ONLY Cloudflare R2 inventory vs the authoritative database.
+ * This deliberately NEVER deletes objects and NEVER interprets untracked
+ * objects as safe to delete. Results are "suspected orphan" only.
+ * Only fixed prefixes in the two known JB R2 buckets can be scanned.
+ */
+async function loadAllAuditReferences(client, table, columns, maxRows = 20000) {
+  const results = [];
+  const pageSize = 500;
+  for (let offset = 0; offset <= maxRows; offset += pageSize) {
+    const { data, error } = await client
+      .from(table).select(columns).range(offset, offset + pageSize - 1);
+    if (error || !Array.isArray(data)) {
+      throw new Error("Reference list unavailable: " + table);
+    }
+    results.push(...data);
+    if (results.length > maxRows) {
+      throw new Error("Reference list too large to audit safely: " + table);
+    }
+    if (data.length < pageSize) return results;
+  }
+  throw new Error("Reference list incomplete: " + table);
+}
+
+async function scanR2Orphans(req, res, services, admin) {
+  const scope = req.body?.scope;
+  const scopes = {
+    private_video: { bucket: services.bucket, prefix: "staging/" },
+    private_thumbnail: { bucket: services.bucket, prefix: "staging-thumbnails/" },
+  };
+  const publicBucket = String(process.env.JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME || "").trim();
+  if (publicBucket && /^[a-z0-9][a-z0-9._-]{1,62}$/.test(publicBucket) &&
+      publicBucket !== services.bucket &&
+      process.env.JB_PUBLIC_THUMBNAIL_ORIGIN === "https://assets.jb-premium-hub.vip") {
+    scopes.public_thumbnail = { bucket: publicBucket, prefix: "thumbnails/published/" };
+  }
+  if (!Object.hasOwn(scopes, scope)) {
+    return fail(res, 400, "Unknown or unconfigured R2 audit scope.");
+  }
+  const cursor = req.body?.cursor;
+  if (cursor !== undefined &&
+      (typeof cursor !== "string" || cursor.length < 1 || cursor.length > 4096)) {
+    return fail(res, 400, "Invalid object page cursor.");
+  }
+  // Never accept a bucket or prefix from the client.
+  const target = scopes[scope];
+  const protectedKeys = new Set();
+  try {
+    const [drafts, media, links] = await Promise.all([
+      loadAllAuditReferences(services.supabase, "jb_media_upload_staging",
+        "id,storage_key,preview_key"),
+      loadAllAuditReferences(services.supabase, "media",
+        "media_url,thumbnail_url"),
+      loadAllAuditReferences(services.supabase, "jb_media_publication_links",
+        "staging_id"),
+    ]);
+    for (const row of drafts) {
+      if (typeof row.storage_key === "string") protectedKeys.add(row.storage_key);
+      if (typeof row.preview_key === "string") protectedKeys.add(row.preview_key);
+    }
+    for (const row of media) {
+      const url = String(row.media_url || "");
+      const keyPrefix = "r2://" + services.bucket + "/";
+      if (url.startsWith(keyPrefix)) protectedKeys.add(url.slice(keyPrefix.length));
+      const cover = String(row.thumbnail_url || "");
+      const coverPrefix = "https://assets.jb-premium-hub.vip/";
+      if (cover.startsWith(coverPrefix)) {
+        const urlPath = cover.slice(coverPrefix.length).split(/[?#]/, 1)[0];
+        if (urlPath.startsWith("thumbnails/published/")) {
+          protectedKeys.add(urlPath);
+        }
+      }
+    }
+    // Protect linked published thumbnails even if the current media cover URL
+    // uses a logo fallback or proxy.
+    for (const link of links) {
+      if (UUID.test(String(link.staging_id || ""))) {
+        protectedKeys.add("thumbnails/published/" + link.staging_id + ".jpg");
+      }
+    }
+  } catch (error) {
+    console.error("R2 audit reference read failed:", error?.message || "unknown");
+    return fail(res, 503, "Database reference scan incomplete; no orphan classification attempted.");
+  }
+
+  let objects;
+  try {
+    objects = await services.r2.send(new ListObjectsV2Command({
+      Bucket: target.bucket,
+      Prefix: target.prefix,
+      MaxKeys: 200,
+      ...(cursor ? { ContinuationToken: cursor } : {}),
+    }));
+  } catch (error) {
+    console.error("R2 audit list permission/unavailability:", error?.name || "unknown");
+    return fail(res, 503, "Unable to list R2 objects. Verify bucket listing permissions.");
+  }
+  const listed = Array.isArray(objects.Contents) ? objects.Contents : [];
+  let referenced = 0, recentProtected = 0, suspicious = 0, candidateBytes = 0;
+  const samples = [];
+  const ageThreshold = Date.now() - 72 * 60 * 60 * 1000;
+  for (const obj of listed) {
+    const key = obj.Key;
+    if (!key || !key.startsWith(target.prefix) || key.endsWith("/")) continue;
+    if (protectedKeys.has(key)) {
+      referenced++;
+      continue;
+    }
+    const timestamp = obj.LastModified ? new Date(obj.LastModified).getTime() : NaN;
+    // Unknown age and newly uploaded files are NEVER orphan candidates.
+    if (!Number.isFinite(timestamp) || timestamp > ageThreshold) {
+      recentProtected++;
+      continue;
+    }
+    suspicious++;
+    candidateBytes += Math.max(0, Number(obj.Size) || 0);
+    if (samples.length < 20) {
+      samples.push({
+        key,
+        bytes: Math.max(0, Number(obj.Size) || 0),
+        lastModified: new Date(timestamp).toISOString(),
+      });
+    }
+  }
+  const continuation = objects.IsTruncated ? objects.NextContinuationToken : null;
+  if (objects.IsTruncated && !continuation) {
+    return fail(res, 503, "R2 listing incomplete; no reliable scan continuation.");
+  }
+  return res.status(200).json({
+    readOnly: true,
+    classification: "suspected_not_safe_to_delete",
+    scope,
+    bucket: target.bucket,
+    prefix: target.prefix,
+    scannedObjects: listed.length,
+    referenced,
+    recentProtected,
+    suspectedOrphans: suspicious,
+    suspectedBytes: candidateBytes,
+    samples,
+    hasMore: Boolean(continuation),
+    nextCursor: continuation || null,
+    ageThresholdHours: 72,
+    disclaimer: "Inventory report only; object ownership, recent uploads, legacy URLs and CDN usage must be reviewed before deletion.",
+  });
+}
+
 export default async function handler(req, res) {
   if (!cors(req, res)) return fail(res, 403, "Origin not permitted.");
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -767,6 +915,7 @@ export default async function handler(req, res) {
     if (req.body?.action === "queue-list") return await queueList(req, res, services, admin);
     if (req.body?.action === "delete-unpublished") return await deleteUnpublished(req, res, services, admin);
     if (req.body?.action === "delete-published-media") return await deletePublishedMedia(req, res, services, admin);
+    if (req.body?.action === "orphan-audit") return await scanR2Orphans(req, res, services, admin);
     if (req.body?.action === "review-video") return await reviewVideo(req, res, services, admin);
     if (req.body?.action === "publish") return await publishReviewed(req, res, services, admin);
     return fail(res, 400, "Unknown staging action.");
