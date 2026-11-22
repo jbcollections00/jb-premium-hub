@@ -47,8 +47,8 @@ begin
     select 1 from public.profiles p
     where p.id = p_admin_id
       and (
-        pg_catalog.lower(pg_catalog.coalesce(p.role, '')) = 'admin'
-        or pg_catalog.lower(pg_catalog.coalesce(p.account_type, '')) = 'admin'
+        pg_catalog.lower(coalesce(p.role, '')) = 'admin'
+        or pg_catalog.lower(coalesce(p.account_type, '')) = 'admin'
       )
   ) then
     raise exception 'Admin authorization required' using errcode = '42501';
@@ -88,14 +88,14 @@ begin
       end if;
       -- Absolutely no object deletion from arbitrary bucket paths or shared URLs.
       v_video_key := 'staging/' || v_stage.created_by::text || '/' || v_stage.id::text || '.mp4';
-      if v_media.media_url <> 'r2://jb-premium-private-videos/' || v_video_key
-         or v_stage.storage_key <> v_video_key then
+      if v_media.media_url is distinct from ('r2://jb-premium-private-videos/' || v_video_key)
+         or v_stage.storage_key is distinct from v_video_key then
         raise exception 'Unsafe published video reference' using errcode = '22023';
       end if;
       if v_stage.preview_key is not null then
         v_thumbnail_key :=
           'staging-thumbnails/' || v_stage.created_by::text || '/' || v_stage.id::text || '.jpg';
-        if v_stage.preview_key <> v_thumbnail_key then
+        if v_stage.preview_key is distinct from v_thumbnail_key then
           raise exception 'Unsafe published thumbnail reference' using errcode = '22023';
         end if;
       end if;
