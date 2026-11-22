@@ -667,6 +667,81 @@ async function publishReviewed(req, res, services, admin) {
   });
 }
 
+
+/**
+ * Phase 343: Delete selected PUBLISHED media from the member library.
+ * The RPC atomically removes media rows, links and staging rows and writes
+ * permanent audit records. This API then attempts verified private R2 cleanup.
+ * Never accepts paths, URLs, or private media keys from the browser.
+ */
+async function deletePublishedMedia(req, res, services, admin) {
+  const ids = req.body?.mediaIds;
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 ||
+      ids.some((id) => typeof id !== "string" || !UUID.test(id)) ||
+      new Set(ids).size !== ids.length) {
+    return fail(res, 400, "Select between 1 and 10 unique published media records.");
+  }
+  if (req.body?.confirmDeletion !== true) {
+    return fail(res, 400, "Deletion confirmation required.");
+  }
+
+  const { data, error } = await services.supabase.rpc("jb_admin_delete_published_media_v1", {
+    p_media_ids: ids,
+    p_admin_id: admin.id,
+  });
+  if (error) {
+    console.error("Atomic admin media delete rejected:", error?.code || "UNKNOWN");
+    return fail(res, 409, "Media deletion rejected. Refresh the library and verify all selected items.");
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length !== ids.length || !rows.every((row) => ids.includes(row.deleted_media_id))) {
+    console.error("Unexpected admin media delete RPC confirmation count.");
+    return fail(res, 503, "Database deletion confirmation incomplete. Refresh the library.");
+  }
+
+  const cleanupPending = [];
+  const legacyStorageUnchanged = [];
+  for (const row of rows) {
+    if (!row.private_video_key) {
+      // Legacy/external CDN objects are not owned by the private R2 staging
+      // store and must not be deleted by guessing a path.
+      legacyStorageUnchanged.push(row.deleted_media_id);
+      continue;
+    }
+    const keys = [row.private_video_key, row.private_thumbnail_key].filter(Boolean);
+    let allCleared = true;
+    for (const key of keys) {
+      try {
+        await services.r2.send(new DeleteObjectCommand({
+          Bucket: services.bucket, Key: key,
+        }));
+      } catch (error) {
+        allCleared = false;
+        console.error("Published private media R2 delete pending:", error?.name || "UNKNOWN");
+      }
+    }
+    const { error: auditError } = await services.supabase
+      .from("jb_admin_media_delete_audit")
+      .update({
+        cleanup_status: allCleared ? "complete" : "pending",
+        cleanup_updated_at: new Date().toISOString(),
+        cleanup_error: allCleared ? null : "R2 delete could not be confirmed. Retry operational cleanup.",
+      })
+      .eq("media_id", row.deleted_media_id)
+      .eq("deleted_by", admin.id);
+    if (!allCleared || auditError) {
+      cleanupPending.push(row.deleted_media_id);
+      if (auditError) console.error("Media deletion audit update failed:", auditError.code || "UNKNOWN");
+    }
+  }
+  return res.status(200).json({
+    deleted: rows.map((row) => row.deleted_media_id),
+    cleanupPending,
+    legacyStorageUnchanged,
+  });
+}
+
 export default async function handler(req, res) {
   if (!cors(req, res)) return fail(res, 403, "Origin not permitted.");
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -691,6 +766,7 @@ export default async function handler(req, res) {
     if (req.body?.action === "review-list") return await reviewList(req, res, services, admin);
     if (req.body?.action === "queue-list") return await queueList(req, res, services, admin);
     if (req.body?.action === "delete-unpublished") return await deleteUnpublished(req, res, services, admin);
+    if (req.body?.action === "delete-published-media") return await deletePublishedMedia(req, res, services, admin);
     if (req.body?.action === "review-video") return await reviewVideo(req, res, services, admin);
     if (req.body?.action === "publish") return await publishReviewed(req, res, services, admin);
     return fail(res, 400, "Unknown staging action.");
