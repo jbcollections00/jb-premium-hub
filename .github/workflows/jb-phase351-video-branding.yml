@@ -25,4 +25,5 @@ jobs:
       - run: node --test scripts/tests/test-phase351-video-branding.mjs
       - run: node --check api/jb-video-branding.js
       - run: node --check scripts/video-branding/process.mjs
+      - run: node scripts/tests/smoke-phase351-video-branding.mjs
       - run: npm run build
