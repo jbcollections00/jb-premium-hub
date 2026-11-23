@@ -1,0 +1,22 @@
+name: Phase 357 Free Profile Fallback (NO DEPLOY)
+on:
+  push:
+    branches:
+      - feature/phase353-automatic-branding-queue
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Free profile fallback security checks
+        run: node --test scripts/tests/test-phase357-free-profile-fallback.mjs
+      - name: Compile local testing application (NO DEPLOY)
+        run: npm run build
