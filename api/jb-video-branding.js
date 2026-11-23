@@ -13,6 +13,7 @@ const ORIGINS = new Set([
   "https://www.jb-premium-hub.vip", "https://jb-premium-hub.vip",
   "http://localhost:5173", "http://127.0.0.1:5173",
   "http://localhost:5174", "http://127.0.0.1:5174",
+  "http://localhost:5175", "http://127.0.0.1:5175",
 ]);
 const TYPES = {
   intro: { mime: "video/mp4", ext: "mp4", limit: 100 * 1024 * 1024 },
