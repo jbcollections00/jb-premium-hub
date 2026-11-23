@@ -4,7 +4,7 @@ import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
-import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
+import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl, requestBrandedDownloadUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
 import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } from "../../services/homeDiscovery";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
@@ -1078,11 +1078,9 @@ export default function Home() {
         }
       }
 
-      // Request the short-lived DOWNLOAD ticket only after the save dialog.
-      // Never use the legacy public media URL as a fallback when private mode is ON.
-      if (PRIVATE_MEDIA_UI_ENABLED) {
-        videoUrl = await requestPrivateMediaUrl(video.id, "download");
-      }
+      // ALWAYS download only the fully branded file. The server returns 409
+      // while automatic processing is pending. NEVER fall back to original.
+      videoUrl = await requestBrandedDownloadUrl(video.id);
       const response = await fetch(videoUrl, {
         method: "GET",
         mode: "cors",
