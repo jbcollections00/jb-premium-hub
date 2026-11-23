@@ -49,6 +49,8 @@ export default function AdminVideoBranding() {
   const [message, setMessage] = useState("");
   const [errorText, setErrorText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [queue, setQueue] = useState(null);
+  const [queueError, setQueueError] = useState("");
   async function refresh() {
     setLoading(true);
     setErrorText("");
@@ -65,7 +67,13 @@ export default function AdminVideoBranding() {
       setErrorText(error.message);
     } finally { setLoading(false); }
   }
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); refreshQueue(); }, []);
+  async function refreshQueue() {
+    try {
+      const result = await request("queue-status");
+      setQueue(result); setQueueError("");
+    } catch (error) { setQueue(null); setQueueError(error.message); }
+  }
   async function upload(kind, file) {
     if (!file || busy) return;
     const spec = TYPES[kind];
@@ -109,6 +117,35 @@ export default function AdminVideoBranding() {
       {loading && <p role="status">Loading private branding configuration...</p>}
       {errorText && <p role="alert" className="rounded-lg border border-rose-400/30 bg-rose-950/40 p-3 text-rose-200">{errorText}</p>}
       {message && <p role="status" className="rounded-lg border border-sky-400/30 p-3 text-sky-200">{message}</p>}
+      <div className="rounded-xl border border-slate-600/50 p-4 space-y-3" aria-label="Automatic video processing queue">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-bold">Automatic Video Processing</h3>
+          <button type="button" onClick={refreshQueue} className="rounded-lg border border-slate-600 px-3 py-2 text-xs">
+            Refresh status
+          </button>
+        </div>
+        {queue ? (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {["pending", "processing", "ready", "failed"].map((key) => (
+                <div key={key} className="rounded-lg bg-slate-800/60 p-3">
+                  <p className="text-xs text-slate-300 capitalize">{key}</p>
+                  <p className="text-xl font-extrabold">{queue.counts[key] || 0}</p>
+                </div>
+              ))}
+            </div>
+            {queue.truncated && <p className="text-amber-300 text-xs">Only the newest 500 jobs are shown.</p>}
+            {(queue.errors || []).length > 0 && (
+              <div className="text-xs text-rose-200 space-y-1">
+                {queue.errors.map((item) => <p key={item.mediaId}>
+                  {item.mediaId} — Attempt {item.attempts}: {item.reason || "Processing failed"}
+                </p>)}
+              </div>
+            )}
+          </>
+        ) : <p className="text-sm text-slate-400">{queueError || "Processing queue not yet available."}</p>}
+        <p className="text-xs text-slate-400">New published private videos enter this queue automatically. Only READY branded videos are eligible for VIP downloads once the branded-only download service is enabled.</p>
+      </div>
       {settings && (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
