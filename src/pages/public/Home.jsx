@@ -1017,166 +1017,33 @@ export default function Home() {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (!canDownload || downloadLockRef.current || !selectedMedia?.media_url) return;
+    if (!canDownload || downloadLockRef.current || !selectedMedia?.id) return;
 
-    const video = selectedMedia;
-    let videoUrl = PRIVATE_MEDIA_UI_ENABLED ? "" : getCdnUrl(video.media_url);
-    if (!PRIVATE_MEDIA_UI_ENABLED && !videoUrl) return;
-
-    // Use the actual source format: changing a file extension does not convert a video.
-    let fileExtension = "mp4";
-    try {
-      const path = new URL(videoUrl, window.location.href).pathname;
-      const candidate = path.split(".").pop()?.toLowerCase();
-      if (["mp4", "webm", "mkv", "mov", "m4v"].includes(candidate)) {
-        fileExtension = candidate;
-      }
-    } catch (error) {
-      console.warn("Unknown video file extension; checking the MP4 content:", error);
-    }
-
-    // Stable 12-digit number for each video, derived from its UUID.
-    // The same video keeps the same download name across visits and pages.
-    const idHex = String(video.id || "").replace(/[^a-f0-9]/gi, "");
-    const number = idHex.length >= 12
-      ? String(Number.parseInt(idHex.slice(0, 12), 16) % 1000000000000).padStart(12, "0")
-      : String(Date.now());
-    const filename = `JB-Collections_${number}.${fileExtension}`;
-    const mimeByExtension = {
-      mp4: "video/mp4",
-      webm: "video/webm",
-      mkv: "video/x-matroska",
-      mov: "video/quicktime",
-      m4v: "video/x-m4v",
-    };
-
-    // MP4 files normally contain the 'ftyp' box at byte offsets 4-7.
-    // This catches an HTML error page or wrong file labeled as MP4.
-    const isMp4Header = (bytes) => bytes?.length >= 8 &&
-      bytes[4] === 0x66 && bytes[5] === 0x74 &&
-      bytes[6] === 0x79 && bytes[7] === 0x70;
-
+    const mediaId = selectedMedia.id;
     downloadLockRef.current = true;
     setDownloadBusy(true);
-
     try {
-      let fileHandle = null;
-      if (typeof window.showSaveFilePicker === "function") {
-        try {
-          // File picker must open synchronously from this user click (before network await).
-          fileHandle = await window.showSaveFilePicker({
-            suggestedName: filename,
-            types: [{
-              description: `${fileExtension.toUpperCase()} Video`,
-              accept: { [mimeByExtension[fileExtension]]: [`.${fileExtension}`] },
-            }],
-            excludeAcceptAllOption: true,
-          });
-        } catch (error) {
-          if (error?.name === "AbortError") return;
-          console.warn("File picker unavailable; using browser download:", error);
-        }
-      }
+      // The server verifies this user's current VIP/admin entitlement and
+      // signs only an already-READY, R2-verified branded MP4. Never fall back
+      // to a playback ticket or original file.
+      const signedUrl = await requestBrandedDownloadUrl(mediaId);
 
-      // ALWAYS download only the fully branded file. The server returns 409
-      // while automatic processing is pending. NEVER fall back to original.
-      videoUrl = await requestBrandedDownloadUrl(video.id);
-      const response = await fetch(videoUrl, {
-        method: "GET",
-        mode: "cors",
-        credentials: "omit",
-      });
-      if (!response.ok) {
-        throw new Error(`Video server returned HTTP ${response.status}.`);
-      }
-
-      const contentType = response.headers.get("content-type") || "";
-      if (/text\/html|application\/json|text\/plain/i.test(contentType)) {
-        throw new Error("The video server returned an error page, not a video file.");
-      }
-
-      if (fileHandle && response.body) {
-        // Stream in chunks so large video files do not fill browser memory.
-        const reader = response.body.getReader();
-        let writable = null;
-        try {
-          const initialChunks = [];
-          let initialLength = 0;
-          while (initialLength < 8) {
-            const part = await reader.read();
-            if (part.done) break;
-            if (part.value?.byteLength) {
-              initialChunks.push(part.value);
-              initialLength += part.value.byteLength;
-            }
-          }
-          if (initialLength === 0) throw new Error("The video server returned an empty file.");
-          if (fileExtension === "mp4") {
-            const header = new Uint8Array(Math.min(initialLength, 8));
-            let offset = 0;
-            for (const chunk of initialChunks) {
-              const n = Math.min(chunk.byteLength, header.length - offset);
-              header.set(chunk.subarray(0, n), offset);
-              offset += n;
-              if (offset >= header.length) break;
-            }
-            if (!isMp4Header(header)) {
-              throw new Error("Source file does not have an MP4 header. Nothing was saved. Check the original video format.");
-            }
-          }
-
-          writable = await fileHandle.createWritable();
-          for (const chunk of initialChunks) await writable.write(chunk);
-          while (true) {
-            const part = await reader.read();
-            if (part.done) break;
-            await writable.write(part.value);
-          }
-          await writable.close();
-        } catch (error) {
-          if (writable) await writable.abort().catch(() => {});
-          await reader.cancel().catch(() => {});
-          throw error;
-        } finally {
-          reader.releaseLock();
-        }
-      } else {
-        // Fallback for browsers without File System Access: may use more RAM.
-        const blob = await response.blob();
-        if (!blob.size) throw new Error("The video server returned an empty file.");
-        if (fileExtension === "mp4") {
-          const header = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
-          if (!isMp4Header(header)) {
-            throw new Error("Source file does not have an MP4 header. Nothing was saved. Check the original video format.");
-          }
-        }
-        if (fileHandle) {
-          const writable = await fileHandle.createWritable();
-          try {
-            await writable.write(blob);
-            await writable.close();
-          } catch (error) {
-            await writable.abort().catch(() => {});
-            throw error;
-          }
-        } else {
-          const objectUrl = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = objectUrl;
-          link.download = filename;
-          document.body.appendChild(link);
-          try {
-            link.click();
-          } finally {
-            link.remove();
-            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-          }
-        }
-      }
-      console.info("JB Collections video download completed:", filename);
+      // Let the browser's native download manager stream the R2 file to disk.
+      // The server signs Content-Disposition: attachment with a safe .mp4
+      // filename. Do not fetch/blob the entire file into browser RAM, and do
+      // not require R2 bucket CORS for a cross-origin JS fetch.
+      // Navigating to an attachment response starts a download, not playback.
+      window.location.assign(signedUrl);
     } catch (error) {
-      console.error("VIP video download failed:", error);
-      window.alert("We couldn't download this file. Please try again or contact support. Do not pay again for an existing membership.");
+      // A 409 means the branded file is still in the processing queue.
+      // Never offer the raw/original MP4 as a fallback.
+      console.error("VIP branded download request failed:", error?.message || "unavailable");
+      const message = String(error?.message || "");
+      window.alert(
+        /still being branded|not ready|processing finishes/i.test(message)
+          ? "This video is being branded. Please try downloading it after processing completes."
+          : "We couldn't start the branded download. Please try again or contact support. Do not pay again for an existing membership."
+      );
     } finally {
       downloadLockRef.current = false;
       setDownloadBusy(false);
