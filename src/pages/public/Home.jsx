@@ -4,7 +4,7 @@ import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
-import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl, requestBrandedDownloadUrl } from "../../services/privateMedia";
+import { PRIVATE_MEDIA_UI_ENABLED, BRANDED_DOWNLOAD_UI_ENABLED, requestPrivateMediaUrl, requestBrandedDownloadUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
 import { getHomeMode, shouldDisplayAds, approvedFreeCatalog } from "../../services/homeDiscovery";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
@@ -1010,14 +1010,14 @@ export default function Home() {
     }
   };
 
-  // Stream the original video file; never open a second browser/player tab.
-  // Note: this UI restriction is not a substitute for authenticated CDN access.
+  // Request an authorized branded MP4 only. Never download playback originals.
+  // UI availability is not server-side authorization.
   const handleDownloadSelectedMedia = async (e) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (!canDownload || downloadLockRef.current || !selectedMedia?.id) return;
+    if (!BRANDED_DOWNLOAD_UI_ENABLED || !canDownload || downloadLockRef.current || !selectedMedia?.id) return;
 
     const mediaId = selectedMedia.id;
     downloadLockRef.current = true;
@@ -1583,16 +1583,27 @@ export default function Home() {
                     </button>
 
                     {canDownload && (
-                      <button
-                        type="button"
-                        onClick={handleDownloadSelectedMedia}
-                        disabled={downloadBusy}
-                        className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                        title="Save video to your device (VIP / Admin)"
-                      >
-                        <span>📥</span>
-                        <span>{downloadBusy ? "Downloading..." : "Download"}</span>
-                      </button>
+                      <div className="flex flex-col items-start gap-1">
+                        <button
+                          type="button"
+                          onClick={handleDownloadSelectedMedia}
+                          disabled={downloadBusy || !BRANDED_DOWNLOAD_UI_ENABLED}
+                          aria-disabled={!BRANDED_DOWNLOAD_UI_ENABLED}
+                          className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                          title={BRANDED_DOWNLOAD_UI_ENABLED
+                            ? "Save an approved branded video to your device (VIP / Admin)"
+                            : "Downloads are temporarily unavailable"}
+                        >
+                          <span>📥</span>
+                          <span>{!BRANDED_DOWNLOAD_UI_ENABLED ? "Unavailable"
+                            : downloadBusy ? "Downloading..." : "Download"}</span>
+                        </button>
+                        {!BRANDED_DOWNLOAD_UI_ENABLED && (
+                          <span role="status" className="text-xs text-slate-300 max-w-56">
+                            Downloads are temporarily unavailable. VIP playback and ad-free access remain available.
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

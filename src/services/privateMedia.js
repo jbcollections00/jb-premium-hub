@@ -5,6 +5,12 @@ import { supabase } from "./supabaseClient";
 export const PRIVATE_MEDIA_UI_ENABLED =
   import.meta.env.VITE_JB_PRIVATE_MEDIA_UI_ENABLED === "true";
 
+// Independent frontend release gate for branded VIP downloads.
+// OFF by default until an independently cleared, verified production rollout.
+// This is only a UI safeguard: the server's global safety hold still governs.
+export const BRANDED_DOWNLOAD_UI_ENABLED =
+  import.meta.env.VITE_JB_BRANDED_DOWNLOAD_UI_ENABLED === "true";
+
 const PRIVATE_WORKER_ORIGIN =
   "https://jb-premium-private-media-v1.jbnetproxy.workers.dev";
 
@@ -75,6 +81,9 @@ export async function requestPrivateMediaUrl(mediaId, action) {
 // Branded downloads are delivered only by the authenticated server-side
 // private R2 signer, never by the old original-file ticket endpoint.
 export async function requestBrandedDownloadUrl(mediaId) {
+  if (!BRANDED_DOWNLOAD_UI_ENABLED) {
+    throw new Error("Downloads temporarily unavailable");
+  }
   if (!MEDIA_ID_PATTERN.test(String(mediaId || ""))) throw new Error("Invalid media ID");
   const { data, error } = await supabase.auth.getSession();
   if (error || !data?.session?.access_token) throw new Error("Login required");
