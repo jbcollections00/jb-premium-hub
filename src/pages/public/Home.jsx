@@ -1264,21 +1264,6 @@ export default function Home() {
             </div>
           </div>
 
-          {mostWatched.length > 1 && !mostWatchedLoading && (
-            <div className="relative z-10 mb-3 flex justify-end gap-2" aria-label="Most Watched navigation">
-              <button type="button" aria-label="Previous Most Watched videos"
-                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: -460, behavior: "smooth" })}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-400/40 bg-slate-950/80 text-xl font-bold text-white transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300">
-                <span aria-hidden="true">‹</span>
-              </button>
-              <button type="button" aria-label="Next Most Watched videos"
-                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: 460, behavior: "smooth" })}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-400/40 bg-slate-950/80 text-xl font-bold text-white transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300">
-                <span aria-hidden="true">›</span>
-              </button>
-            </div>
-          )}
-
           {mostWatchedLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 py-4">
               {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -1286,6 +1271,14 @@ export default function Home() {
               ))}
             </div>
           ) : mostWatched.length > 0 ? (
+            <div className="relative" aria-label="Most Watched carousel">
+              {mostWatched.length > 1 && (
+              <button type="button" aria-label="Previous Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: -460, behavior: "smooth" })}
+                className="absolute left-1 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-3xl font-bold text-white shadow-xl transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:left-2">
+                <span aria-hidden="true">‹</span>
+              </button>
+              )}
             <div ref={mostWatchedScrollerRef} aria-label="Most Watched videos" className="flex gap-4 overflow-x-auto scroll-smooth pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
               {mostWatched.map((item, index) => {
                 const rank = index + 1;
@@ -1378,6 +1371,14 @@ export default function Home() {
                   </div>
                 );
               })}
+            </div>
+              {mostWatched.length > 1 && (
+              <button type="button" aria-label="Next Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: 460, behavior: "smooth" })}
+                className="absolute right-1 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-3xl font-bold text-white shadow-xl transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:right-2">
+                <span aria-hidden="true">›</span>
+              </button>
+              )}
             </div>
           ) : (
             <div className="p-6 bg-slate-950/40 border border-slate-800/60 rounded-2xl text-center text-slate-500 text-xs">
