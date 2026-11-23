@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PRIVATE_BUCKET, SETTINGS_KEY, destinationKey, sourceKey, verifyAssetConfig } from "./queue-contract.mjs";
 
+const PUBLIC_BUCKET = "jb-collections-public-assets";
+const PUBLIC_ORIGIN = "https://assets.jb-premium-hub.vip";
 const MAX_INPUT_BYTES = 2 * 1024 * 1024 * 1024;
 function required(name) {
   const value = process.env[name];
@@ -24,6 +26,10 @@ function createServices() {
   }
   const bucket = required("JB_STAGING_R2_BUCKET_NAME");
   if (bucket !== PRIVATE_BUCKET) throw new Error("Unexpected private bucket configuration");
+  if (required("JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME") !== PUBLIC_BUCKET ||
+      required("JB_PUBLIC_THUMBNAIL_ORIGIN") !== PUBLIC_ORIGIN) {
+    throw new Error("Verified public thumbnail bucket configuration required");
+  }
   const account = required("R2_ACCOUNT_ID");
   return {
     db: createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
@@ -114,11 +120,45 @@ async function oneJob(services, settings, job) {
     }));
     const head = await services.r2.send(new HeadObjectCommand({ Bucket: PRIVATE_BUCKET, Key: outputKey }));
     if (Number(head.ContentLength) !== outputBytes) throw new Error("R2 processed output HEAD mismatch");
+    // Publish a CLEAN JPEG derived from original main video, NEVER from intro
+    // or branded final. Reuse the existing verified published-cover key so
+    // the current media delete outbox continues to clean it up.
+    const { data: link, error: linkError } = await services.db
+      .from("jb_media_publication_links")
+      .select("staging_id").eq("media_id", mediaId).maybeSingle();
+    if (linkError || !link || link.staging_id !== mediaId) {
+      throw new Error("Published thumbnail identity not verified");
+    }
+    const thumbnailBytes = (await stat(files.thumbnail)).size;
+    if (!Number.isSafeInteger(thumbnailBytes) || thumbnailBytes < 100 ||
+        thumbnailBytes > 1024 * 1024) throw new Error("Invalid generated clean thumbnail");
+    const publicKey = "thumbnails/published/" + mediaId + ".jpg";
+    const { createReadStream: thumbnailStream } = await import("node:fs");
+    await services.r2.send(new PutObjectCommand({
+      Bucket: PUBLIC_BUCKET, Key: publicKey,
+      Body: thumbnailStream(files.thumbnail), ContentLength: thumbnailBytes,
+      ContentType: "image/jpeg", CacheControl: "public, max-age=3600",
+    }));
+    const thumbHead = await services.r2.send(new HeadObjectCommand({
+      Bucket: PUBLIC_BUCKET, Key: publicKey,
+    }));
+    if (Number(thumbHead.ContentLength) !== thumbnailBytes) {
+      throw new Error("Clean thumbnail verification failed");
+    }
     const finished = await rpc(services.db, "jb_branding_finish_v1", {
       p_media_id: mediaId, p_token: job.lease_token, p_version: version,
       p_size: outputBytes, p_error: null,
     });
     if (!finished) throw new Error("Stale job claim; processed object not published");
+    // Preserve source identity (and deletion safety) on metadata update.
+    const { data: updated, error: thumbError } = await services.db
+      .from("media").update({ thumbnail_url: PUBLIC_ORIGIN + "/" + publicKey })
+      .eq("id", mediaId)
+      .eq("media_url", "r2://" + PRIVATE_BUCKET + "/" + key)
+      .select("id").maybeSingle();
+    if (thumbError || !updated) {
+      process.stderr.write("Clean thumbnail DB link requires admin verification: " + mediaId + "\\n");
+    }
     process.stdout.write("Branded video ready: " + mediaId + " v" + version + "\n");
     return true;
   } catch (error) {
