@@ -452,8 +452,8 @@ export default function AdminPrivateAlbumUpload() {
             fileSize: file.size,
             ...(fingerprint ? { fingerprint } : {}),
           });
-          if (draft.status === "published" || !draft.draftId || !draft.contentType ||
-              (!draft.multipart && !draft.uploadUrl)) {
+          if (!draft.draftId || !draft.contentType ||
+              (draft.status !== "pending_review" && !draft.multipart && !draft.uploadUrl)) {
             throw new Error("Private upload server returned an invalid staging response.");
           }
 
@@ -464,7 +464,12 @@ export default function AdminPrivateAlbumUpload() {
               : "Uploading to private R2…",
           });
           let finished;
-          if (draft.multipart) {
+          if (draft.status === "pending_review") {
+            // Server recovered a previously completed upload. No new bytes
+            // are transferred, but its private thumbnail can be finalized.
+            finished = draft;
+            updateQueue(index, { loaded:file.size, status:"verifying", message:"Previously uploaded file recovered…" });
+          } else if (draft.multipart) {
             finished = await uploadResumablePrivateVideo({
               file, draft, request: stagingRequest,
               onProgress: (loaded) => updateQueue(index, { loaded, status: "uploading" }),
