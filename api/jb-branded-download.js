@@ -43,13 +43,13 @@ export default async function handler(req, res) {
   if (!token) return fail(res, 401, "Sign-in required");
   const env = process.env;
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY ||
-      !env.SUPABASE_ANON_KEY || !env.R2_ACCOUNT_ID ||
+      !(env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY) || !env.R2_ACCOUNT_ID ||
       !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY ||
       env.JB_STAGING_R2_BUCKET_NAME !== PRIVATE_BUCKET) {
     return fail(res, 503, "Download service unavailable");
   }
   try {
-    const userDb = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    const userDb = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: "Bearer " + token } },
       auth: { persistSession: false, autoRefreshToken: false },
     });
