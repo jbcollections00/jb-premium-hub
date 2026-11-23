@@ -29,10 +29,10 @@ test("cutover forbids unbranded VIP fallback", () => {
   const ticket = readFileSync("supabase/functions/jb-private-media-ticket/index.ts","utf8");
   const api = readFileSync("api/jb-branded-download.js","utf8");
   assert.match(home,/signedUrl = await requestBrandedDownloadUrl\(mediaId\)/);
-  assert.match(home,/window\\.location\\.assign\\(signedUrl\\)/);
-  assert.doesNotMatch(home,/fetch\\(signedUrl/);
-  assert.doesNotMatch(home,/response\\.blob\\(/);
-  assert.doesNotMatch(home,/requestPrivateMediaUrl\\(mediaId, "download"\\)/);
+  assert.match(home,/window\.location\.assign\(signedUrl\)/);
+  assert.doesNotMatch(home,/fetch\(signedUrl/);
+  assert.doesNotMatch(home,/response\.blob\(/);
+  assert.doesNotMatch(home,/requestPrivateMediaUrl\(mediaId, "download"\)/);
   assert.doesNotMatch(home,/requestPrivateMediaUrl\(video.id, "download"\)/);
   assert.match(ticket,/action === "download"/);
   assert.match(ticket,/Use branded-only download service/);
