@@ -452,8 +452,9 @@ export default function AdminPrivateAlbumUpload() {
             fileSize: file.size,
             ...(fingerprint ? { fingerprint } : {}),
           });
-          if (!draft.draftId || !draft.contentType ||
-              (draft.status !== "pending_review" && !draft.multipart && !draft.uploadUrl)) {
+          if (!draft.draftId ||
+              (draft.status !== "pending_review" &&
+                (!draft.contentType || (!draft.multipart && !draft.uploadUrl)))) {
             throw new Error("Private upload server returned an invalid staging response.");
           }
 
