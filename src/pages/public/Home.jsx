@@ -1271,15 +1271,15 @@ export default function Home() {
               ))}
             </div>
           ) : mostWatched.length > 0 ? (
-            <div className="relative" aria-label="Most Watched carousel">
+            <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3" aria-label="Most Watched carousel">
               {mostWatched.length > 1 && (
               <button type="button" aria-label="Previous Most Watched videos"
                 onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: -460, behavior: "smooth" })}
-                className="absolute left-1 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-3xl font-bold text-white shadow-xl transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:left-2">
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-2xl font-bold text-white shadow-md transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:h-11 sm:w-11">
                 <span aria-hidden="true">‹</span>
               </button>
               )}
-            <div ref={mostWatchedScrollerRef} aria-label="Most Watched videos" className="flex gap-4 overflow-x-auto scroll-smooth pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
+            <div ref={mostWatchedScrollerRef} aria-label="Most Watched videos" className="relative z-10 flex min-w-0 flex-1 gap-4 overflow-x-auto scroll-smooth pb-2 pt-1 scrollbar-none snap-x snap-mandatory">
               {mostWatched.map((item, index) => {
                 const rank = index + 1;
                 const badgeStyle =
@@ -1375,7 +1375,7 @@ export default function Home() {
               {mostWatched.length > 1 && (
               <button type="button" aria-label="Next Most Watched videos"
                 onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: 460, behavior: "smooth" })}
-                className="absolute right-1 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-3xl font-bold text-white shadow-xl transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:right-2">
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-2xl font-bold text-white shadow-md transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:h-11 sm:w-11">
                 <span aria-hidden="true">›</span>
               </button>
               )}
