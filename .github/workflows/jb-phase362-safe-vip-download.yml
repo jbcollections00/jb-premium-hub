@@ -1,0 +1,47 @@
+name: Phase 362 Safe VIP Download Validation (Synthetic Only)
+
+on:
+  pull_request:
+    paths:
+      - 'api/jb-branded-download.js'
+      - 'src/services/privateMedia.js'
+      - 'src/pages/public/Home.jsx'
+      - 'scripts/video-branding/**'
+      - 'scripts/tests/test-phase351-video-branding.mjs'
+      - 'scripts/tests/test-phase353-branding-automation.mjs'
+      - 'scripts/tests/test-phase362-safe-vip-download-gate.mjs'
+      - 'scripts/tests/smoke-phase351-video-branding.mjs'
+      - '.github/workflows/jb-phase362-safe-vip-download.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout (read-only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate fail-closed download endpoint and branding contracts
+        run: node --test scripts/tests/test-phase362-safe-vip-download-gate.mjs scripts/tests/test-phase353-branding-automation.mjs scripts/tests/test-phase351-video-branding.mjs
+      - name: Check code syntax
+        run: |
+          node --check api/jb-branded-download.js
+          node --check scripts/video-branding/process.mjs
+      - name: Install FFmpeg for generated-only test content
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Synthetic color clips only; never access production R2 or user media
+        run: node scripts/tests/smoke-phase351-video-branding.mjs
+      - name: Build frontend
+        run: npm run build
