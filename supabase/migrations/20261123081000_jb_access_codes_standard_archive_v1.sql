@@ -7,7 +7,7 @@ alter table public.access_codes
 -- Backward-compatible with the currently deployed VIP generator until the new UI deploys.
 create or replace function public.jb_stamp_access_code_issuer_v1()
 returns trigger language plpgsql security definer set search_path = ''
-as $
+as $$
 begin
   if new.issued_by is null and (select auth.uid()) is not null
      and (select public.is_current_user_admin()) is true then
@@ -95,7 +95,7 @@ $$;
 -- legacy function name until the new Access Codes page ships.
 create or replace function public.admin_delete_vip_access_code(p_code_id uuid)
 returns boolean language sql security invoker set search_path = ''
-as $
+as $$
   select public.jb_admin_delete_unused_access_code_v1(p_code_id);
 $;
 
@@ -213,10 +213,13 @@ end;
 $$;
 
 revoke all on function public.jb_admin_create_access_code_v1(text,integer,text) from public,anon;
-revoke all on function public.jb_admin_delete_unused_access_code_v1(uuid) from public,anon;\nrevoke all on function public.admin_delete_vip_access_code(uuid) from public,anon;
+revoke all on function public.jb_admin_delete_unused_access_code_v1(uuid) from public,anon;
+revoke all on function public.admin_delete_vip_access_code(uuid) from public,anon;
 revoke all on function public.redeem_access_code(text) from public,anon;
-revoke all on function public.jb_protect_redeemed_access_codes_v1() from public,anon,authenticated;\nrevoke all on function public.jb_stamp_access_code_issuer_v1() from public,anon,authenticated;
+revoke all on function public.jb_protect_redeemed_access_codes_v1() from public,anon,authenticated;
+revoke all on function public.jb_stamp_access_code_issuer_v1() from public,anon,authenticated;
 grant execute on function public.jb_admin_create_access_code_v1(text,integer,text) to authenticated,service_role;
-grant execute on function public.jb_admin_delete_unused_access_code_v1(uuid) to authenticated,service_role;\ngrant execute on function public.admin_delete_vip_access_code(uuid) to authenticated,service_role;
+grant execute on function public.jb_admin_delete_unused_access_code_v1(uuid) to authenticated,service_role;
+grant execute on function public.admin_delete_vip_access_code(uuid) to authenticated,service_role;
 grant execute on function public.redeem_access_code(text) to authenticated,service_role;
 notify pgrst, 'reload schema';
