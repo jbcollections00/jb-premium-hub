@@ -1,0 +1,66 @@
+name: Phase 361 One Video Branding Pilot (MANUAL ONLY)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type PROCESS_ONE_VIDEO to start one branded video job'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase361-one-video-branding-pilot
+  cancel-in-progress: false
+
+jobs:
+  one-video-pilot:
+    if: ${{ inputs.confirmation == 'PROCESS_ONE_VIDEO' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    steps:
+      - name: Check out verified release code
+        uses: actions/checkout@v4
+        with:
+          ref: 8f453a7d968d54bb90f3b035ad4a183f3a1f2a68
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Validate branding configuration names and required secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          JB_STAGING_R2_BUCKET_NAME: ${{ vars.JB_STAGING_R2_BUCKET_NAME }}
+          JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME: ${{ vars.JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME }}
+        shell: bash
+        run: |
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY JB_STAGING_R2_BUCKET_NAME JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required Actions secret or variable: $name"
+              exit 1
+            fi
+          done
+          test "$JB_STAGING_R2_BUCKET_NAME" = "jb-premium-private-videos" || exit 1
+          test "$JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME" = "jb-collections-public-assets" || exit 1
+      - name: Process exactly one pending video
+        env:
+          JB_BRANDING_WORKER_ENABLED: 'true'
+          JB_BRANDING_MAX_JOBS: '1'
+          JB_STAGING_R2_BUCKET_NAME: ${{ vars.JB_STAGING_R2_BUCKET_NAME }}
+          JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME: ${{ vars.JB_PUBLIC_THUMBNAIL_R2_BUCKET_NAME }}
+          JB_PUBLIC_THUMBNAIL_ORIGIN: https://assets.jb-premium-hub.vip
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: node scripts/video-branding/worker.mjs
