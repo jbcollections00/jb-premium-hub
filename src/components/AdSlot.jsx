@@ -123,6 +123,10 @@ export default function AdSlot({ position = "top", enabled = true }) {
     if (!enabled) return undefined;
     setState("loading");
     setHeight(250);
+    // Parent-side timeout also handles blocked scripts that never post a result.
+    const timeout = window.setTimeout(() => {
+      setState((current) => current === "loading" ? "empty" : current);
+    }, EMPTY_TIMEOUT_MS + 1000);
     const onMessage = (event) => {
       if (event.source !== frameRef.current?.contentWindow) return;
       const data = event.data;
@@ -136,7 +140,10 @@ export default function AdSlot({ position = "top", enabled = true }) {
       }
     };
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener("message", onMessage);
+    };
   }, [enabled]);
 
   if (!enabled) return null;
@@ -145,17 +152,12 @@ export default function AdSlot({ position = "top", enabled = true }) {
     <div
       aria-label="Sponsored content"
       data-jb-native-ad={position}
-      className={`mx-auto w-full max-w-[340px] ${POSITIONS[position] || POSITIONS.top} ${state === "empty" ? "h-0 !my-0 overflow-hidden" : ""}`}
+      className={`mx-auto w-full max-w-[340px] ${state === "filled" ? (POSITIONS[position] || POSITIONS.top) : "h-0 !my-0 overflow-hidden"}`}
     >
       <div
-        className={`relative mx-auto w-full max-w-[320px] overflow-hidden rounded-xl ${state === "filled" ? "bg-transparent" : "bg-slate-900/50"}`}
-        style={{ height: state === "empty" ? 0 : state === "loading" ? 250 : height }}
+        className="relative mx-auto w-full max-w-[320px] overflow-hidden rounded-xl bg-transparent"
+        style={{ height: state === "filled" ? height : 0 }}
       >
-        {state === "loading" && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-500" aria-hidden="true">
-            Loading sponsored content…
-          </div>
-        )}
         <iframe
           ref={frameRef}
           srcDoc={frameHtml}
@@ -165,7 +167,7 @@ export default function AdSlot({ position = "top", enabled = true }) {
           sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="no-referrer-when-downgrade"
           scrolling="no"
-          loading="lazy"
+          loading="eager"
         />
       </div>
     </div>
