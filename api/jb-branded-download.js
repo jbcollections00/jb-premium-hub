@@ -77,6 +77,39 @@ export default async function handler(req, res) {
       .select("media_id,source_key,status,asset_version,output_key,output_bytes")
       .eq("media_id", mediaId).maybeSingle();
     if (jobError) return fail(res, 503, "Branding status unavailable");
+
+    // A publication rights confirmation or branded READY status is not
+    // content-safety clearance. No public/admin UI can set this record.
+    // Missing clearance and database errors fail closed without issuing URLs.
+    const [clearanceResult, publicationResult] = await Promise.all([
+      serviceDb.from("jb_download_safety_clearances")
+        .select("source_key,review_status,reviewed_by,reviewed_at,valid_until,approval_reference")
+        .eq("media_id", mediaId).maybeSingle(),
+      serviceDb.from("jb_media_publication_links")
+        .select("published_by,published_at")
+        .eq("media_id", mediaId).maybeSingle(),
+    ]);
+    if (clearanceResult.error || publicationResult.error) {
+      return fail(res, 503, "Content safety verification unavailable");
+    }
+    const clearance = clearanceResult.data;
+    const publication = publicationResult.data;
+    const reviewedAt = Date.parse(clearance?.reviewed_at || "");
+    const publishedAt = Date.parse(publication?.published_at || "");
+    const validUntil = clearance?.valid_until ? Date.parse(clearance.valid_until) : Infinity;
+    const safetyApproved = clearance?.review_status === "approved" &&
+      typeof clearance.approval_reference === "string" &&
+      clearance.approval_reference.trim().length >= 8 &&
+      job && clearance.source_key === job.source_key &&
+      UUID.test(String(clearance.reviewed_by || "")) &&
+      UUID.test(String(publication?.published_by || "")) &&
+      clearance.reviewed_by !== publication.published_by &&
+      Number.isFinite(reviewedAt) && Number.isFinite(publishedAt) &&
+      reviewedAt > publishedAt && validUntil > Date.now();
+    if (!safetyApproved) {
+      return fail(res, 403, "This video has not been independently cleared for download");
+    }
+
     if (!job || job.status !== "ready" || !job.output_bytes) {
       return fail(res, 409, "This video is still being branded. Download will be available when processing finishes.");
     }
