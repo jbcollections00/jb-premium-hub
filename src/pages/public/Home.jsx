@@ -1471,13 +1471,6 @@ export default function Home() {
                         {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                       </div>
                     )}
-                    <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      homeMode === "free"
-                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
-                        : "border-white/10 bg-black/75 text-slate-200"
-                    }`}>
-                      {homeMode === "free" ? "Free to Watch" : "Member library"}
-                    </span>
                     <span className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
                       {formatDuration(item.duration)}
                     </span>
