@@ -64,7 +64,7 @@ returns integer language plpgsql security definer set search_path = ''
 as $$
 declare v_count integer;
 begin
-  if current_user <> 'service_role' then
+  if coalesce((select auth.jwt() ->> 'role'),'') <> 'service_role' then
     raise exception 'Service role required' using errcode='42501';
   end if;
   if p_version is null or p_version < 1 then
@@ -86,7 +86,7 @@ language plpgsql security definer set search_path = ''
 as $$
 declare v_claim uuid;
 begin
-  if current_user <> 'service_role' then
+  if coalesce((select auth.jwt() ->> 'role'),'') <> 'service_role' then
     raise exception 'Service role required' using errcode='42501';
   end if;
   if p_version is null or p_version < 1 then
@@ -122,7 +122,7 @@ returns boolean language plpgsql security definer set search_path = ''
 as $$
 declare v_status text;
 begin
-  if current_user <> 'service_role' then
+  if coalesce((select auth.jwt() ->> 'role'),'') <> 'service_role' then
     raise exception 'Service role required' using errcode='42501';
   end if;
   if p_error is null and (p_size is null or p_size <= 0) then
