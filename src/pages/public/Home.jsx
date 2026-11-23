@@ -6,7 +6,7 @@ import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl, requestBrandedDownloadUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
-import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } from "../../services/homeDiscovery";
+import { getHomeMode, shouldDisplayAds, approvedFreeCatalog } from "../../services/homeDiscovery";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
