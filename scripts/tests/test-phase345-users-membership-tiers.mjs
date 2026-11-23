@@ -15,8 +15,10 @@ test("Account filters include FREE STANDARD and VIP based on verified tiers", ()
   assert.match(ui, /value="FREE"[^>]+>FREE Account Users/);
   assert.match(ui, /value="STANDARD"[^>]+>STANDARD Account Users/);
   assert.match(ui, /value="VIP"[^>]+>VIP Account Users/);
-  assert.match(ui, /const tier = membershipTiersById\[u\.id\]/);
-  assert.match(ui, /return matchesSearch && tier === filterType/);
+  // Verify active filters against resolved membership tiers after the independent online/search filter.
+  assert.match(ui, /\["ADMIN", "VIP", "STANDARD", "FREE"\]\.includes\(filterType\)/);
+  assert.match(ui, /matchingUsers\.filter\(\(u\) => membershipTiersById\[u\.id\] === filterType\)/);
+  assert.doesNotMatch(ui, /value="GUEST"/);
   assert.doesNotMatch(ui, /<option value="STANDARD">Regular profiles<\/option>/);
 });
 test("Tier map loaded with admin-only RPC batches of no more than 200 user IDs", () => {
