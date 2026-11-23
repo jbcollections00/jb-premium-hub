@@ -254,6 +254,40 @@ async function begin(req, res, services, admin) {
     .from("jb_media_albums").select("id").eq("id", albumId).maybeSingle();
   if (albumError || !album) return fail(res, 404, "Album not found.");
 
+  // If a previous upload finished but its client response was lost, reuse
+  // the existing UNPUBLISHED pending-review file rather than duplicating it.
+  if (multipart) {
+    const { data: finished, error: finishedError } = await services.supabase
+      .from("jb_media_upload_staging")
+      .select("id,storage_key,size_bytes")
+      .eq("created_by",admin.id).eq("album_id",albumId)
+      .eq("original_filename",fileName.trim()).eq("size_bytes",fileSize)
+      .eq("multipart_fingerprint",fingerprint).eq("status","pending_review")
+      .order("created_at",{ascending:false}).limit(5);
+    if (finishedError) return fail(res,503,"Cannot verify previously completed uploads.");
+    if (finished?.length) {
+      const { data: links, error: linkError } = await services.supabase
+        .from("jb_media_publication_links").select("staging_id")
+        .in("staging_id",finished.map(row=>row.id));
+      if (linkError) return fail(res,503,"Could not verify existing publications.");
+      const published = new Set((links||[]).map(link=>link.staging_id));
+      for (const row of finished) {
+        if (published.has(row.id)) continue;
+        try {
+          const head = await services.r2.send(new HeadObjectCommand({
+            Bucket:services.bucket,Key:row.storage_key,
+          }));
+          if (Number(head.ContentLength) === fileSize) {
+            return res.status(200).json({
+              draftId:row.id,status:"pending_review",resumed:true,
+              contentType:type.contentType,
+            });
+          }
+        } catch { /* Damaged object does not qualify as a completed upload. */ }
+      }
+    }
+  }
+
   // Re-selecting the SAME file continues the unfinished upload. Its sample
   // fingerprint avoids confusing equal-size, equal-name but different files.
   if (multipart) {
@@ -273,7 +307,18 @@ async function begin(req, res, services, admin) {
           draftId:match.id, multipart:true, resumed:true,
           partSize:match.multipart_part_size, contentType:type.contentType,
         });
-      } catch { /* An expired old upload is not resumable. */ }
+      } catch {
+        // R2 may already have assembled this full object before the browser
+        // lost the completion response. Recover by verifying HEAD + DB update.
+        try {
+          const head = await services.r2.send(new HeadObjectCommand({
+            Bucket:services.bucket,Key:match.storage_key,
+          }));
+          if (Number(head.ContentLength) === fileSize) {
+            return await complete({body:{draftId:match.id}},res,services,admin);
+          }
+        } catch { /* No verified completed object. */ }
+      }
     }
   }
 
