@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, ImagePlus, Users, X } from 'lucide-react';
+import { Clapperboard, CreditCard, Headphones, KeyRound, LayoutDashboard, LogOut, Menu, MessageSquare, ImagePlus, FolderOpen, Users, X } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { 
   ResponsiveContainer, 
@@ -19,6 +19,7 @@ import AccessCodesTab from './AccessCodesTab';
 import AdminUsersTab from './AdminUsersTab';
 import AdminMessagesTab from './AdminMessagesTab'; 
 import AdminMediaTab from './AdminMediaTab';
+import AdminAlbumsManager from './AdminAlbumsManager';
 import AdminBillingTab from './AdminBillingTab';
 import './adminWorkspace.css';
 import ChatReports from './ChatReports';
@@ -268,6 +269,7 @@ export default function AdminDashboard() {
     { id: 'tickets', icon: Headphones, label: 'Support', badge: pendingTicketsCount },
     { id: 'codes', icon: KeyRound, label: 'Access codes' },
     { id: 'upload', icon: Clapperboard, label: 'Media manager' },
+    { id: 'albums', icon: FolderOpen, label: 'Albums' },
     { id: 'branding', icon: ImagePlus, label: 'Video branding' },
   ];
 
@@ -464,6 +466,7 @@ export default function AdminDashboard() {
         {activeTab === 'chat-analytics' && <ChatAnalytics />}
         {activeTab === 'codes' && <AccessCodesTab />}
         {activeTab === 'upload' && <AdminMediaTab />}
+        {activeTab === 'albums' && <AdminAlbumsManager />}
         {activeTab === 'branding' && <AdminVideoBranding />}
       </main>
     </div>
