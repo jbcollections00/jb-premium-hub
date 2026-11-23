@@ -116,7 +116,7 @@ export default function AdminUsers() {
           if (!Array.isArray(resolved)) throw new Error("Invalid membership response.");
           for (const entry of resolved) {
             if (!ids.includes(entry?.user_id) ||
-                !["FREE", "STANDARD", "VIP", "ADMIN", "GUEST"].includes(entry?.tier)) {
+                !["FREE", "STANDARD", "VIP", "ADMIN"].includes(entry?.tier)) {
               throw new Error("Unexpected membership response.");
             }
             tiers[entry.user_id] = entry.tier;
