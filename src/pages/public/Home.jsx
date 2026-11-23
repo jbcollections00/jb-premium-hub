@@ -364,23 +364,22 @@ export default function Home() {
 
       if (error) throw error;
 
+      // A verified Auth user can be a FREE member even if a legacy profile
+      // record was deleted/missed by the signup trigger. Never UPSERT a
+      // privileged profile from the browser: memberships remain server-owned.
+      // A missing profile is always represented by the least-privileged role.
       if (!profile) {
-        const { data: newProfile, error: createProfileError } = await supabase
-          .from("profiles")
-          .upsert([{ id: user.id, account_type: "standard" }])
-          .select()
-          .maybeSingle();
-
-        if (createProfileError) throw createProfileError;
-        profile = newProfile;
+        const { data: verified, error: verifyError } = await supabase.auth.getUser();
+        if (verifyError || verified?.user?.id !== user.id || verified.user.is_anonymous === true) {
+          throw new Error("Could not verify signed-in user without a profile");
+        }
       }
-
       const mergedProfile = {
         ...(profile || {}),
         id: user.id,
         email: user.email || profile?.email,
         role: profile?.role || "user",
-        account_type: profile?.account_type || "standard",
+        account_type: profile?.account_type || "free",
       };
 
       setUserProfile(mergedProfile);
