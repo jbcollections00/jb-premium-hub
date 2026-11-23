@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
 import { capturePrivateVideoPreview } from "../../services/privateVideoPreview";
+import { fingerprintPrivateVideo, uploadResumablePrivateVideo } from "../../services/privateMultipartUpload";
 import { DEFAULT_THUMBNAIL_URL, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 // Private staging only. These uploads never insert into public.media,
@@ -410,7 +411,7 @@ export default function AdminPrivateAlbumUpload() {
       file.name.length > 200 || file.size < 1 || file.size > MAX_VIDEO_SIZE
     );
     setErrorText(invalid
-      ? "Use MP4, MOV, WEBM, MKV or AVI files between 1 byte and 2 GB each."
+      ? "Use MP4 video files between 1 byte and 2 GB each."
       : "");
     if (!invalid) void previewSelectedFiles(selected, generation);
   };
@@ -442,26 +443,47 @@ export default function AdminPrivateAlbumUpload() {
         const file = files[index];
         updateQueue(index, { status: "preparing", loaded: 0, message: "Preparing private upload…" });
         try {
+          const largeFile = file.size >= 32 * 1024 * 1024;
+          if (largeFile) updateQueue(index, { status: "preparing", message: "Fingerprinting video for safe resume…" });
+          const fingerprint = largeFile ? await fingerprintPrivateVideo(file) : undefined;
           const draft = await stagingRequest("begin", {
             albumId,
             fileName: file.name,
             fileSize: file.size,
+            ...(fingerprint ? { fingerprint } : {}),
           });
-          if (!draft.uploadUrl || draft.status === "published" || !draft.draftId || !draft.contentType) {
+          if (draft.status === "published" || !draft.draftId || !draft.contentType ||
+              (!draft.multipart && !draft.uploadUrl)) {
             throw new Error("Private upload server returned an invalid staging response.");
           }
 
-          updateQueue(index, { status: "uploading", message: "Uploading to private R2…" });
-          await putPrivateObjectWithProgress(draft.uploadUrl, file, draft.contentType, (loaded) => {
-            updateQueue(index, { loaded, status: "uploading" });
-          });
-
           updateQueue(index, {
-            status: "verifying",
-            loaded: file.size,
+            status: "uploading",
+            message: draft.multipart
+              ? (draft.resumed ? "Resuming private R2 upload…" : "Uploading R2 chunks…")
+              : "Uploading to private R2…",
+          });
+          let finished;
+          if (draft.multipart) {
+            finished = await uploadResumablePrivateVideo({
+              file, draft, request: stagingRequest,
+              onProgress: (loaded) => updateQueue(index, { loaded, status: "uploading" }),
+              onStatus: (message) => updateQueue(index, { message, status: "uploading" }),
+            });
+          } else {
+            await putPrivateObjectWithProgress(draft.uploadUrl, file, draft.contentType, (loaded) => {
+              updateQueue(index, { loaded, status: "uploading" });
+            });
+            updateQueue(index, {
+              status: "verifying", loaded: file.size,
+              message: "Verifying private file on server…",
+            });
+            finished = await stagingRequest("complete", { draftId: draft.draftId });
+          }
+          updateQueue(index, {
+            status: "verifying", loaded: file.size,
             message: "Verifying private file on server…",
           });
-          const finished = await stagingRequest("complete", { draftId: draft.draftId });
           if (finished.status !== "pending_review") {
             throw new Error("Private R2 upload was not verified by the server.");
           }
@@ -527,7 +549,7 @@ export default function AdminPrivateAlbumUpload() {
         setFiles([]);
         if (pickerRef.current) pickerRef.current.value = "";
         setErrorText(
-          failures + " file(s) could not finish private staging. Check the status below before starting a new batch. No files were published."
+          failures + " file(s) could not finish private staging. For large videos, reselect the exact same file to resume saved R2 chunks. No files were published."
         );
       }
     } finally {
