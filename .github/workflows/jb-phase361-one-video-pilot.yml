@@ -63,4 +63,11 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: node scripts/video-branding/worker.mjs
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/video-branding/worker.mjs 2>&1 | tee "$RUNNER_TEMP/phase361-branding.log"
+          if ! grep -q '^Branded video ready:' "$RUNNER_TEMP/phase361-branding.log"; then
+            echo '::error::No verified branded video was completed in this pilot run'
+            exit 1
+          fi
