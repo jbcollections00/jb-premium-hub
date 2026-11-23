@@ -22,7 +22,7 @@ test("backend creates privately scoped multipart sessions and verifies parts ser
   assert.match(server,/p\.size !== validatedPart\(row, i\+1\)\.size/);
   assert.match(server,/getAdmin\(services, token\)/);
   assert.match(server,/\.eq\("created_by", admin\.id\)/);
-  assert.match(server,/status: "awaiting_upload"/);
+  assert.match(server,/status:\s*"awaiting_upload"/);
   assert.ok(!server.includes("new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME"));
 });
 test("client chunks 16 MiB with signature renew, progress, retry and resume",()=>{
