@@ -91,7 +91,8 @@ test("Paid/Admin album list and album filtering use existing RLS, no bypass or h
   assert.match(home, /homeMode !== "albums"/);
   assert.match(home, /aria-label="Member Albums"/);
   assert.match(home, /\{album\.name\}/);
-  assert.match(home, /ALBUM_COVER_COLORS\[album\.cover_style\]/);
+  // Member albums are text-only tabs; cover-style cards were intentionally removed.
+  assert.doesNotMatch(home, /ALBUM_COVER_COLORS\[album\.cover_style\]/);
   assert.match(home, /handleSelectAlbum\(album\.id\)/);
   const fetchMedia = home.slice(home.indexOf("const fetchMedia = async"),
     home.indexOf("const handleOpenViewers", home.indexOf("const fetchMedia = async")));
