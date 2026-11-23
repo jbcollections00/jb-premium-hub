@@ -28,13 +28,20 @@ test("cutover forbids unbranded VIP fallback", () => {
   const source = readFileSync("src/services/privateMedia.js","utf8");
   const ticket = readFileSync("supabase/functions/jb-private-media-ticket/index.ts","utf8");
   const api = readFileSync("api/jb-branded-download.js","utf8");
-  assert.match(home,/videoUrl = await requestBrandedDownloadUrl\(video.id\)/);
+  assert.match(home,/signedUrl = await requestBrandedDownloadUrl\(mediaId\)/);
+  assert.match(home,/window\\.location\\.assign\\(signedUrl\\)/);
+  assert.doesNotMatch(home,/fetch\\(signedUrl/);
+  assert.doesNotMatch(home,/response\\.blob\\(/);
+  assert.doesNotMatch(home,/requestPrivateMediaUrl\\(mediaId, "download"\\)/);
   assert.doesNotMatch(home,/requestPrivateMediaUrl\(video.id, "download"\)/);
   assert.match(ticket,/action === "download"/);
   assert.match(ticket,/Use branded-only download service/);
   assert.match(api,/job.status !== "ready"/);
   assert.match(api,/HeadObjectCommand/);
   assert.match(api,/can_download === true/);
+  assert.match(api,/ResponseContentDisposition:/);
+  assert.match(api,/expiresIn: 90/);
+  assert.match(api,/mediaResult\.data\.media_url !==/);
   assert.match(source,/requestBrandedDownloadUrl/);
 });
 test("processing queue is durable, private and drives cleanup on replacement", () => {
