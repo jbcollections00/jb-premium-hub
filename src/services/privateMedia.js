@@ -71,3 +71,32 @@ export async function requestPrivateMediaUrl(mediaId, action) {
   // storage, include it in analytics, or share it as a public video link.
   return url.href;
 }
+
+// Branded downloads are delivered only by the authenticated server-side
+// private R2 signer, never by the old original-file ticket endpoint.
+export async function requestBrandedDownloadUrl(mediaId) {
+  if (!MEDIA_ID_PATTERN.test(String(mediaId || ""))) throw new Error("Invalid media ID");
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data?.session?.access_token) throw new Error("Login required");
+  const base = String(import.meta.env.VITE_R2_SIGNER_URL || "").replace(/\/+$/, "");
+  const response = await fetch((base || "") + "/api/jb-branded-download", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + data.session.access_token,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ mediaId }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Branded download unavailable");
+  if (payload.status !== "ready" || typeof payload.url !== "string") {
+    throw new Error("Branded file is not ready");
+  }
+  const url = new URL(payload.url);
+  if (url.protocol !== "https:" || url.username || url.password ||
+      !url.hostname.endsWith(".r2.cloudflarestorage.com") ||
+      !url.searchParams.has("X-Amz-Signature")) {
+    throw new Error("Unexpected signed download location");
+  }
+  return url.href;
+}
