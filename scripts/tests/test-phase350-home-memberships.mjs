@@ -72,14 +72,15 @@ test("FREE Most Watched ranks only the authorized FREE catalog, no paid IDs", ()
   assert.deepEqual(free.map(x => x.id), ["first", "second", "third"]);
 });
 
-test("FREE fetchMedia uses only the authenticated selected-video RPC and free-only rankings", () => {
+test("FREE fetchMedia uses only the authenticated selected-video RPC and hides Most Watched", () => {
   const method = home.slice(home.indexOf("const fetchMedia = async"),
     home.indexOf("const handleOpenViewers", home.indexOf("const fetchMedia = async")));
   const freeBranch = method.slice(method.indexOf('if (homeMode === "free") {', 50),
     method.indexOf('if (homeMode !== "albums" || !selectedAlbumId)'));
   assert.match(freeBranch, /jb_free_preview_catalog_v1/);
   assert.match(freeBranch, /approvedFreeCatalog\(data\)/);
-  assert.match(freeBranch, /freeMostWatched\(approved\)/);
+  assert.match(freeBranch, /setMostWatched\(\[\]\)/);
+  assert.doesNotMatch(freeBranch, /freeMostWatched\(approved\)/);
   assert.doesNotMatch(freeBranch, /\.from\("media"\)|\.from\("jb_media_albums"\)/);
   assert.match(home, /requestFreePreviewUrl/);
   assert.match(home, /isSelectedFreePreview/);
