@@ -141,6 +141,40 @@ test("Claim uses SKIP LOCKED, bounded leases and retries with exponential backof
   assert.match(sql, /v_entity_kind = 'published'/);
   assert.match(sql, /cleanup_status =/);
 });
+test("Branded MP4 cleanup checks the branding table by media_id", async () => {
+  const job = {
+    ...makeJob("video"),
+    object_kind: "branded_video",
+    object_key: "branding/processed/" + mediaId + "/v1.mp4",
+  };
+  const { services, events } = fakeServices({ job });
+  const originalFrom = services.supabase.from.bind(services.supabase);
+  services.supabase.from = (table) => ({
+    select(column) {
+      if (table === "jb_video_branding_jobs") {
+        assert.equal(column, "media_id", "branding jobs have no id column");
+      }
+      return originalFrom(table).select(column);
+    },
+  });
+  const result = await processCleanupJobs(services, { maxJobs: 1 });
+  assert.equal(result.completed, 1);
+  assert.equal(events.deletes.length, 1);
+  assert.equal(events.deletes[0].Key, job.object_key);
+  assert.equal(events.acknowledgements[0].p_success, true);
+});
+test("Branded MP4 with a live branding reference cannot be deleted", async () => {
+  const job = {
+    ...makeJob("video"),
+    object_kind: "branded_video",
+    object_key: "branding/processed/" + mediaId + "/v1.mp4",
+  };
+  const { services, events } = fakeServices({ job, protectedObject: true });
+  const result = await processCleanupJobs(services, { maxJobs: 1 });
+  assert.equal(result.pending, 1);
+  assert.equal(events.deletes.length, 0);
+  assert.equal(events.acknowledgements[0].p_error, "R2_OBJECT_HAS_LIVE_REFERENCE");
+});
 test("Successful deletion requires cloud DELETE plus HEAD 404 confirmation", async () => {
   const { services, events } = fakeServices();
   const result = await processCleanupJobs(services, { entityIds: [mediaId], maxJobs: 1 });
