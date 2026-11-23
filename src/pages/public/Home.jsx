@@ -451,7 +451,7 @@ export default function Home() {
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
-        setMostWatched(freeMostWatched(approved, 10));
+        setMostWatched([]); // FREE accounts have no Most Watched section.
         return;
       }
 
@@ -1206,6 +1206,8 @@ export default function Home() {
             </div>
           </section>
         )}
+        {/* Paid members and admins only: FREE users see Free to Watch, never Most Watched. */}
+        {homeMode === "albums" && (
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
@@ -1387,6 +1389,7 @@ export default function Home() {
           )}
         </div>
 
+        )}
         {/* Member albums: text-only selectable tabs BELOW Most Watched. */}
         {homeMode === "albums" && (
           <section className="mb-8" aria-label="Member Albums">
