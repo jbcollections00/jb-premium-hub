@@ -74,7 +74,8 @@ async function isReferenced(supabase, job) {
     throw new Error("Unknown object kind");
   }
   for (const [table, column, value] of queries) {
-    const resultColumn = table === "jb_media_publication_links" ? "staging_id" : "id";
+    const resultColumn = table === "jb_media_publication_links" ? "staging_id"
+      : table === "jb_video_branding_jobs" ? "media_id" : "id";
     const { data, error } = await supabase.from(table)
       .select(resultColumn).eq(column, value).limit(1);
     if (error || !Array.isArray(data)) {
