@@ -54,7 +54,7 @@ select m.id, pg_catalog.substr(m.media_url,pg_catalog.length('r2://jb-premium-pr
 from public.media m
 where m.type='video'
   and m.media_url ~ '^r2://jb-premium-private-videos/staging/[0-9a-f-]{36}/[0-9a-f-]{36}\.mp4$'
-  and pg_catalog.split_part(m.media_url,'/',5) = m.id::text || '.mp4'
+  and pg_catalog.split_part(m.media_url,'/',6) = m.id::text || '.mp4'
 on conflict (media_id) do nothing;
 
 -- Worker calls only after validating that a complete set of branding assets is configured.
@@ -148,37 +148,11 @@ begin
 end;
 $$;
 
--- Authenticated caller can only get READY key for its own permitted VIP request.
--- This function must be used by the ticket issuer; the browser cannot sign R2 URLs.
-create or replace function public.jb_branding_my_download_v1(p_media_id uuid)
-returns text language plpgsql stable security definer set search_path = ''
-as $$
-declare v_admin boolean; v_can_download boolean;
-begin
-  if (select auth.uid()) is null or p_media_id is null then return null; end if;
-  v_admin := (select public.is_current_user_admin());
-  if not v_admin then
-    select a.can_download into v_can_download
-    from public.jb_billing_my_access() a limit 1;
-    if v_can_download is distinct from true then return null; end if;
-  end if;
-  if not exists (select 1 from public.media m where m.id=p_media_id and m.type='video') then
-    return null;
-  end if;
-  return (select j.output_key from public.jb_video_branding_jobs j
-     where j.media_id=p_media_id and j.status='ready' and j.output_bytes>0
-       and j.output_key='branding/processed/' || p_media_id::text || '/v' || j.asset_version::text || '.mp4'
-     limit 1);
-end;
-$$;
-
 revoke all on function public.jb_branding_prepare_v1(integer) from public,anon,authenticated;
 revoke all on function public.jb_branding_claim_v1(integer) from public,anon,authenticated;
 revoke all on function public.jb_branding_finish_v1(uuid,uuid,integer,bigint,text) from public,anon,authenticated;
 grant execute on function public.jb_branding_prepare_v1(integer) to service_role;
 grant execute on function public.jb_branding_claim_v1(integer) to service_role;
 grant execute on function public.jb_branding_finish_v1(uuid,uuid,integer,bigint,text) to service_role;
-revoke all on function public.jb_branding_my_download_v1(uuid) from public,anon;
-grant execute on function public.jb_branding_my_download_v1(uuid) to authenticated;
 revoke all on function public.jb_branding_enqueue_media_v1() from public,anon,authenticated;
 notify pgrst,'reload schema';
