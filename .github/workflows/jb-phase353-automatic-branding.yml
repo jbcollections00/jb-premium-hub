@@ -1,0 +1,34 @@
+name: Phase 353 Automatic Video Branding
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+concurrency:
+  group: phase353-private-branding-worker
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Branding scheduler (requires configured secrets + enabled flag)
+        env:
+          JB_BRANDING_WORKER_ENABLED: ${{ vars.JB_BRANDING_WORKER_ENABLED }}
+          JB_BRANDING_MAX_JOBS: '1'
+          JB_STAGING_R2_BUCKET_NAME: ${{ vars.JB_STAGING_R2_BUCKET_NAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: node scripts/video-branding/worker.mjs
