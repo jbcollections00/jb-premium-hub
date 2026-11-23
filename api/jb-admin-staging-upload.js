@@ -9,8 +9,10 @@ import { processCleanupJobs, getCleanupSummary } from "../server/r2-cleanup.js";
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
   "https://www.jb-premium-hub.vip",
   "https://jb-premium-hub.vip",
 ]);
@@ -589,6 +591,21 @@ async function deleteUnpublished(req, res, services, admin) {
     return fail(res, 400, "Select 1–50 unique unpublished video drafts.");
   }
 
+  // Only expired in-progress leases can be removed. Capture their multipart
+  // sessions for best-effort R2 abort AFTER the atomic DB deletion. Published
+  // and recently active uploads are never touched.
+  const { data: staleMultipart, error: staleError } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id,storage_key,multipart_upload_id,created_at,status")
+    .eq("created_by",admin.id).in("id",draftIds)
+    .eq("status","awaiting_upload")
+    .not("multipart_upload_id","is",null);
+  if (staleError) return fail(res,503,"Could not verify unfinished multipart sessions.");
+  const eligibleAbort = (staleMultipart || []).filter(row =>
+    row.storage_key === "staging/" + admin.id + "/" + row.id + ".mp4" &&
+    Date.now() - Date.parse(row.created_at) > 65*60*1000
+  );
+
   // Phase 347: delete and durable outbox insertion commit ATOMICALLY.
   // No delete is attempted for a published draft or active upload lease.
   const { data, error } = await services.supabase.rpc(
@@ -604,6 +621,19 @@ async function deleteUnpublished(req, res, services, admin) {
   if (deleted.length !== draftIds.length ||
       !draftIds.every(id => deleted.includes(id))) {
     return fail(res, 503, "Draft delete confirmation incomplete; refresh queue.");
+  }
+
+  // Do not abort until the DB deletion RPC confirms exactly which drafts
+  // were removed. R2 multipart parts are invisible to normal orphan scans.
+  for (const row of eligibleAbort) {
+    if (!deleted.includes(row.id)) continue;
+    try {
+      await services.r2.send(new AbortMultipartUploadCommand({
+        Bucket:services.bucket,Key:row.storage_key,UploadId:row.multipart_upload_id,
+      }));
+    } catch (error) {
+      console.error("Multipart abort failed; configure R2 incomplete-upload lifecycle:",error?.name||"UNKNOWN");
+    }
   }
 
   // Best-effort immediate worker; durable DB jobs remain for scheduled retry
