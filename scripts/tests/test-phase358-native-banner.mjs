@@ -18,7 +18,9 @@ test("blocked or no-fill creatives collapse and never leave a permanent blank sl
   assert.match(slot, /MutationObserver/);
   assert.match(slot, /notify\("empty", 0\)/);
   assert.match(slot, /EMPTY_TIMEOUT_MS = 12000/);
-  assert.match(slot, /state === "empty" \? "h-0 !my-0 overflow-hidden"/);
+  assert.match(slot, /state === "filled" \? \(POSITIONS\[position\]/);
+  assert.match(slot, /style=\{\{ height: state === "filled" \? height : 0 \}\}/);
+  assert.match(slot, /loading="eager"/);
   assert.match(slot, /state === "filled" \? 1 : 0/);
   assert.match(slot, /Math\.max\(MIN_HEIGHT, Math\.min\(MAX_HEIGHT/);
 });
