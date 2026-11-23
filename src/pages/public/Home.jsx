@@ -555,25 +555,27 @@ export default function Home() {
     }
   };
 
-  // Signed-in FREE and STANDARD accounts use the same ad cadence.
-  // VIP, Admin and unresolved accounts never initiate a popunder.
-  const triggerPopunderForAdSupported = () => {
-    if (!adsEnabled || typeof window === "undefined") return;
-
-    // Keep each account's counter separate on shared devices.
-    const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
+  // FREE: one provider ad attempt on each deliberate video-card click.
+  // STANDARD: retain one attempt per three first-play events.
+  // VIP/Admin/unresolved: never request a popunder.
+  // The browser/provider may still block or decline the ad; never bypass this.
+  const triggerPopunderForAdSupported = (source) => {
+    if (!adsEnabled || !userProfile?.id || typeof window === "undefined") return;
+    const isFree = membership.tier === "free";
+    if (isFree ? source !== "video-click" : source !== "first-play") return;
 
     try {
-      const currentCount = Number.parseInt(window.localStorage.getItem(counterKey) || "0", 10) || 0;
-      const nextCount = currentCount + 1;
-
-      if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
-        window.localStorage.setItem(counterKey, String(nextCount));
-        return;
+      if (!isFree) {
+        // Persist the Standard cadence per member across new videos.
+        const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
+        const currentCount = Number.parseInt(window.localStorage.getItem(counterKey) || "0", 10) || 0;
+        const nextCount = currentCount + 1;
+        if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
+          window.localStorage.setItem(counterKey, String(nextCount));
+          return;
+        }
+        window.localStorage.setItem(counterKey, "0");
       }
-
-      // Reset before loading: repeated player events do not retrigger.
-      window.localStorage.setItem(counterKey, "0");
 
       const existing = document.querySelector('script[data-jb-popunder="true"]');
       if (existing) existing.remove();
@@ -609,7 +611,7 @@ export default function Home() {
     setHasRecordedCurrentView(true);
 
     // Count only a real, first play of this opened video.
-    triggerPopunderForAdSupported();
+    triggerPopunderForAdSupported("first-play");
 
     const mediaId = selectedMedia.id;
     const currentVal =
@@ -880,6 +882,12 @@ export default function Home() {
     if (homeMode === "locked" || !item?.id ||
         (homeMode === "free" && (!item.is_free_preview ||
           ![...mediaList, ...mostWatched].some((video) => video.id === item.id)))) return;
+
+    // Only a genuine user click on an approved FREE video can attempt the ad.
+    // Never trigger on URL auto-open, page refresh, redirects, or player events.
+    if (homeMode === "free" && e?.nativeEvent?.isTrusted === true) {
+      triggerPopunderForAdSupported("video-click");
+    }
 
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
     setAutoPlay(false);
