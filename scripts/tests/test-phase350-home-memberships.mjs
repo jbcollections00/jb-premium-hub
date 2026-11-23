@@ -110,7 +110,8 @@ test("FREE never sees member albums or All Videos navigation on Home", () => {
   assert.doesNotMatch(home, /handleCategoryChange/);
   assert.ok(!home.includes("All Videos</button>"));
   assert.match(home, /Most Watched — Free/);
-  assert.match(home, /homeMode === "free" \? "Free to Watch" : "Member library"/);
+  assert.match(home, /homeMode === "free" \? "Free to Watch" : selectedAlbum\?\.name \|\| "Album Videos"/);
+  assert.doesNotMatch(home, /Member library/);
 });
 
 test("Billing privileges and ticket issuers remain unchanged; FREE download remains OFF", () => {
