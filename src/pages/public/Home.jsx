@@ -10,14 +10,6 @@ import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } f
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
-const ALBUM_COVER_COLORS = {
-  indigo: "from-indigo-600/40 via-indigo-950/50 to-slate-950",
-  ocean: "from-cyan-600/40 via-blue-950/50 to-slate-950",
-  forest: "from-emerald-600/40 via-green-950/50 to-slate-950",
-  sunset: "from-orange-600/40 via-rose-950/50 to-slate-950",
-  violet: "from-violet-600/40 via-fuchsia-950/50 to-slate-950",
-  slate: "from-slate-600/40 via-slate-800/50 to-slate-950",
-};
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
 const POPUNDER_EVERY_N_VIDEOS = 3;
@@ -55,6 +47,7 @@ export default function Home() {
   const [mediaError, setMediaError] = useState("");
   const mediaFetchSerialRef = useRef(0);
   const mostWatchedFetchSerialRef = useRef(0);
+  const mostWatchedScrollerRef = useRef(null);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
@@ -424,7 +417,7 @@ export default function Home() {
         .select("*")
         .eq("type", "video")
         .order("views_count", { ascending: false })
-        .limit(6);
+        .limit(10);
 
       if (error) throw error;
       if (requestId === mostWatchedFetchSerialRef.current) setMostWatched(data || []);
@@ -458,7 +451,7 @@ export default function Home() {
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
-        setMostWatched(freeMostWatched(approved));
+        setMostWatched(freeMostWatched(approved, 10));
         return;
       }
 
@@ -1213,76 +1206,6 @@ export default function Home() {
             </div>
           </section>
         )}
-        {/* Admin, Standard and VIP see album names instead of Free to Watch. */}
-        {homeMode === "albums" && (
-          <section className="mb-8" aria-label="Member Albums">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-extrabold text-white sm:text-2xl">Your Albums</h2>
-                <p className="mt-1 text-xs text-slate-300">Select an album to browse its published videos.</p>
-              </div>
-              <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-bold text-indigo-200">
-                {albums.length} albums
-              </span>
-            </div>
-            {albumsLoading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((n) => (
-                  <div key={n} className="h-36 animate-pulse rounded-2xl border border-slate-700 bg-slate-900/80"/>
-                ))}
-              </div>
-            ) : albumError ? (
-              <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-900/10 p-4 text-sm text-rose-200">
-                {albumError}
-              </p>
-            ) : albums.length === 0 ? (
-              <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-sm text-slate-300">
-                No albums available yet. Albums appear here when an admin creates them.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {albums.map((album) => (
-                  <button type="button" key={album.id}
-                    onClick={() => handleSelectAlbum(album.id)}
-                    aria-pressed={selectedAlbumId === album.id}
-                    className={`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 ${
-                      selectedAlbumId === album.id
-                        ? "border-indigo-300 ring-2 ring-indigo-500/40"
-                        : "border-slate-700 hover:border-indigo-400/60"
-                    }`}
-                  >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${
-                      ALBUM_COVER_COLORS[album.cover_style] || ALBUM_COVER_COLORS.indigo
-                    }`}/>
-                    {album.cover_image_url && (
-                      <img src={album.cover_image_url} alt="" loading="lazy"
-                        className="absolute inset-0 h-full w-full object-cover opacity-35"/>
-                    )}
-                    <div className="relative z-10 flex h-full flex-col justify-between gap-3">
-                      <span className="text-2xl" aria-hidden="true">▣</span>
-                      <span>
-                        <span className="block break-words text-sm font-extrabold text-white sm:text-base">
-                          {album.name}
-                        </span>
-                        {album.description && (
-                          <span className="mt-1 block line-clamp-2 text-xs text-slate-200">
-                            {album.description}
-                          </span>
-                        )}
-                        {isAdmin && !album.is_visible && (
-                          <span className="mt-1 inline-flex rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
-                            Hidden album
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
@@ -1341,6 +1264,21 @@ export default function Home() {
             </div>
           </div>
 
+          {mostWatched.length > 1 && !mostWatchedLoading && (
+            <div className="relative z-10 mb-3 flex justify-end gap-2" aria-label="Most Watched navigation">
+              <button type="button" aria-label="Previous Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: -460, behavior: "smooth" })}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-400/40 bg-slate-950/80 text-xl font-bold text-white transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300">
+                <span aria-hidden="true">‹</span>
+              </button>
+              <button type="button" aria-label="Next Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: 460, behavior: "smooth" })}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-400/40 bg-slate-950/80 text-xl font-bold text-white transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300">
+                <span aria-hidden="true">›</span>
+              </button>
+            </div>
+          )}
+
           {mostWatchedLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 py-4">
               {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -1348,7 +1286,7 @@ export default function Home() {
               ))}
             </div>
           ) : mostWatched.length > 0 ? (
-            <div className="flex gap-4 overflow-x-auto pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
+            <div ref={mostWatchedScrollerRef} aria-label="Most Watched videos" className="flex gap-4 overflow-x-auto scroll-smooth pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
               {mostWatched.map((item, index) => {
                 const rank = index + 1;
                 const badgeStyle =
@@ -1447,6 +1385,40 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* Member albums: text-only selectable tabs BELOW Most Watched. */}
+        {homeMode === "albums" && (
+          <section className="mb-8" aria-label="Member Albums">
+            {albumsLoading ? (
+              <p className="py-3 text-sm text-slate-400" role="status">Loading albums...</p>
+            ) : albumError ? (
+              <p role="alert" className="py-3 text-sm text-rose-200">{albumError}</p>
+            ) : albums.length === 0 ? (
+              <p className="py-3 text-sm text-slate-400">No albums available yet.</p>
+            ) : (
+              <div role="tablist" aria-label="Albums" className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-700/70">
+                {albums.map((album) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    key={album.id}
+                    aria-selected={selectedAlbumId === album.id}
+                    aria-controls="jb-home-gallery"
+                    onClick={() => handleSelectAlbum(album.id)}
+                    className={`relative border-b-2 px-1 pb-3 pt-2 text-sm font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 ${
+                      selectedAlbumId === album.id
+                        ? "border-indigo-400 text-white"
+                        : "border-transparent text-slate-400 hover:border-slate-500 hover:text-slate-100"
+                    }`}
+                  >
+                    {album.name}
+                    {isAdmin && !album.is_visible && <span className="ml-2 text-xs font-normal text-amber-300">(Hidden)</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* VAULT MEDIA LIST HEADER */}
         <div id="jb-home-gallery" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 scroll-mt-24">
