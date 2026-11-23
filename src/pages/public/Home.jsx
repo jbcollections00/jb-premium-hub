@@ -1207,8 +1207,8 @@ export default function Home() {
           </section>
         )}
         {/* Paid members and admins only: FREE users see Free to Watch, never Most Watched. */}
-        {homeMode === "albums" && (
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
+        {homeMode === "albums" && (
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
           <div className="pointer-events-none absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl"></div>
