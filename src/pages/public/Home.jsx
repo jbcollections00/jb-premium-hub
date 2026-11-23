@@ -1301,15 +1301,13 @@ export default function Home() {
                   >
                     <div>
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
-                        {homeMode === "free" && (
-                          <span className="absolute right-2 top-2 z-10 rounded-lg bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-white">FREE</span>
-                        )}
+
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
                           #{rank} {rank === 1 ? "🔥" : ""}
                         </div>
 
-                        <div className="absolute bottom-2 right-2 z-10 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-amber-400 border border-amber-500/30">
-                          ⏱️ {formatDuration(item.duration)}
+                        <div className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
+                          {formatDuration(item.duration)}
                         </div>
 
                         {item.thumbnail_url ? (
@@ -1334,13 +1332,7 @@ export default function Home() {
                           </div>
                         )}
 
-                        <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      homeMode === "free"
-                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
-                        : "border-white/10 bg-black/75 text-slate-200"
-                    }`}>
-                      {homeMode === "free" ? "Free to Watch" : "Member library"}
-                    </span>
+    
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
                             <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
@@ -1354,18 +1346,13 @@ export default function Home() {
                         <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
                           {item.title}
                         </h4>
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900">
+                        <div className="mt-2">
                           <span
                             onClick={(e) => isAdmin && handleOpenViewers(e, item)}
-                            className={`text-[11px] font-bold text-amber-400/90 flex items-center gap-1 ${
-                              isAdmin ? "hover:underline cursor-pointer" : ""
-                            }`}
+                            className={`text-xs text-slate-400 ${isAdmin ? "hover:underline" : ""}`}
                             title={isAdmin ? "Click to view watch logs (Admin)" : ""}
                           >
                             👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            {reactionCounts[item.id]?.likes ? `👍 ${reactionCounts[item.id].likes}` : ""}
                           </span>
                         </div>
                       </div>
@@ -1491,6 +1478,9 @@ export default function Home() {
                     }`}>
                       {homeMode === "free" ? "Free to Watch" : "Member library"}
                     </span>
+                    <span className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
+                      {formatDuration(item.duration)}
+                    </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                         <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
@@ -1499,51 +1489,20 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
-                  <div className="p-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-slate-950/80 text-red-400 rounded-md border border-red-900/40 flex items-center gap-1">
-                        ⏱️ {formatDuration(item.duration)}
-                      </span>
+                  <div className="p-4">
+                    <h3 className="text-base font-semibold leading-snug text-white break-words whitespace-normal group-hover:text-red-400 transition-colors">
+                      {item.title}
+                    </h3>
+                    <div className="mt-2">
                       <span
                         onClick={(e) => isAdmin && handleOpenViewers(e, item)}
-                        className={`text-[11px] text-slate-400 font-medium flex items-center gap-1 ${
-                          isAdmin ? "hover:text-red-400 cursor-pointer underline decoration-dotted underline-offset-2" : ""
-                        }`}
+                        className={`text-xs text-slate-400 ${isAdmin ? "hover:underline" : ""}`}
                         title={isAdmin ? "Click to view watch logs (Admin)" : ""}
                       >
                         👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
-                    <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">
-                      {item.title}
-                    </h3>
                   </div>
-                </div>
-
-                <div className="px-4 pb-3 flex items-center gap-2">
-                  <button
-                    onClick={(e) => handleReaction(e, item.id, "like")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                      userReactions[item.id] === "like"
-                        ? "bg-blue-600/20 text-blue-400 border-blue-500/40"
-                        : "bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
-                    }`}
-                  >
-                    <span>👍</span>
-                    <span>{reactionCounts[item.id]?.likes || 0}</span>
-                  </button>
-
-                  <button
-                    onClick={(e) => handleReaction(e, item.id, "dislike")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                      userReactions[item.id] === "dislike"
-                        ? "bg-red-600/20 text-red-400 border-red-500/40"
-                        : "bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
-                    }`}
-                  >
-                    <span>👎</span>
-                    <span>{reactionCounts[item.id]?.dislikes || 0}</span>
-                  </button>
                 </div>
 
               </div>
