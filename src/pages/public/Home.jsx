@@ -4,20 +4,12 @@ import { supabase } from "../../services/supabaseClient";
 import VIPVideoPlayer from "../../components/VIPVideoPlayer";
 import AdSlot from "../../components/AdSlot";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
-import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl } from "../../services/privateMedia";
+import { PRIVATE_MEDIA_UI_ENABLED, requestPrivateMediaUrl, requestBrandedDownloadUrl } from "../../services/privateMedia";
 import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
-import { getHomeMode, shouldDisplayAds, approvedFreeCatalog, freeMostWatched } from "../../services/homeDiscovery";
+import { getHomeMode, shouldDisplayAds, approvedFreeCatalog } from "../../services/homeDiscovery";
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
-const ALBUM_COVER_COLORS = {
-  indigo: "from-indigo-600/40 via-indigo-950/50 to-slate-950",
-  ocean: "from-cyan-600/40 via-blue-950/50 to-slate-950",
-  forest: "from-emerald-600/40 via-green-950/50 to-slate-950",
-  sunset: "from-orange-600/40 via-rose-950/50 to-slate-950",
-  violet: "from-violet-600/40 via-fuchsia-950/50 to-slate-950",
-  slate: "from-slate-600/40 via-slate-800/50 to-slate-950",
-};
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
 const POPUNDER_EVERY_N_VIDEOS = 3;
@@ -55,6 +47,7 @@ export default function Home() {
   const [mediaError, setMediaError] = useState("");
   const mediaFetchSerialRef = useRef(0);
   const mostWatchedFetchSerialRef = useRef(0);
+  const mostWatchedScrollerRef = useRef(null);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
@@ -371,23 +364,22 @@ export default function Home() {
 
       if (error) throw error;
 
+      // A verified Auth user can be a FREE member even if a legacy profile
+      // record was deleted/missed by the signup trigger. Never UPSERT a
+      // privileged profile from the browser: memberships remain server-owned.
+      // A missing profile is always represented by the least-privileged role.
       if (!profile) {
-        const { data: newProfile, error: createProfileError } = await supabase
-          .from("profiles")
-          .upsert([{ id: user.id, account_type: "standard" }])
-          .select()
-          .maybeSingle();
-
-        if (createProfileError) throw createProfileError;
-        profile = newProfile;
+        const { data: verified, error: verifyError } = await supabase.auth.getUser();
+        if (verifyError || verified?.user?.id !== user.id || verified.user.is_anonymous === true) {
+          throw new Error("Could not verify signed-in user without a profile");
+        }
       }
-
       const mergedProfile = {
         ...(profile || {}),
         id: user.id,
         email: user.email || profile?.email,
         role: profile?.role || "user",
-        account_type: profile?.account_type || "standard",
+        account_type: profile?.account_type || "free",
       };
 
       setUserProfile(mergedProfile);
@@ -424,7 +416,7 @@ export default function Home() {
         .select("*")
         .eq("type", "video")
         .order("views_count", { ascending: false })
-        .limit(6);
+        .limit(10);
 
       if (error) throw error;
       if (requestId === mostWatchedFetchSerialRef.current) setMostWatched(data || []);
@@ -458,7 +450,7 @@ export default function Home() {
         if (requestId !== mediaFetchSerialRef.current) return;
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
-        setMostWatched(freeMostWatched(approved));
+        setMostWatched([]); // FREE accounts have no Most Watched section.
         return;
       }
 
@@ -563,25 +555,27 @@ export default function Home() {
     }
   };
 
-  // Signed-in FREE and STANDARD accounts use the same ad cadence.
-  // VIP, Admin and unresolved accounts never initiate a popunder.
-  const triggerPopunderForAdSupported = () => {
-    if (!adsEnabled || typeof window === "undefined") return;
-
-    // Keep each account's counter separate on shared devices.
-    const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
+  // FREE: one provider ad attempt on each deliberate video-card click.
+  // STANDARD: retain one attempt per three first-play events.
+  // VIP/Admin/unresolved: never request a popunder.
+  // The browser/provider may still block or decline the ad; never bypass this.
+  const triggerPopunderForAdSupported = (source) => {
+    if (!adsEnabled || !userProfile?.id || typeof window === "undefined") return;
+    const isFree = membership.tier === "free";
+    if (isFree ? source !== "video-click" : source !== "first-play") return;
 
     try {
-      const currentCount = Number.parseInt(window.localStorage.getItem(counterKey) || "0", 10) || 0;
-      const nextCount = currentCount + 1;
-
-      if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
-        window.localStorage.setItem(counterKey, String(nextCount));
-        return;
+      if (!isFree) {
+        // Persist the Standard cadence per member across new videos.
+        const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
+        const currentCount = Number.parseInt(window.localStorage.getItem(counterKey) || "0", 10) || 0;
+        const nextCount = currentCount + 1;
+        if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
+          window.localStorage.setItem(counterKey, String(nextCount));
+          return;
+        }
+        window.localStorage.setItem(counterKey, "0");
       }
-
-      // Reset before loading: repeated player events do not retrigger.
-      window.localStorage.setItem(counterKey, "0");
 
       const existing = document.querySelector('script[data-jb-popunder="true"]');
       if (existing) existing.remove();
@@ -617,7 +611,7 @@ export default function Home() {
     setHasRecordedCurrentView(true);
 
     // Count only a real, first play of this opened video.
-    triggerPopunderForAdSupported();
+    triggerPopunderForAdSupported("first-play");
 
     const mediaId = selectedMedia.id;
     const currentVal =
@@ -889,6 +883,12 @@ export default function Home() {
         (homeMode === "free" && (!item.is_free_preview ||
           ![...mediaList, ...mostWatched].some((video) => video.id === item.id)))) return;
 
+    // Only a genuine user click on an approved FREE video can attempt the ad.
+    // Never trigger on URL auto-open, page refresh, redirects, or player events.
+    if (homeMode === "free" && e?.nativeEvent?.isTrusted === true) {
+      triggerPopunderForAdSupported("video-click");
+    }
+
     scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
     setAutoPlay(false);
     setSelectedMedia(item);
@@ -1078,11 +1078,9 @@ export default function Home() {
         }
       }
 
-      // Request the short-lived DOWNLOAD ticket only after the save dialog.
-      // Never use the legacy public media URL as a fallback when private mode is ON.
-      if (PRIVATE_MEDIA_UI_ENABLED) {
-        videoUrl = await requestPrivateMediaUrl(video.id, "download");
-      }
+      // ALWAYS download only the fully branded file. The server returns 409
+      // while automatic processing is pending. NEVER fall back to original.
+      videoUrl = await requestBrandedDownloadUrl(video.id);
       const response = await fetch(videoUrl, {
         method: "GET",
         mode: "cors",
@@ -1215,77 +1213,9 @@ export default function Home() {
             </div>
           </section>
         )}
-        {/* Admin, Standard and VIP see album names instead of Free to Watch. */}
-        {homeMode === "albums" && (
-          <section className="mb-8" aria-label="Member Albums">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-extrabold text-white sm:text-2xl">Your Albums</h2>
-                <p className="mt-1 text-xs text-slate-300">Select an album to browse its published videos.</p>
-              </div>
-              <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-bold text-indigo-200">
-                {albums.length} albums
-              </span>
-            </div>
-            {albumsLoading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((n) => (
-                  <div key={n} className="h-36 animate-pulse rounded-2xl border border-slate-700 bg-slate-900/80"/>
-                ))}
-              </div>
-            ) : albumError ? (
-              <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-900/10 p-4 text-sm text-rose-200">
-                {albumError}
-              </p>
-            ) : albums.length === 0 ? (
-              <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-sm text-slate-300">
-                No albums available yet. Albums appear here when an admin creates them.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {albums.map((album) => (
-                  <button type="button" key={album.id}
-                    onClick={() => handleSelectAlbum(album.id)}
-                    aria-pressed={selectedAlbumId === album.id}
-                    className={`group relative min-h-36 overflow-hidden rounded-2xl border p-4 text-left shadow-lg transition-all hover:-translate-y-0.5 ${
-                      selectedAlbumId === album.id
-                        ? "border-indigo-300 ring-2 ring-indigo-500/40"
-                        : "border-slate-700 hover:border-indigo-400/60"
-                    }`}
-                  >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${
-                      ALBUM_COVER_COLORS[album.cover_style] || ALBUM_COVER_COLORS.indigo
-                    }`}/>
-                    {album.cover_image_url && (
-                      <img src={album.cover_image_url} alt="" loading="lazy"
-                        className="absolute inset-0 h-full w-full object-cover opacity-35"/>
-                    )}
-                    <div className="relative z-10 flex h-full flex-col justify-between gap-3">
-                      <span className="text-2xl" aria-hidden="true">▣</span>
-                      <span>
-                        <span className="block break-words text-sm font-extrabold text-white sm:text-base">
-                          {album.name}
-                        </span>
-                        {album.description && (
-                          <span className="mt-1 block line-clamp-2 text-xs text-slate-200">
-                            {album.description}
-                          </span>
-                        )}
-                        {isAdmin && !album.is_visible && (
-                          <span className="mt-1 inline-flex rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
-                            Hidden album
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
+        {/* Paid members and admins only: FREE users see Free to Watch, never Most Watched. */}
         {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
+        {homeMode === "albums" && (
         <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
           <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
           <div className="pointer-events-none absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl"></div>
@@ -1350,7 +1280,15 @@ export default function Home() {
               ))}
             </div>
           ) : mostWatched.length > 0 ? (
-            <div className="flex gap-4 overflow-x-auto pb-2 pt-1 scrollbar-none snap-x snap-mandatory relative z-10">
+            <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3" aria-label="Most Watched carousel">
+              {mostWatched.length > 1 && (
+              <button type="button" aria-label="Previous Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: -460, behavior: "smooth" })}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-2xl font-bold text-white shadow-md transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:h-11 sm:w-11">
+                <span aria-hidden="true">‹</span>
+              </button>
+              )}
+            <div ref={mostWatchedScrollerRef} aria-label="Most Watched videos" className="relative z-10 flex min-w-0 flex-1 gap-4 overflow-x-auto scroll-smooth pb-2 pt-1 scrollbar-none snap-x snap-mandatory">
               {mostWatched.map((item, index) => {
                 const rank = index + 1;
                 const badgeStyle =
@@ -1370,15 +1308,13 @@ export default function Home() {
                   >
                     <div>
                       <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
-                        {homeMode === "free" && (
-                          <span className="absolute right-2 top-2 z-10 rounded-lg bg-emerald-500/90 px-2 py-1 text-[10px] font-bold text-white">FREE</span>
-                        )}
+
                         <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
                           #{rank} {rank === 1 ? "🔥" : ""}
                         </div>
 
-                        <div className="absolute bottom-2 right-2 z-10 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-amber-400 border border-amber-500/30">
-                          ⏱️ {formatDuration(item.duration)}
+                        <div className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
+                          {formatDuration(item.duration)}
                         </div>
 
                         {item.thumbnail_url ? (
@@ -1403,13 +1339,7 @@ export default function Home() {
                           </div>
                         )}
 
-                        <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      homeMode === "free"
-                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
-                        : "border-white/10 bg-black/75 text-slate-200"
-                    }`}>
-                      {homeMode === "free" ? "Free to Watch" : "Member library"}
-                    </span>
+    
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                           <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
                             <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
@@ -1423,18 +1353,13 @@ export default function Home() {
                         <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
                           {item.title}
                         </h4>
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900">
+                        <div className="mt-2">
                           <span
                             onClick={(e) => isAdmin && handleOpenViewers(e, item)}
-                            className={`text-[11px] font-bold text-amber-400/90 flex items-center gap-1 ${
-                              isAdmin ? "hover:underline cursor-pointer" : ""
-                            }`}
+                            className={`text-xs text-slate-400 ${isAdmin ? "hover:underline" : ""}`}
                             title={isAdmin ? "Click to view watch logs (Admin)" : ""}
                           >
                             👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            {reactionCounts[item.id]?.likes ? `👍 ${reactionCounts[item.id].likes}` : ""}
                           </span>
                         </div>
                       </div>
@@ -1443,12 +1368,55 @@ export default function Home() {
                 );
               })}
             </div>
+              {mostWatched.length > 1 && (
+              <button type="button" aria-label="Next Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: 460, behavior: "smooth" })}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-2xl font-bold text-white shadow-md transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:h-11 sm:w-11">
+                <span aria-hidden="true">›</span>
+              </button>
+              )}
+            </div>
           ) : (
             <div className="p-6 bg-slate-950/40 border border-slate-800/60 rounded-2xl text-center text-slate-500 text-xs">
               Featured videos will appear here.
             </div>
           )}
         </div>
+
+        )}
+        {/* Member albums: text-only selectable tabs BELOW Most Watched. */}
+        {homeMode === "albums" && (
+          <section className="mb-8" aria-label="Member Albums">
+            {albumsLoading ? (
+              <p className="py-3 text-sm text-slate-400" role="status">Loading albums...</p>
+            ) : albumError ? (
+              <p role="alert" className="py-3 text-sm text-rose-200">{albumError}</p>
+            ) : albums.length === 0 ? (
+              <p className="py-3 text-sm text-slate-400">No albums available yet.</p>
+            ) : (
+              <div role="tablist" aria-label="Albums" className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-700/70">
+                {albums.map((album) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    key={album.id}
+                    aria-selected={selectedAlbumId === album.id}
+                    aria-controls="jb-home-gallery"
+                    onClick={() => handleSelectAlbum(album.id)}
+                    className={`relative border-b-2 px-1 pb-3 pt-2 text-sm font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 ${
+                      selectedAlbumId === album.id
+                        ? "border-indigo-400 text-white"
+                        : "border-transparent text-slate-400 hover:border-slate-500 hover:text-slate-100"
+                    }`}
+                  >
+                    {album.name}
+                    {isAdmin && !album.is_visible && <span className="ml-2 text-xs font-normal text-amber-300">(Hidden)</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* VAULT MEDIA LIST HEADER */}
         <div id="jb-home-gallery" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 scroll-mt-24">
@@ -1510,12 +1478,8 @@ export default function Home() {
                         {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
                       </div>
                     )}
-                    <span className={`absolute left-2 top-2 z-10 rounded-lg border px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
-                      homeMode === "free"
-                        ? "border-emerald-300/30 bg-emerald-500/90 text-white"
-                        : "border-white/10 bg-black/75 text-slate-200"
-                    }`}>
-                      {homeMode === "free" ? "Free to Watch" : "Member library"}
+                    <span className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
+                      {formatDuration(item.duration)}
                     </span>
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
                       <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
@@ -1525,51 +1489,20 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
-                  <div className="p-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-slate-950/80 text-red-400 rounded-md border border-red-900/40 flex items-center gap-1">
-                        ⏱️ {formatDuration(item.duration)}
-                      </span>
+                  <div className="p-4">
+                    <h3 className="text-base font-semibold leading-snug text-white break-words whitespace-normal group-hover:text-red-400 transition-colors">
+                      {item.title}
+                    </h3>
+                    <div className="mt-2">
                       <span
                         onClick={(e) => isAdmin && handleOpenViewers(e, item)}
-                        className={`text-[11px] text-slate-400 font-medium flex items-center gap-1 ${
-                          isAdmin ? "hover:text-red-400 cursor-pointer underline decoration-dotted underline-offset-2" : ""
-                        }`}
+                        className={`text-xs text-slate-400 ${isAdmin ? "hover:underline" : ""}`}
                         title={isAdmin ? "Click to view watch logs (Admin)" : ""}
                       >
                         👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
                       </span>
                     </div>
-                    <h3 className="text-white font-semibold text-base mt-2 break-words group-hover:text-red-400 transition-colors">
-                      {item.title}
-                    </h3>
                   </div>
-                </div>
-
-                <div className="px-4 pb-3 flex items-center gap-2">
-                  <button
-                    onClick={(e) => handleReaction(e, item.id, "like")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                      userReactions[item.id] === "like"
-                        ? "bg-blue-600/20 text-blue-400 border-blue-500/40"
-                        : "bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
-                    }`}
-                  >
-                    <span>👍</span>
-                    <span>{reactionCounts[item.id]?.likes || 0}</span>
-                  </button>
-
-                  <button
-                    onClick={(e) => handleReaction(e, item.id, "dislike")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                      userReactions[item.id] === "dislike"
-                        ? "bg-red-600/20 text-red-400 border-red-500/40"
-                        : "bg-slate-950/60 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
-                    }`}
-                  >
-                    <span>👎</span>
-                    <span>{reactionCounts[item.id]?.dislikes || 0}</span>
-                  </button>
                 </div>
 
               </div>

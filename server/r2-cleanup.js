@@ -8,6 +8,7 @@ export const PUBLIC_BUCKET = "jb-collections-public-assets";
 const PUBLIC_ORIGIN = "https://assets.jb-premium-hub.vip";
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const VIDEO_KEY = new RegExp("^staging/" + UUID + "/" + UUID + "\\.mp4$");
+const BRANDED_KEY = new RegExp("^branding/processed/" + UUID + "/v[0-9]+[.]mp4$");
 const PREVIEW_KEY = new RegExp("^staging-thumbnails/" + UUID + "/" + UUID + "\\.jpg$");
 const PUBLISHED_KEY = new RegExp("^thumbnails/published/(" + UUID + ")\\.jpg$");
 const ERROR_LIMIT = 160;
@@ -44,6 +45,7 @@ export function validateCleanupJob(job) {
       typeof job.entity_id !== "string") return false;
   if (job.bucket_name === PRIVATE_BUCKET) {
     return (job.object_kind === "video" && VIDEO_KEY.test(job.object_key)) ||
+           (job.object_kind === "branded_video" && BRANDED_KEY.test(job.object_key)) ||
            (job.object_kind === "private_thumbnail" && PREVIEW_KEY.test(job.object_key));
   }
   if (job.bucket_name === PUBLIC_BUCKET && job.object_kind === "public_thumbnail") {
@@ -56,7 +58,9 @@ export function validateCleanupJob(job) {
 // if the original outbox record is stale or media was restored after deletion.
 async function isReferenced(supabase, job) {
   const queries = [];
-  if (job.object_kind === "video") {
+  if (job.object_kind === "branded_video") {
+    queries.push(["jb_video_branding_jobs", "output_key", job.object_key]);
+  } else if (job.object_kind === "video") {
     queries.push(["jb_media_upload_staging", "storage_key", job.object_key]);
     queries.push(["media", "media_url", "r2://" + PRIVATE_BUCKET + "/" + job.object_key]);
   } else if (job.object_kind === "private_thumbnail") {

@@ -1,0 +1,22 @@
+name: Phase 359 Free Popunder Click (NO DEPLOY)
+on:
+  push:
+    branches:
+      - feature/phase353-automatic-branding-queue
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: FREE click ad cadence security contracts
+        run: node --test scripts/tests/test-phase359-free-popunder-click.mjs
+      - name: Build without Vercel deployment
+        run: npm run build

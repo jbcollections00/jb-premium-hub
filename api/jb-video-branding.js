@@ -13,6 +13,7 @@ const ORIGINS = new Set([
   "https://www.jb-premium-hub.vip", "https://jb-premium-hub.vip",
   "http://localhost:5173", "http://127.0.0.1:5173",
   "http://localhost:5174", "http://127.0.0.1:5174",
+  "http://localhost:5175", "http://127.0.0.1:5175",
 ]);
 const TYPES = {
   intro: { mime: "video/mp4", ext: "mp4", limit: 100 * 1024 * 1024 },
@@ -100,6 +101,24 @@ export default async function handler(req, res) {
   try {
     if (!(await adminUser(svc.db, token))) return fail(res, 403, "Admin only.");
     const { action } = req.body || {};
+    if (action === "queue-status") {
+      const { data: rows, error } = await svc.db
+        .from("jb_video_branding_jobs")
+        .select("media_id,status,asset_version,attempts,last_error,updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(500);
+      if (error) return fail(res, 503, "Processing queue is not installed yet.");
+      const counts = { pending: 0, processing: 0, ready: 0, failed: 0, unsupported: 0 };
+      for (const row of rows || []) if (Object.hasOwn(counts, row.status)) counts[row.status]++;
+      return res.status(200).json({
+        counts, lastUpdated: new Date().toISOString(), truncated: (rows || []).length >= 500,
+        errors: (rows || []).filter((row) => row.status === "failed")
+          .slice(0, 15).map((row) => ({
+            mediaId: row.media_id, attempts: row.attempts,
+            reason: String(row.last_error || "").slice(0,120),
+          })),
+      });
+    }
     if (action === "get") {
       const settings = await readConfig(svc.r2);
       // Asset signed URLs are only returned to authenticated admins.

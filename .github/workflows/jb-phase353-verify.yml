@@ -1,0 +1,32 @@
+name: Phase 353 Branding Preproduction Verification
+on:
+  push:
+    branches: [feature/phase353-automatic-branding-queue]
+  pull_request:
+    paths:
+      - 'scripts/video-branding/**'
+      - 'scripts/tests/test-phase353-branding-automation.mjs'
+      - 'src/services/privateMedia.js'
+      - 'src/pages/public/Home.jsx'
+      - 'api/jb-branded-download.js'
+      - 'server/r2-cleanup.js'
+      - 'supabase/migrations/20261123130000_jb_branding_automatic_queue_v1.sql'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: node --test scripts/tests/test-phase351-video-branding.mjs scripts/tests/test-phase353-branding-automation.mjs
+      - run: node --check scripts/video-branding/worker.mjs
+      - run: node --check api/jb-branded-download.js
+      - run: node scripts/tests/smoke-phase351-video-branding.mjs
+      - run: npm run build

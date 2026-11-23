@@ -204,22 +204,22 @@ async function runPreview(portrait, duration) {
   }
 }
 
-test("landscape thumbnail captures ONE frame near 22 seconds", async () => {
+test("landscape thumbnail captures ONE clean main-video frame near the beginning", async () => {
   const r = await runPreview(false, 80);
   assert.equal(r.output?.type, "image/jpeg");
   assert.equal(r.draws.length, 1);
-  assert.ok(Math.abs(r.positions[0] - 22) < 0.01);
+  assert.ok(Math.abs(r.positions[0] - 0.25) < 0.01);
   assert.deepEqual(r.revoked, ["blob:phase337-test"]);
 });
 
-test("portrait thumbnail combines THREE frames starting near 22 seconds", async () => {
+test("portrait thumbnail combines THREE clean main-video frames from the start", async () => {
   const r = await runPreview(true, 80);
   assert.equal(r.output?.type, "image/jpeg");
   assert.equal(r.draws.length, 3);
   assert.equal(r.positions.length, 3);
-  assert.ok(Math.abs(r.positions[0] - 22) < 0.01);
-  assert.ok(r.positions[1] > r.positions[0]);
-  assert.ok(r.positions[2] > r.positions[1]);
+  assert.ok(Math.abs(r.positions[0] - 0.25) < 0.01);
+  assert.ok(Math.abs(r.positions[1] - 1.25) < 0.01);
+  assert.ok(Math.abs(r.positions[2] - 2.25) < 0.01);
   assert.deepEqual(r.revoked, ["blob:phase337-test"]);
 });
 

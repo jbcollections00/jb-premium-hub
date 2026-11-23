@@ -116,7 +116,7 @@ export default function AdminUsers() {
           if (!Array.isArray(resolved)) throw new Error("Invalid membership response.");
           for (const entry of resolved) {
             if (!ids.includes(entry?.user_id) ||
-                !["FREE", "STANDARD", "VIP", "ADMIN", "GUEST"].includes(entry?.tier)) {
+                !["FREE", "STANDARD", "VIP", "ADMIN"].includes(entry?.tier)) {
               throw new Error("Unexpected membership response.");
             }
             tiers[entry.user_id] = entry.tier;
@@ -229,22 +229,24 @@ export default function AdminUsers() {
     setActionInProgress(null);
   };
 
+  // Live Realtime presence may still include IDs for deleted accounts or
+  // sessions that have no registered profile. The online badge must count
+  // exactly the same visible users as the Online Now table.
+  const searchLower = searchTerm.trim().toLowerCase();
+  const matchesSearch = (u) =>
+    [u.full_name, u.email, u.id].some((value) =>
+      String(value || "").toLowerCase().includes(searchLower)
+    );
+  const matchingUsers = users.filter(matchesSearch);
+  const onlineMatchingUsers = matchingUsers.filter((u) => onlineUserIds.has(u.id));
+  const onlineCount = onlineMatchingUsers.length;
+
   // 1. FILTER LOGIC
-  const filteredUsers = users.filter((u) => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch =
-      (u.full_name && u.full_name.toLowerCase().includes(searchLower)) ||
-      (u.email && u.email.toLowerCase().includes(searchLower)) ||
-      (u.id && u.id.toLowerCase().includes(searchLower));
-
-    const tier = membershipTiersById[u.id];
-    if (["ADMIN", "VIP", "STANDARD", "FREE"].includes(filterType)) {
-      return matchesSearch && tier === filterType;
-    }
-    if (filterType === "ONLINE") return matchesSearch && onlineUserIds.has(u.id);
-
-    return matchesSearch;
-  });
+  const filteredUsers = filterType === "ONLINE"
+    ? onlineMatchingUsers
+    : ["ADMIN", "VIP", "STANDARD", "FREE"].includes(filterType)
+      ? matchingUsers.filter((u) => membershipTiersById[u.id] === filterType)
+      : matchingUsers;
 
   // 2. PAGINATION CALCULATIONS
   const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
@@ -279,7 +281,7 @@ export default function AdminUsers() {
             className="w-full min-w-40 px-3 py-2.5 text-sm sm:w-auto"
           >
             <option value="ALL">All Accounts ({users.length})</option>
-            <option value="ONLINE">Online Now ({onlineUserIds.size})</option>
+            <option value="ONLINE">Online Now ({onlineCount})</option>
             <option value="ADMIN" disabled={membershipTierError}>Admins Only</option>
             <option value="FREE" disabled={membershipTierError}>FREE Account Users</option>
             <option value="STANDARD" disabled={membershipTierError}>STANDARD Account Users</option>

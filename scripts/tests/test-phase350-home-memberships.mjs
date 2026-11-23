@@ -72,14 +72,15 @@ test("FREE Most Watched ranks only the authorized FREE catalog, no paid IDs", ()
   assert.deepEqual(free.map(x => x.id), ["first", "second", "third"]);
 });
 
-test("FREE fetchMedia uses only the authenticated selected-video RPC and free-only rankings", () => {
+test("FREE fetchMedia uses only the authenticated selected-video RPC and hides Most Watched", () => {
   const method = home.slice(home.indexOf("const fetchMedia = async"),
     home.indexOf("const handleOpenViewers", home.indexOf("const fetchMedia = async")));
   const freeBranch = method.slice(method.indexOf('if (homeMode === "free") {', 50),
     method.indexOf('if (homeMode !== "albums" || !selectedAlbumId)'));
   assert.match(freeBranch, /jb_free_preview_catalog_v1/);
   assert.match(freeBranch, /approvedFreeCatalog\(data\)/);
-  assert.match(freeBranch, /freeMostWatched\(approved\)/);
+  assert.match(freeBranch, /setMostWatched\(\[\]\)/);
+  assert.doesNotMatch(freeBranch, /freeMostWatched\(approved\)/);
   assert.doesNotMatch(freeBranch, /\.from\("media"\)|\.from\("jb_media_albums"\)/);
   assert.match(home, /requestFreePreviewUrl/);
   assert.match(home, /isSelectedFreePreview/);
@@ -90,7 +91,8 @@ test("Paid/Admin album list and album filtering use existing RLS, no bypass or h
   assert.match(home, /homeMode !== "albums"/);
   assert.match(home, /aria-label="Member Albums"/);
   assert.match(home, /\{album\.name\}/);
-  assert.match(home, /ALBUM_COVER_COLORS\[album\.cover_style\]/);
+  // Member albums are text-only tabs; cover-style cards were intentionally removed.
+  assert.doesNotMatch(home, /ALBUM_COVER_COLORS\[album\.cover_style\]/);
   assert.match(home, /handleSelectAlbum\(album\.id\)/);
   const fetchMedia = home.slice(home.indexOf("const fetchMedia = async"),
     home.indexOf("const handleOpenViewers", home.indexOf("const fetchMedia = async")));
@@ -108,7 +110,8 @@ test("FREE never sees member albums or All Videos navigation on Home", () => {
   assert.doesNotMatch(home, /handleCategoryChange/);
   assert.ok(!home.includes("All Videos</button>"));
   assert.match(home, /Most Watched — Free/);
-  assert.match(home, /homeMode === "free" \? "Free to Watch" : "Member library"/);
+  assert.match(home, /homeMode === "free" \? "Free to Watch" : selectedAlbum\?\.name \|\| "Album Videos"/);
+  assert.doesNotMatch(home, /Member library/);
 });
 
 test("Billing privileges and ticket issuers remain unchanged; FREE download remains OFF", () => {

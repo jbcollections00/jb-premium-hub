@@ -1,7 +1,7 @@
 // Admin-only private video upload staging.
 // Never writes public.media and never returns a public object URL.
 import { randomUUID } from "node:crypto";
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CreateMultipartUploadCommand, UploadPartCommand, ListPartsCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
 import { processCleanupJobs, getCleanupSummary } from "../server/r2-cleanup.js";
@@ -9,8 +9,10 @@ import { processCleanupJobs, getCleanupSummary } from "../server/r2-cleanup.js";
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
   "https://www.jb-premium-hub.vip",
   "https://jb-premium-hub.vip",
 ]);
@@ -24,6 +26,107 @@ const MAX_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_NAME_LENGTH = 200;
 const PRIVATE_BUCKET = "jb-premium-private-videos";
 const MAX_PREVIEW_BYTES = 1024 * 1024;
+const MULTIPART_THRESHOLD = 32 * 1024 * 1024;
+const MULTIPART_PART_SIZE = 16 * 1024 * 1024;
+const FINGERPRINT = /^[0-9a-f]{64}$/;
+const partCount = (size, partSize = MULTIPART_PART_SIZE) => Math.ceil(size / partSize);
+
+// S3 ListParts is the source of truth after network interruptions. Never
+// trust the client's ETags or let it complete an arbitrary object key.
+async function getMultipartParts(services, row) {
+  const parts = [];
+  let marker;
+  do {
+    const result = await services.r2.send(new ListPartsCommand({
+      Bucket: services.bucket, Key: row.storage_key,
+      UploadId: row.multipart_upload_id, MaxParts: 1000,
+      ...(marker ? { PartNumberMarker: marker } : {}),
+    }));
+    parts.push(...(result.Parts || []).map((p) => ({
+      partNumber: Number(p.PartNumber), size: Number(p.Size), eTag: p.ETag,
+    })));
+    if (!result.IsTruncated) break;
+    marker = result.NextPartNumberMarker;
+    if (!marker || parts.length > 500) throw new Error("Invalid multipart pagination.");
+  } while (true);
+  return parts;
+}
+function validatedPart(row, partNumber) {
+  const count = partCount(Number(row.size_bytes), Number(row.multipart_part_size));
+  if (!Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > count) return null;
+  const start = (partNumber - 1) * Number(row.multipart_part_size);
+  return { size: Math.min(Number(row.multipart_part_size), Number(row.size_bytes) - start), count };
+}
+async function ownedMultipartDraft(services, admin, draftId) {
+  if (!UUID.test(String(draftId || ""))) return null;
+  const { data, error } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id,created_by,album_id,original_filename,size_bytes,mime_type,storage_key,status,multipart_upload_id,multipart_fingerprint,multipart_part_size")
+    .eq("id", draftId).eq("created_by", admin.id).maybeSingle();
+  if (error || !data || data.status !== "awaiting_upload" ||
+      !data.multipart_upload_id || data.mime_type !== "video/mp4" ||
+      data.storage_key !== "staging/" + admin.id + "/" + data.id + ".mp4" ||
+      !FINGERPRINT.test(data.multipart_fingerprint || "")) return null;
+  return data;
+}
+async function multipartSign(req, res, services, admin) {
+  const { draftId, partNumber } = req.body || {};
+  const row = await ownedMultipartDraft(services, admin, draftId);
+  if (!row) return fail(res, 404, "Resumable draft unavailable.");
+  const expected = validatedPart(row, partNumber);
+  if (!expected) return fail(res, 400, "Invalid upload part.");
+  const url = await getSignedUrl(services.r2, new UploadPartCommand({
+    Bucket: services.bucket, Key: row.storage_key,
+    UploadId: row.multipart_upload_id, PartNumber: partNumber,
+  }), { expiresIn: 900 });
+  return res.status(200).json({ uploadUrl: url, partNumber, size: expected.size, expiresInSeconds: 900 });
+}
+async function multipartStatus(req, res, services, admin) {
+  const { draftId } = req.body || {};
+  const row = await ownedMultipartDraft(services, admin, draftId);
+  if (!row) return fail(res, 404, "Resumable draft unavailable.");
+  let parts;
+  try { parts = await getMultipartParts(services, row); }
+  catch {
+    return fail(res, 409, "Multipart session expired or unavailable. Remove this incomplete draft before starting a new upload.");
+  }
+  const completed = parts.filter((p) => validatedPart(row,p.partNumber)?.size === p.size && p.eTag);
+  return res.status(200).json({
+    draftId: row.id, partSize: row.multipart_part_size, size: Number(row.size_bytes),
+    completedParts: completed.map((p) => p.partNumber),
+    confirmedBytes: completed.reduce((n,p) => n+p.size,0),
+  });
+}
+async function multipartFinish(req, res, services, admin) {
+  const { draftId } = req.body || {};
+  const row = await ownedMultipartDraft(services, admin, draftId);
+  if (!row) {
+    // A previous completion might have reached R2 and been committed to DB.
+    const { data } = await services.supabase.from("jb_media_upload_staging")
+      .select("status").eq("id",draftId).eq("created_by",admin.id).maybeSingle();
+    if (data?.status === "pending_review") return res.status(200).json({ status:"pending_review", draftId });
+    return fail(res,404,"Resumable draft unavailable.");
+  }
+  let parts;
+  try { parts = await getMultipartParts(services, row); }
+  catch {
+    // CompleteMultipartUpload may have succeeded before an interrupted response.
+    return await complete({ body: { draftId } }, res, services, admin);
+  }
+  const totalParts = partCount(Number(row.size_bytes), Number(row.multipart_part_size));
+  const sorted = [...parts].sort((a,b)=>a.partNumber-b.partNumber);
+  if (sorted.length !== totalParts ||
+      sorted.some((p,i)=>p.partNumber !== i+1 ||
+        p.size !== validatedPart(row, i+1).size || !p.eTag)) {
+    return fail(res,409,"Some upload parts are missing or have incorrect sizes. Resume upload first.");
+  }
+  await services.r2.send(new CompleteMultipartUploadCommand({
+    Bucket:services.bucket,Key:row.storage_key,UploadId:row.multipart_upload_id,
+    MultipartUpload:{Parts: sorted.map(p=>({PartNumber:p.partNumber,ETag:p.eTag}))},
+  }));
+  return await complete({body:{draftId}},res,services,admin);
+}
+
 const PREVIEW_MIME = "image/jpeg";
 
 // Vercel may assign multiple first-party aliases to the same deployment.
@@ -128,7 +231,7 @@ async function getAdmin(services, token) {
 }
 
 async function begin(req, res, services, admin) {
-  const { albumId, fileName, fileSize } = req.body || {};
+  const { albumId, fileName, fileSize, fingerprint } = req.body || {};
   if (!UUID.test(String(albumId || ""))) return fail(res, 400, "Select a valid album.");
   if (
     typeof fileName !== "string" ||
@@ -137,47 +240,129 @@ async function begin(req, res, services, admin) {
     fileName.includes("/") ||
     fileName.includes(String.fromCharCode(92)) ||
     /[\x00-\x1f]/.test(fileName)
-  ) {
-    return fail(res, 400, "Invalid video file name.");
-  }
+  ) return fail(res, 400, "Invalid video file name.");
   const type = getMime(fileName);
   if (!type) return fail(res, 400, "Unsupported video type. Upload MP4 videos only.");
   if (!Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > MAX_SIZE_BYTES) {
     return fail(res, 400, "Video must be between 1 byte and 2 GB.");
   }
-
+  const multipart = fileSize >= MULTIPART_THRESHOLD;
+  if (multipart && !FINGERPRINT.test(String(fingerprint || ""))) {
+    return fail(res, 400, "Large uploads require a valid file fingerprint.");
+  }
   const { data: album, error: albumError } = await services.supabase
     .from("jb_media_albums").select("id").eq("id", albumId).maybeSingle();
   if (albumError || !album) return fail(res, 404, "Album not found.");
 
-  const id = randomUUID();
-  const key = "staging/" + admin.id + "/" + id + "." + type.extension;
-  const { error: insertError } = await services.supabase.from("jb_media_upload_staging")
-    .insert({
-      id, album_id: albumId, created_by: admin.id,
-      original_filename: fileName.trim(), mime_type: type.contentType,
-      size_bytes: fileSize, storage_key: key,
-      status: "awaiting_upload",
-    });
-  if (insertError) {
-    console.error("Private staging metadata insert failed:", insertError.code || "unknown");
-    return fail(res, 503, "Private upload staging is not configured. Check the new SQL migration.");
+  // If a previous upload finished but its client response was lost, reuse
+  // the existing UNPUBLISHED pending-review file rather than duplicating it.
+  if (multipart) {
+    const { data: finished, error: finishedError } = await services.supabase
+      .from("jb_media_upload_staging")
+      .select("id,storage_key,size_bytes")
+      .eq("created_by",admin.id).eq("album_id",albumId)
+      .eq("original_filename",fileName.trim()).eq("size_bytes",fileSize)
+      .eq("multipart_fingerprint",fingerprint).eq("status","pending_review")
+      .order("created_at",{ascending:false}).limit(5);
+    if (finishedError) return fail(res,503,"Cannot verify previously completed uploads.");
+    if (finished?.length) {
+      const { data: links, error: linkError } = await services.supabase
+        .from("jb_media_publication_links").select("staging_id")
+        .in("staging_id",finished.map(row=>row.id));
+      if (linkError) return fail(res,503,"Could not verify existing publications.");
+      const published = new Set((links||[]).map(link=>link.staging_id));
+      for (const row of finished) {
+        if (published.has(row.id)) continue;
+        try {
+          const head = await services.r2.send(new HeadObjectCommand({
+            Bucket:services.bucket,Key:row.storage_key,
+          }));
+          if (Number(head.ContentLength) === fileSize) {
+            return res.status(200).json({
+              draftId:row.id,status:"pending_review",resumed:true,
+              contentType:type.contentType,
+            });
+          }
+        } catch { /* Damaged object does not qualify as a completed upload. */ }
+      }
+    }
   }
 
-  const uploadUrl = await getSignedUrl(
-    services.r2,
-    new PutObjectCommand({
-      Bucket: services.bucket,
-      Key: key,
-      ContentType: type.contentType,
-    }),
-    { expiresIn: 3600 }
-  );
+  // Re-selecting the SAME file continues the unfinished upload. Its sample
+  // fingerprint avoids confusing equal-size, equal-name but different files.
+  if (multipart) {
+    const { data: matches, error } = await services.supabase
+      .from("jb_media_upload_staging")
+      .select("id,storage_key,size_bytes,multipart_upload_id,multipart_part_size")
+      .eq("created_by",admin.id).eq("album_id",albumId)
+      .eq("original_filename",fileName.trim()).eq("size_bytes",fileSize)
+      .eq("multipart_fingerprint",fingerprint).eq("status","awaiting_upload")
+      .not("multipart_upload_id","is",null)
+      .order("created_at",{ascending:false}).limit(5);
+    if (error) return fail(res,503,"Could not check pending multipart uploads. Apply Phase356 migration.");
+    for (const match of matches || []) {
+      try {
+        await getMultipartParts(services,match);
+        return res.status(200).json({
+          draftId:match.id, multipart:true, resumed:true,
+          partSize:match.multipart_part_size, contentType:type.contentType,
+        });
+      } catch {
+        // R2 may already have assembled this full object before the browser
+        // lost the completion response. Recover by verifying HEAD + DB update.
+        try {
+          const head = await services.r2.send(new HeadObjectCommand({
+            Bucket:services.bucket,Key:match.storage_key,
+          }));
+          if (Number(head.ContentLength) === fileSize) {
+            return await complete({body:{draftId:match.id}},res,services,admin);
+          }
+        } catch { /* No verified completed object. */ }
+      }
+    }
+  }
+
+  const id = randomUUID();
+  const key = "staging/" + admin.id + "/" + id + "." + type.extension;
+  let uploadId;
+  if (multipart) {
+    const created = await services.r2.send(new CreateMultipartUploadCommand({
+      Bucket:services.bucket,Key:key,ContentType:type.contentType,
+    }));
+    uploadId = created.UploadId;
+    if (!uploadId) return fail(res,503,"Could not start multipart upload.");
+  }
+  const { error: insertError } = await services.supabase.from("jb_media_upload_staging")
+    .insert({
+      id, album_id:albumId, created_by:admin.id,
+      original_filename:fileName.trim(), mime_type:type.contentType,
+      size_bytes:fileSize, storage_key:key, status:"awaiting_upload",
+      ...(multipart ? {
+        multipart_upload_id: uploadId,
+        multipart_fingerprint:fingerprint,
+        multipart_part_size:MULTIPART_PART_SIZE,
+      } : {}),
+    });
+  if (insertError) {
+    if (uploadId) {
+      try { await services.r2.send(new AbortMultipartUploadCommand({
+        Bucket:services.bucket,Key:key,UploadId:uploadId,
+      })); } catch { /* Backend cleanup can recover orphaned uploads. */ }
+    }
+    console.error("Private staging insert failed:",insertError.code||"unknown");
+    return fail(res,503,"Private upload staging unavailable. Check database migration.");
+  }
+  if (multipart) {
+    return res.status(200).json({
+      draftId:id, multipart:true, resumed:false, partSize:MULTIPART_PART_SIZE,
+      contentType:type.contentType,
+    });
+  }
+  const uploadUrl = await getSignedUrl(services.r2,
+    new PutObjectCommand({Bucket:services.bucket,Key:key,ContentType:type.contentType}),
+    { expiresIn:3600 });
   return res.status(200).json({
-    draftId: id,
-    uploadUrl,
-    contentType: type.contentType,
-    expiresInSeconds: 3600,
+    draftId:id,uploadUrl,contentType:type.contentType,expiresInSeconds:3600,
   });
 }
 
@@ -451,6 +636,21 @@ async function deleteUnpublished(req, res, services, admin) {
     return fail(res, 400, "Select 1–50 unique unpublished video drafts.");
   }
 
+  // Only expired in-progress leases can be removed. Capture their multipart
+  // sessions for best-effort R2 abort AFTER the atomic DB deletion. Published
+  // and recently active uploads are never touched.
+  const { data: staleMultipart, error: staleError } = await services.supabase
+    .from("jb_media_upload_staging")
+    .select("id,storage_key,multipart_upload_id,created_at,status")
+    .eq("created_by",admin.id).in("id",draftIds)
+    .eq("status","awaiting_upload")
+    .not("multipart_upload_id","is",null);
+  if (staleError) return fail(res,503,"Could not verify unfinished multipart sessions.");
+  const eligibleAbort = (staleMultipart || []).filter(row =>
+    row.storage_key === "staging/" + admin.id + "/" + row.id + ".mp4" &&
+    Date.now() - Date.parse(row.created_at) > 65*60*1000
+  );
+
   // Phase 347: delete and durable outbox insertion commit ATOMICALLY.
   // No delete is attempted for a published draft or active upload lease.
   const { data, error } = await services.supabase.rpc(
@@ -466,6 +666,19 @@ async function deleteUnpublished(req, res, services, admin) {
   if (deleted.length !== draftIds.length ||
       !draftIds.every(id => deleted.includes(id))) {
     return fail(res, 503, "Draft delete confirmation incomplete; refresh queue.");
+  }
+
+  // Do not abort until the DB deletion RPC confirms exactly which drafts
+  // were removed. R2 multipart parts are invisible to normal orphan scans.
+  for (const row of eligibleAbort) {
+    if (!deleted.includes(row.id)) continue;
+    try {
+      await services.r2.send(new AbortMultipartUploadCommand({
+        Bucket:services.bucket,Key:row.storage_key,UploadId:row.multipart_upload_id,
+      }));
+    } catch (error) {
+      console.error("Multipart abort failed; configure R2 incomplete-upload lifecycle:",error?.name||"UNKNOWN");
+    }
   }
 
   // Best-effort immediate worker; durable DB jobs remain for scheduled retry
@@ -912,6 +1125,9 @@ export default async function handler(req, res) {
     if (!admin) return fail(res, 403, "Admin access required.");
 
     if (req.body?.action === "begin") return await begin(req, res, services, admin);
+    if (req.body?.action === "multipart-sign") return await multipartSign(req, res, services, admin);
+    if (req.body?.action === "multipart-status") return await multipartStatus(req, res, services, admin);
+    if (req.body?.action === "multipart-finish") return await multipartFinish(req, res, services, admin);
     if (req.body?.action === "complete") return await complete(req, res, services, admin);
     if (req.body?.action === "thumbnail-begin") return await thumbnailBegin(req, res, services, admin);
     if (req.body?.action === "thumbnail-complete") return await thumbnailComplete(req, res, services, admin);
