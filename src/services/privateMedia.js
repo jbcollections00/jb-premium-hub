@@ -23,7 +23,7 @@ const MEDIA_ID_PATTERN =
  * feature flag, browser profile fields, or this function as authorization.
  *
  * @param {string} mediaId - UUID from the media table.
- * @param {"play"|"download"} action - Requested permission.
+ * @param {"play"} action - Playback only; downloads use the separately gated branded service.
  * @returns {Promise<string>} Verified HTTPS Worker URL (sensitive: do not log).
  */
 export async function requestPrivateMediaUrl(mediaId, action) {
@@ -33,8 +33,10 @@ export async function requestPrivateMediaUrl(mediaId, action) {
   if (!MEDIA_ID_PATTERN.test(String(mediaId || ""))) {
     throw new Error("Invalid media ID");
   }
-  if (action !== "play" && action !== "download") {
-    throw new Error("Unsupported media action");
+  // The legacy ticket endpoint is for playback only. Never request
+  // original-file download tickets from a browser, even if flags change.
+  if (action !== "play") {
+    throw new Error("Original-file download tickets are disabled");
   }
 
   // supabase-js sends the signed-in user's Authorization header. The Edge
