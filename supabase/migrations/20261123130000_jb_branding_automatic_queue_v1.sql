@@ -180,7 +180,7 @@ check (
 );
 create or replace function public.jb_branding_cleanup_on_delete_v1()
 returns trigger language plpgsql security definer set search_path=''
-as $
+as $brand_cleanup$
 begin
  if old.output_key is not null then
   insert into public.jb_r2_cleanup_jobs(entity_kind,entity_id,object_kind,bucket_name,object_key)
@@ -189,7 +189,7 @@ begin
  end if;
  return old;
 end;
-$;
+$brand_cleanup$;
 drop trigger if exists jb_branding_cleanup_on_delete_v1 on public.jb_video_branding_jobs;
 create trigger jb_branding_cleanup_on_delete_v1
 before delete on public.jb_video_branding_jobs
