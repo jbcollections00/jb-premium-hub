@@ -15,7 +15,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 drop trigger if exists jb_stamp_access_code_issuer_v1 on public.access_codes;
 create trigger jb_stamp_access_code_issuer_v1
 before insert on public.access_codes for each row
@@ -97,7 +97,7 @@ create or replace function public.admin_delete_vip_access_code(p_code_id uuid)
 returns boolean language sql security invoker set search_path = ''
 as $$
   select public.jb_admin_delete_unused_access_code_v1(p_code_id);
-$;
+$$;
 
 -- Never allow bypassing the redeemed-code history protection through
 -- the public Data API, even where legacy DELETE policies exist.
