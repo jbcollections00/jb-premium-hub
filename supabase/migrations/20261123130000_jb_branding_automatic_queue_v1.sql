@@ -171,16 +171,12 @@ alter table public.jb_r2_cleanup_jobs drop constraint if exists jb_r2_cleanup_jo
 alter table public.jb_r2_cleanup_jobs add constraint jb_r2_cleanup_jobs_exact_ownership
 check (
  (bucket_name='jb-premium-private-videos' and (
-  (object_kind='video' and object_key ~ '^staging/[0-9a-f-]{36}/[0-9a-f-]{36}[.]mp4
-)
-  or (object_kind='private_thumbnail' and object_key ~ '^staging-thumbnails/[0-9a-f-]{36}/[0-9a-f-]{36}[.]jpg
-)
-  or (object_kind='branded_video' and object_key ~ '^branding/processed/[0-9a-f-]{36}/v[0-9]+[.]mp4
-)
+  (object_kind='video' and object_key ~ '^staging/[0-9a-f-]{36}/[0-9a-f-]{36}[.]mp4$')
+  or (object_kind='private_thumbnail' and object_key ~ '^staging-thumbnails/[0-9a-f-]{36}/[0-9a-f-]{36}[.]jpg$')
+  or (object_kind='branded_video' and object_key ~ '^branding/processed/[0-9a-f-]{36}/v[0-9]+[.]mp4$')
  ))
  or (bucket_name='jb-collections-public-assets' and
- object_kind='public_thumbnail' and object_key ~ '^thumbnails/published/[0-9a-f-]{36}[.]jpg
-)
+ object_kind='public_thumbnail' and object_key ~ '^thumbnails/published/[0-9a-f-]{36}[.]jpg$')
 );
 create or replace function public.jb_branding_cleanup_on_delete_v1()
 returns trigger language plpgsql security definer set search_path=''
