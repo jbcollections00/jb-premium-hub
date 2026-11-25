@@ -396,13 +396,19 @@ async function complete(req, res, services, admin) {
     return fail(res, 409, "Uploaded object does not match expected file metadata.");
   }
 
-  const { error: updateError } = await services.supabase
+  // Confirm the conditional write actually affected the expected draft.
+  const { data: updated, error: updateError } = await services.supabase
     .from("jb_media_upload_staging")
     .update({ status: "pending_review", uploaded_at: new Date().toISOString() })
     .eq("id", draftId)
     .eq("created_by", admin.id)
-    .eq("status", "awaiting_upload");
+    .eq("status", "awaiting_upload")
+    .select("id, status, uploaded_at")
+    .maybeSingle();
   if (updateError) return fail(res, 503, "Could not finalize private staging metadata.");
+  if (updated?.id !== draftId || updated.status !== "pending_review" || !updated.uploaded_at) {
+    return fail(res, 409, "Private upload completion could not be confirmed. Refresh the draft status before retrying.");
+  }
 
   return res.status(200).json({
     draftId,
@@ -470,13 +476,20 @@ async function thumbnailComplete(req, res, services, admin) {
     (head.ContentType && head.ContentType !== PREVIEW_MIME)
   ) return fail(res, 409, "Private thumbnail metadata does not match.");
 
-  const { error } = await services.supabase
+  // A successful storage PUT alone does not confirm the database metadata write.
+  const { data: updated, error } = await services.supabase
     .from("jb_media_upload_staging")
     .update({ preview_key: key, preview_uploaded_at: new Date().toISOString() })
     .eq("id", draftId)
     .eq("created_by", admin.id)
-    .eq("status", "pending_review");
+    .eq("status", "pending_review")
+    .select("id, status, preview_key, preview_uploaded_at")
+    .maybeSingle();
   if (error) return fail(res, 503, "Private thumbnail metadata update failed.");
+  if (updated?.id !== draftId || updated.status !== "pending_review" ||
+      updated.preview_key !== key || !updated.preview_uploaded_at) {
+    return fail(res, 409, "Private thumbnail metadata could not be confirmed. Refresh the draft status before retrying.");
+  }
   return res.status(200).json({ status: "private_preview_saved" });
 }
 
