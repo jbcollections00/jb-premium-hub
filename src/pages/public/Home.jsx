@@ -10,6 +10,11 @@ import { getHomeMode, shouldDisplayAds, approvedFreeCatalog } from "../../servic
 import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
 
 const ITEMS_PER_PAGE = 50;
+
+// Match the reserved album label without depending on case or extra spaces.
+const isFreeToWatchAlbum = (album) =>
+  String(album?.name ?? "").trim().toLowerCase().replace(/[-_\s]+/g, " ") === "free to watch";
+
 const POPUNDER_SCRIPT_URL =
   "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
 const POPUNDER_EVERY_N_VIDEOS = 3;
@@ -45,6 +50,7 @@ export default function Home() {
   const [mediaList, setMediaList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState("");
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
   const mediaFetchSerialRef = useRef(0);
   const mostWatchedFetchSerialRef = useRef(0);
   const mostWatchedScrollerRef = useRef(null);
@@ -248,9 +254,14 @@ export default function Home() {
       .then(({ data, error }) => {
         if (cancelled) return;
         if (error || !Array.isArray(data)) throw new Error("ALBUMS_UNAVAILABLE");
-        setAlbums(data);
+        // Free to Watch is a separate FREE-account catalog, not a member album.
+        // Keep the existing server-authorized albums and hide the reserved label.
+        const memberAlbums = data.filter((album) =>
+          !isFreeToWatchAlbum(album) && (isAdmin || album.is_visible === true));
+        setAlbums(memberAlbums);
         setSelectedAlbumId((previous) =>
-          data.some((album) => album.id === previous) ? previous : (data[0]?.id || ""));
+          memberAlbums.some((album) => album.id === previous)
+            ? previous : (memberAlbums[0]?.id || ""));
       })
       .catch(() => {
         if (cancelled) return;
@@ -262,7 +273,7 @@ export default function Home() {
         if (!cancelled) setAlbumsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [homeMode, userProfile?.id]);
+  }, [homeMode, userProfile?.id, isAdmin, catalogRefresh]);
 
   useEffect(() => {
     if (homeMode !== "albums") ++mostWatchedFetchSerialRef.current;
@@ -280,7 +291,7 @@ export default function Home() {
     if (homeMode === "albums") fetchMostWatched();
     // FREE Most Watched is derived from the same <=20 approved RPC results
     // inside fetchMedia; never request paid-only media records as FREE.
-  }, [currentPage, homeMode, selectedAlbumId, albumsLoading, userProfile?.id]);
+  }, [currentPage, homeMode, selectedAlbumId, albumsLoading, userProfile?.id, catalogRefresh]);
 
   useEffect(() => {
     const allIds = [
@@ -448,6 +459,10 @@ export default function Home() {
         if (error) throw error;
         const approved = approvedFreeCatalog(data);
         if (requestId !== mediaFetchSerialRef.current) return;
+        if (page > Math.max(1, Math.ceil(approved.length / ITEMS_PER_PAGE))) {
+          setCurrentPage(1);
+          return;
+        }
         setMediaList(approved.slice(from, to + 1));
         setTotalCount(approved.length);
         setMostWatched([]); // FREE accounts have no Most Watched section.
@@ -467,6 +482,11 @@ export default function Home() {
         .order("published_at", { ascending: false })
         .range(from, to);
       if (linksError || !Array.isArray(links)) throw new Error("ALBUM_MEDIA_UNAVAILABLE");
+      if (requestId !== mediaFetchSerialRef.current) return;
+      if (Number.isFinite(count) && page > Math.max(1, Math.ceil(count / ITEMS_PER_PAGE))) {
+        setCurrentPage(1);
+        return;
+      }
       const ids = links.map((link) => link.media_id).filter(Boolean);
       if (ids.length === 0) {
         if (requestId !== mediaFetchSerialRef.current) return;
@@ -1290,9 +1310,16 @@ export default function Home() {
           <h1 className="text-xl md:text-2xl font-bold text-white">
             {homeMode === "free" ? "Free to Watch" : selectedAlbum?.name || "Album Videos"}
           </h1>
-          <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
-            Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+              Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
+            </span>
+            <button type="button" disabled={loading || albumsLoading}
+              onClick={() => setCatalogRefresh((value) => value + 1)}
+              className="jbh-btn-quiet text-xs disabled:opacity-50">
+              Refresh library
+            </button>
+          </div>
         </div>
 
         <AdSlot position="middle" enabled={adsEnabled} />
@@ -1311,7 +1338,7 @@ export default function Home() {
           <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
             <p className="text-slate-400">{homeMode === "free"
               ? "Wala pang napiling Free to Watch videos. Maghihintay muna tayo ng pagpili ng admin."
-              : "Wala pang published videos sa album na ito."}</p>
+              : "No videos are currently available to your account in this album."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

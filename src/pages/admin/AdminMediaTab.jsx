@@ -20,14 +20,12 @@ import AdminPublishingReview from "../../components/admin/AdminPublishingReview"
 import AdminR2OrphanAudit from "../../components/admin/AdminR2OrphanAudit";
 import AdminR2CleanupQueue from "../../components/admin/AdminR2CleanupQueue";
 
-// Public signer must never be used to upload protected video assets.
-const LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED = true;
-
 export default function AdminMediaTab() {
   const [
     activeTab,
     setActiveTab,
-  ] = useState("files");
+  ] = useState("upload");
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
 
   const [
     mediaList,
@@ -43,25 +41,6 @@ export default function AdminMediaTab() {
   const [freePreviewMessage, setFreePreviewMessage] = useState("");
   const selectedFreeCount = mediaList.filter((item) => item.is_free_preview === true).length;
   const FREE_PREVIEW_MAX = 20;
-
-  /* =========================================================
-     FILE UPLOAD STATES
-  ========================================================= */
-
-  const [
-    uploadFiles,
-    setUploadFiles,
-  ] = useState([]);
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
-
-  const [
-    notifyUsers,
-    setNotifyUsers,
-  ] = useState(false); // Opt in to mass announcements; never auto-send by default.
 
   const [
     thumbnailUploadingId,
@@ -151,7 +130,8 @@ export default function AdminMediaTab() {
 
   useEffect(() => {
     fetchMedia();
-  }, []);
+    if (activeTab !== "files") setMaintenanceOpen(false);
+  }, [activeTab]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -254,63 +234,6 @@ export default function AdminMediaTab() {
     } finally {
       setFreePreviewUpdatingId(null);
     }
-  };
-
-  /* =========================================================
-     FORMAT BYTES
-  ========================================================= */
-
-  const formatBytes = (
-    bytes,
-    decimals = 2
-  ) => {
-    if (
-      !bytes ||
-      bytes === 0
-    ) {
-      return "0 Bytes";
-    }
-
-    const k = 1024;
-
-    const dm =
-      decimals < 0
-        ? 0
-        : decimals;
-
-    const sizes = [
-      "Bytes",
-      "KB",
-      "MB",
-      "GB",
-      "TB",
-    ];
-
-    const i =
-      Math.floor(
-        Math.log(
-          bytes
-        ) /
-          Math.log(
-            k
-          )
-      );
-
-    return (
-      parseFloat(
-        (
-          bytes /
-          Math.pow(
-            k,
-            i
-          )
-        ).toFixed(
-          dm
-        )
-      ) +
-      " " +
-      sizes[i]
-    );
   };
 
   /* =========================================================
@@ -474,264 +397,6 @@ export default function AdminMediaTab() {
     };
 
   /* =========================================================
-     UPDATE FILE STATE
-  ========================================================= */
-
-  const updateFileState = (
-    id,
-    updates
-  ) => {
-    setUploadFiles(
-      (previous) =>
-        previous.map(
-          (item) =>
-            item.id ===
-            id
-              ? {
-                  ...item,
-                  ...updates,
-                }
-              : item
-        )
-    );
-  };
-
-  /* =========================================================
-     FILE SELECT
-  ========================================================= */
-
-  const handleFileSelect =
-    (event) => {
-      const selected =
-        Array.from(
-          event.target
-            .files ||
-            []
-        );
-
-      const validVideoFiles =
-        selected.filter(
-          (file) => {
-            const fileExt =
-              file.name
-                .split(
-                  "."
-                )
-                .pop()
-                .toLowerCase();
-
-            const isVideoMime =
-              file.type.startsWith(
-                "video/"
-              );
-
-            const isVideoExt =
-              [
-                "mp4",
-                "mkv",
-                "mov",
-                "avi",
-                "webm",
-                "m4v",
-                "flv",
-                "wmv",
-                "3gp",
-                "ts",
-              ].includes(
-                fileExt
-              );
-
-            return (
-              isVideoMime ||
-              isVideoExt
-            );
-          }
-        );
-
-      if (
-        validVideoFiles.length <
-        selected.length
-      ) {
-        alert(
-          `⚠️ ${
-            selected.length -
-            validVideoFiles.length
-          } non-video file(s) ignored.`
-        );
-      }
-
-      const formattedFiles =
-        validVideoFiles.map(
-          (
-            file,
-            index
-          ) => ({
-            id:
-              `${Date.now()}-${index}-${Math.random()
-                .toString(
-                  36
-                )
-                .substring(
-                  2,
-                  6
-                )}`,
-
-            file,
-
-            name:
-              file.name,
-
-            size:
-              file.size,
-
-            progress:
-              0,
-
-            status:
-              "pending",
-
-            errorMsg:
-              "",
-
-            thumbnailFile:
-              null,
-
-            thumbnailPreview:
-              "",
-          })
-        );
-
-      setUploadFiles(
-        formattedFiles
-      );
-    };
-
-  /* =========================================================
-     THUMBNAIL SELECT
-  ========================================================= */
-
-  const handleThumbnailSelect = (
-    fileId,
-    file
-  ) => {
-    if (!file) {
-      return;
-    }
-
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ];
-
-    const maxSize =
-      5 *
-      1024 *
-      1024;
-
-    if (
-      !allowedTypes.includes(
-        file.type
-      )
-    ) {
-      alert(
-        "Thumbnail must be JPEG, PNG, or WEBP."
-      );
-
-      return;
-    }
-
-    if (
-      file.size >
-      maxSize
-    ) {
-      alert(
-        "Thumbnail must be 5 MB or smaller."
-      );
-
-      return;
-    }
-
-    const previewUrl =
-      URL.createObjectURL(
-        file
-      );
-
-    setUploadFiles(
-      (previous) =>
-        previous.map(
-          (item) => {
-            if (
-              item.id !==
-              fileId
-            ) {
-              return item;
-            }
-
-            if (
-              item.thumbnailPreview?.startsWith(
-                "blob:"
-              )
-            ) {
-              URL.revokeObjectURL(
-                item.thumbnailPreview
-              );
-            }
-
-            return {
-              ...item,
-
-              thumbnailFile:
-                file,
-
-              thumbnailPreview:
-                previewUrl,
-            };
-          }
-        )
-    );
-  };
-
-  const removeSelectedThumbnail =
-    (
-      fileId
-    ) => {
-      setUploadFiles(
-        (previous) =>
-          previous.map(
-            (item) => {
-              if (
-                item.id !==
-                fileId
-              ) {
-                return item;
-              }
-
-              if (
-                item.thumbnailPreview?.startsWith(
-                  "blob:"
-                )
-              ) {
-                URL.revokeObjectURL(
-                  item.thumbnailPreview
-                );
-              }
-
-              return {
-                ...item,
-
-                thumbnailFile:
-                  null,
-
-                thumbnailPreview:
-                  "",
-              };
-            }
-          )
-      );
-    };
-
-  /* =========================================================
      SECURE THUMBNAIL UPLOAD
 
      Browser asks server for signed URL.
@@ -805,344 +470,6 @@ export default function AdminMediaTab() {
         mediaList,
       ]
     );
-
-  /* =========================================================
-     BULK R2 UPLOAD
-  ========================================================= */
-
-  const handleBulkUploadToCloudflare =
-    async (
-      event
-    ) => {
-      event.preventDefault();
-      if (LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED) {
-        window.alert("Public video uploads are disabled. Use Private Album Upload.");
-        return;
-      }
-
-      if (
-        uploadFiles.length ===
-        0
-      ) {
-        return;
-      }
-
-      setLoading(
-        true
-      );
-
-      const successfulTitles =
-        [];
-
-      const uploadPromises =
-        uploadFiles.map(
-          async (
-            fileObj
-          ) => {
-            const file =
-              fileObj.file;
-
-            updateFileState(
-              fileObj.id,
-              {
-                status:
-                  "uploading",
-
-                progress:
-                  0,
-
-                errorMsg:
-                  "",
-              }
-            );
-
-            const fileExt =
-              file.name
-                .split(
-                  "."
-                )
-                .pop()
-                ?.toLowerCase() ||
-              "mp4";
-
-            const generatedFileName =
-              `${Date.now()}-${Math.random()
-                .toString(
-                  36
-                )
-                .substring(
-                  2
-                )}.${fileExt}`;
-
-            try {
-              /* =============================================
-                 1. REQUEST SIGNED R2 PUT URL
-              ============================================= */
-
-              const uploadInfo =
-                await createR2UploadUrl({
-                  fileName:
-                    generatedFileName,
-
-                  contentType:
-                    file.type ||
-                    "video/mp4",
-
-                  fileSize:
-                    file.size,
-
-                  folder:
-                    "videos",
-                });
-
-              /* =============================================
-                 2. DIRECT BROWSER -> R2
-              ============================================= */
-
-              await uploadFileToR2({
-                file,
-
-                uploadUrl:
-                  uploadInfo.uploadUrl,
-
-                onProgress:
-                  (
-                    percentage
-                  ) => {
-                    updateFileState(
-                      fileObj.id,
-                      {
-                        status:
-                          "uploading",
-
-                        progress:
-                          percentage,
-                      }
-                    );
-                  },
-              });
-
-              updateFileState(
-                fileObj.id,
-                {
-                  status:
-                    "saving",
-
-                  progress:
-                    100,
-                }
-              );
-
-              const videoPublicUrl =
-                uploadInfo.publicUrl;
-
-              const cleanTitle =
-                file.name.replace(
-                  /\.[^/.]+$/,
-                  ""
-                );
-
-              // UI-only default; no placeholder record updates.
-              let thumbnailUrl = null;
-
-              /* =============================================
-                 3. OPTIONAL THUMBNAIL
-              ============================================= */
-
-              if (
-                fileObj.thumbnailFile
-              ) {
-                updateFileState(
-                  fileObj.id,
-                  {
-                    status:
-                      "thumbnail",
-
-                    progress:
-                      100,
-                  }
-                );
-
-                thumbnailUrl =
-                  await uploadThumbnailToR2(
-                    fileObj.thumbnailFile,
-                    "vault"
-                  );
-              }
-
-              /* =============================================
-                 4. SAVE DATABASE ROW
-              ============================================= */
-
-              const {
-                error: dbError,
-              } =
-                await supabase
-                  .from(
-                    "media"
-                  )
-                  .insert([
-                    {
-                      title:
-                        cleanTitle,
-
-                      media_url:
-                        videoPublicUrl,
-
-                      thumbnail_url:
-                        thumbnailUrl,
-
-                      category:
-                        "JB Media",
-
-                      type:
-                        "video",
-                    },
-                  ]);
-
-              if (dbError) {
-                throw new Error(
-                  dbError.message
-                );
-              }
-
-              updateFileState(
-                fileObj.id,
-                {
-                  status:
-                    "completed",
-
-                  progress:
-                    100,
-                }
-              );
-
-              successfulTitles.push(
-                cleanTitle
-              );
-            } catch (error) {
-              console.error(
-                "Upload failed:",
-                error
-              );
-
-              updateFileState(
-                fileObj.id,
-                {
-                  status:
-                    "error",
-
-                  progress:
-                    0,
-
-                  errorMsg:
-                    error?.message ||
-                    "Upload failed",
-                }
-              );
-            }
-          }
-        );
-
-      await Promise.all(
-        uploadPromises
-      );
-
-      setLoading(
-        false
-      );
-
-      /* =====================================================
-         SEND ANNOUNCEMENT
-      ===================================================== */
-
-      if (
-        successfulTitles.length >
-        0
-      ) {
-        if (
-          notifyUsers
-        ) {
-          const titleListFormatted =
-            successfulTitles
-              .map(
-                (title) =>
-                  `• ${title}`
-              )
-              .join(
-                "\n"
-              );
-
-          const announcementTitle =
-            `🎬 New Vault Video Update (${successfulTitles.length} File${
-              successfulTitles.length >
-              1
-                ? "s"
-                : ""
-            })`;
-
-          const announcementBody =
-            `Hi! New videos have just been added to the JB Premium Vault:\n\n${titleListFormatted}\n\nCheck them out in your media library now!`;
-
-          try {
-            const {
-              error:
-                announcementError,
-            } =
-              await supabase
-                .from(
-                  "admin_messages"
-                )
-                .insert([
-                  {
-                    user_id:
-                      null,
-
-                    title:
-                      announcementTitle,
-
-                    content:
-                      announcementBody,
-
-                    message:
-                      announcementBody,
-
-                    send_to_all:
-                      true,
-
-                    is_read:
-                      false,
-                  },
-                ]);
-
-            if (
-              announcementError
-            ) {
-              throw announcementError;
-            }
-          } catch (error) {
-            console.error(
-              "Admin messages notification error:",
-              error
-            );
-          }
-        }
-
-        alert(
-          `Uploaded ${successfulTitles.length} video(s)!`
-        );
-
-        setUploadFiles(
-          []
-        );
-
-        await fetchMedia();
-
-        setActiveTab(
-          "files"
-        );
-      }
-    };
 
   /* =========================================================
      EXISTING THUMBNAIL UPLOAD
@@ -1715,7 +1042,7 @@ export default function AdminMediaTab() {
             />
           </svg>
 
-          Private Album Upload
+          Upload
 
         </button>
 
@@ -1726,356 +1053,8 @@ export default function AdminMediaTab() {
       ===================================================== */}
 
       {activeTab === "upload" && (
-        <div className="jbh-admin-panel space-y-5 p-4 sm:p-7">
-          <AdminPrivateAlbumUpload />
-          <AdminPublishingReview />
-          <AdminR2OrphanAudit />
-          <AdminR2CleanupQueue />
-        </div>
-      )}
-
-      {/* Historical public uploader is disabled and is never mounted. */}
-      {!LEGACY_PUBLIC_VIDEO_UPLOAD_DISABLED && activeTab ===
-        "upload" && (
-        <div className="jbh-admin-panel space-y-5 p-5 sm:p-7">
-
-          <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-            <span>
-              Bulk Upload Center
-            </span>
-          </h2>
-
-          <form
-            onSubmit={
-              handleBulkUploadToCloudflare
-            }
-            className="space-y-5"
-          >
-
-            <div className="jbh-admin-upload-drop group relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 text-center transition-all sm:p-12">
-
-              <input
-                type="file"
-                multiple
-                accept="video/*,.mp4,.mkv,.mov,.avi,.webm,.m4v"
-                id="file-upload"
-                onChange={
-                  handleFileSelect
-                }
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-
-              <label
-                htmlFor="file-upload"
-                className="cursor-pointer flex flex-col items-center"
-              >
-
-                <div className="p-4 bg-indigo-500/10 text-indigo-400 rounded-full group-hover:scale-110 group-hover:bg-indigo-500/20 transition-all duration-300 mb-3 border border-indigo-500/20">
-
-                  <svg
-                    className="w-10 h-10"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                    />
-                  </svg>
-
-                </div>
-
-                <span className="text-base font-bold text-white tracking-wide">
-                  Click or drag video files here to upload
-                </span>
-
-                <span className="text-xs text-slate-500 mt-1">
-                  Video files only • optional reviewed thumbnail •
-                  neutral cover used when no image is chosen
-                </span>
-
-              </label>
-
-            </div>
-
-            {/* SELECTED QUEUE */}
-
-            {uploadFiles.length >
-              0 && (
-              <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
-
-                <div className="flex justify-between items-center text-xs">
-
-                  <span className="font-bold text-slate-200">
-                    Selected Queue ({uploadFiles.length})
-                  </span>
-
-                  {!loading && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setUploadFiles(
-                          []
-                        )
-                      }
-                      className="text-slate-400 hover:text-rose-400 font-semibold transition-colors cursor-pointer"
-                    >
-                      Clear queue
-                    </button>
-                  )}
-
-                </div>
-
-                <div className="max-h-60 overflow-y-auto space-y-2.5 pr-1">
-
-                  {uploadFiles.map(
-                    (
-                      item
-                    ) => (
-                      <div
-                        key={
-                          item.id
-                        }
-                        className="bg-slate-900 p-3 rounded-xl border border-slate-800/80 space-y-2"
-                      >
-
-                        <div className="flex items-center justify-between text-xs">
-
-                          <div className="min-w-0 flex-1 pr-3">
-
-                            <p className="truncate font-semibold text-white">
-                              {item.name}
-                            </p>
-
-                            <p className="text-[10px] text-slate-400 mt-0.5 font-mono">
-                              Size:{" "}
-                              <span className="text-indigo-400 font-bold">
-                                {formatBytes(
-                                  item.size
-                                )}
-                              </span>
-                            </p>
-
-                          </div>
-
-                          <div className="text-right shrink-0">
-
-                            <span
-                              className={`text-xs font-bold ${
-                                item.status ===
-                                "error"
-                                  ? "text-rose-400"
-                                  : item.status ===
-                                    "completed"
-                                  ? "text-emerald-400"
-                                  : "text-indigo-400"
-                              }`}
-                            >
-                              {item.status ===
-                              "error"
-                                ? "Failed"
-                                : item.status ===
-                                  "thumbnail"
-                                ? "Saving thumbnail..."
-                                : item.status ===
-                                  "saving"
-                                ? "Saving..."
-                                : `${item.progress}%`}
-                            </span>
-
-                          </div>
-
-                        </div>
-
-                        <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-
-                          <div
-                            className={`h-full transition-all duration-300 rounded-full ${
-                              item.status ===
-                              "error"
-                                ? "bg-rose-500"
-                                : item.status ===
-                                  "completed"
-                                ? "bg-emerald-500"
-                                : "bg-gradient-to-r from-indigo-500 to-blue-500"
-                            }`}
-                            style={{
-                              width:
-                                `${item.progress}%`,
-                            }}
-                          />
-
-                        </div>
-
-                        {item.errorMsg && (
-                          <p className="text-[10px] text-rose-400 font-medium">
-                            {item.errorMsg}
-                          </p>
-                        )}
-
-                        <div className="pt-2 border-t border-slate-800/70">
-
-                          <div className="flex items-center justify-between gap-3 mb-2">
-
-                            <div>
-
-                              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
-                                Thumbnail
-                              </p>
-
-                              <p className="text-[9px] text-slate-500 mt-0.5">
-                                Optional. JPEG, PNG or WEBP up to 5 MB.
-                              </p>
-
-                            </div>
-
-                            {item.thumbnailFile && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeSelectedThumbnail(
-                                    item.id
-                                  )
-                                }
-                                className="text-[10px] font-bold text-rose-400 hover:text-rose-300"
-                              >
-                                Remove
-                              </button>
-                            )}
-
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row gap-3 items-start">
-
-                            <div className="w-full sm:w-44 aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
-
-                              {item.thumbnailPreview ? (
-                                <img
-                                  src={
-                                    item.thumbnailPreview
-                                  }
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <img
-                                  src={DEFAULT_THUMBNAIL_URL}
-                                  onError={handleThumbnailLoadError}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
-
-                            </div>
-
-                            <label className="inline-flex items-center justify-center px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-bold text-slate-200 cursor-pointer transition-colors">
-
-                              Choose Thumbnail
-
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={(
-                                  event
-                                ) =>
-                                  handleThumbnailSelect(
-                                    item.id,
-                                    event
-                                      .target
-                                      .files?.[0]
-                                  )
-                                }
-                                disabled={
-                                  loading
-                                }
-                              />
-
-                            </label>
-
-                          </div>
-
-                        </div>
-
-                      </div>
-                    )
-                  )}
-
-                </div>
-
-              </div>
-            )}
-
-            {/* NOTIFY */}
-
-            <div className="jbh-admin-muted-panel flex items-center justify-between gap-3 p-4">
-
-              <label
-                htmlFor="notify-toggle"
-                className="flex items-center gap-3 cursor-pointer select-none"
-              >
-
-                <input
-                  type="checkbox"
-                  id="notify-toggle"
-                  checked={
-                    notifyUsers
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setNotifyUsers(
-                      event.target
-                        .checked
-                    )
-                  }
-                  className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer"
-                />
-
-                <span className="text-xs font-semibold text-slate-200">
-                  Send announcement message to user inbox with list of
-                  uploaded files
-                </span>
-
-              </label>
-
-            </div>
-
-            <button
-              type="submit"
-              disabled={
-                loading ||
-                uploadFiles.length ===
-                  0
-              }
-              className="jbh-admin-primary flex w-full items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold disabled:opacity-50"
-            >
-
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                />
-              </svg>
-
-              {loading
-                ? "Uploading Videos..."
-                : `Upload ${uploadFiles.length} Video(s)`}
-
-            </button>
-
-          </form>
-
+        <div className="jbh-admin-panel space-y-3 p-4 sm:p-7">
+          <AdminPrivateAlbumUpload mode="upload" />
         </div>
       )}
 
@@ -2086,6 +1065,19 @@ export default function AdminMediaTab() {
       {activeTab ===
         "files" && (
         <div className="space-y-6">
+
+          <details className="jbh-admin-panel rounded-xl p-4" onToggle={(event) => setMaintenanceOpen(event.currentTarget.open)}>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-200">Publication review & maintenance</summary>
+            {maintenanceOpen && (
+              <div className="mt-4 space-y-5">
+                <AdminPrivateAlbumUpload mode="queue" />
+                <AdminPublishingReview />
+                <AdminR2OrphanAudit />
+                <AdminR2CleanupQueue />
+                <button type="button" onClick={fetchMedia} className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200">Refresh media library</button>
+              </div>
+            )}
+          </details>
 
           {/* TOOLBAR */}
 
@@ -2195,11 +1187,6 @@ export default function AdminMediaTab() {
 
             </div>
 
-            <span className="px-3 py-2 bg-slate-800/50 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold shrink-0">
-              {missingThumbnailCount} using default JB Collections logo automatically
-            </span>
-
-
           </div>
 
           {/* DUPLICATES */}
@@ -2281,12 +1268,6 @@ export default function AdminMediaTab() {
 
                                 <p className="text-xs font-bold text-white truncate">
                                   {item.title}
-                                </p>
-
-                                <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">
-                                  {getCdnUrl(
-                                    item.media_url
-                                  )}
                                 </p>
 
                                 <p className="text-[9px] text-slate-500 mt-1">
@@ -2440,7 +1421,7 @@ export default function AdminMediaTab() {
 
                         {/* DETAILS */}
 
-                        <div className="p-3.5 flex flex-col justify-between flex-1 space-y-3">
+                        <div className="p-2.5 flex flex-col flex-1 gap-2">
 
                           {editingId ===
                           item.id ? (
@@ -2524,160 +1505,61 @@ export default function AdminMediaTab() {
 
                               </div>
 
-                              <p
-                                className="text-[10px] font-mono text-slate-500 truncate mt-1"
-                                title={
-                                  getCdnUrl(
-                                    item.media_url
-                                  )
-                                }
-                              >
-                                {getCdnUrl(
-                                  item.media_url
-                                )}
-                              </p>
-
                             </div>
 
                           )}
 
-                          {/* FREE TO WATCH SELECTION */}
-                          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-400/5 p-3">
-                            <div>
-                              <p className="text-xs font-bold text-white">Free to Watch</p>
-                              <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
-                                {!FREE_PREVIEW_UI_ENABLED
-                                  ? "Secure playback activation pending"
-                                  : item.is_free_preview
-                                    ? "Available to signed-in free viewers."
-                                    : "Members only · Admin can add up to 20."}
-                              </p>
-                            </div>
+                          {/* Free preview action */}
+                          <div className="flex justify-end">
                             <button
                               type="button"
+                              title={!FREE_PREVIEW_UI_ENABLED ? "Secure playback activation pending" : item.is_free_preview ? "Remove from Free to Watch" : "Add to Free to Watch (maximum 20)"}
                               aria-pressed={item.is_free_preview === true}
                               onClick={() => handleToggleFreePreview(item)}
                               disabled={!FREE_PREVIEW_UI_ENABLED || Boolean(freePreviewUpdatingId) || (selectedFreeCount >= FREE_PREVIEW_MAX && !item.is_free_preview)}
-                              className={`min-h-9 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                              className={`min-h-8 whitespace-nowrap rounded-lg border px-2 py-1 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
                                 item.is_free_preview
                                   ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/25"
                                   : "border-indigo-300/40 bg-indigo-500/15 text-indigo-100 hover:bg-indigo-500/25"
                               }`}
                             >
-                              {freePreviewUpdatingId === item.id ? "Saving…" : item.is_free_preview ? "✓ Free · Remove" : "Make free"}
+                              {freePreviewUpdatingId === item.id ? "Saving…" : item.is_free_preview ? "✓ Free · Remove" : "Make Free"}
                             </button>
                           </div>
 
-                          {/* THUMBNAIL ACTIONS */}
-
-                          <div className="pt-2 border-t border-slate-800/60 space-y-2">
-
-                            <div className="flex items-center justify-between gap-2">
-
-                              <span className="text-[9px] uppercase tracking-wider font-bold text-slate-500">
-                                Thumbnail
+                          {/* Compact thumbnail and media actions */}
+                          <div className="space-y-1 border-t border-slate-800/60 pt-1.5">
+                            <div className="flex items-center justify-between gap-2 text-[10px]">
+                              <span className="font-bold uppercase tracking-wide text-slate-400">Thumbnail</span>
+                              <span className={item.thumbnail_url ? "font-semibold text-emerald-400" : "font-semibold text-amber-400"}>
+                                {item.thumbnail_url ? "Saved" : "Using Default"}
                               </span>
-
-                              <span
-                                className={`text-[9px] font-bold ${
-                                  item.thumbnail_url
-                                    ? "text-emerald-400"
-                                    : "text-amber-400"
-                                }`}
-                              >
-                                {item.thumbnail_url
-                                  ? "Saved"
-                                  : "Using Default"}
-                              </span>
-
                             </div>
-
-                            <div className="grid grid-cols-2 gap-1.5">
-
-                              <label className="py-1.5 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl text-[10px] font-bold cursor-pointer text-center transition-all">
-
-                                {thumbnailUploadingId ===
-                                item.id
-                                  ? "Uploading..."
-                                  : "Change Thumbnail"}
-
-                                <input
-                                  type="file"
-                                  accept="image/jpeg,image/png,image/webp"
-                                  className="hidden"
-                                  disabled={
-                                    thumbnailUploadingId ===
-                                    item.id
-                                  }
-                                  onChange={(
-                                    event
-                                  ) =>
-                                    handleExistingThumbnailUpload(
-                                      item,
-                                      event
-                                        .target
-                                        .files?.[0]
-                                    )
-                                  }
+                            <div className="flex flex-wrap items-center gap-1">
+                              <label className="flex min-h-8 min-w-0 flex-1 items-center justify-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-1 text-center text-[10px] font-bold leading-tight text-indigo-300 transition-colors hover:bg-indigo-500/20 cursor-pointer">
+                                {thumbnailUploadingId === item.id ? "Uploading..." : "Change Thumbnail"}
+                                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                                  disabled={thumbnailUploadingId === item.id}
+                                  onChange={(event) => handleExistingThumbnailUpload(item, event.target.files?.[0])}
                                 />
-
                               </label>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleUseDefaultCover(
-                                    item
-                                  )
-                                }
-                                disabled={
-                                  thumbnailUploadingId ===
-                                  item.id
-                                }
-                                className="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 rounded-xl text-[10px] font-bold transition-all"
-                              >
+                              <button type="button" onClick={() => handleUseDefaultCover(item)}
+                                disabled={thumbnailUploadingId === item.id}
+                                className="min-h-8 shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-1.5 py-1 text-[10px] font-bold text-slate-300 hover:bg-slate-700 disabled:opacity-40">
                                 Use Default
                               </button>
-
+                              <button type="button" onClick={() => handleCopyLink(getCdnUrl(item.media_url), item.id)}
+                                title={copiedId === item.id ? "Copied" : "Copy Link"}
+                                aria-label={copiedId === item.id ? "Link copied" : "Copy Link"}
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-700">
+                                {copiedId === item.id ? "✓" : <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/></svg>}
+                              </button>
+                              <button type="button" onClick={() => handleDeleteMedia(item.id)}
+                                title="Delete Video" aria-label="Delete Video"
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-400 hover:bg-rose-900/40 hover:text-rose-400">
+                                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6m4-6v6"/></svg>
+                              </button>
                             </div>
-
-                          </div>
-
-                          {/* ACTIONS */}
-
-                          <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800/60">
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleCopyLink(
-                                  getCdnUrl(
-                                    item.media_url
-                                  ),
-                                  item.id
-                                )
-                              }
-                              className="flex-1 py-1.5 px-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer border border-slate-700/50 text-[10px] font-semibold flex items-center justify-center gap-1"
-                            >
-                              {copiedId ===
-                              item.id
-                                ? "✓ Copied"
-                                : "🔗 Copy Link"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleDeleteMedia(
-                                  item.id
-                                )
-                              }
-                              className="p-1.5 bg-slate-800/80 hover:bg-rose-900/40 text-slate-400 hover:text-rose-400 rounded-xl transition-all cursor-pointer border border-slate-700/50 text-[10px]"
-                              title="Delete Video"
-                            >
-                              🗑
-                            </button>
-
                           </div>
 
                         </div>
