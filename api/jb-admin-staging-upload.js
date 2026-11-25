@@ -104,7 +104,7 @@ async function multipartFinish(req, res, services, admin) {
     // A previous completion might have reached R2 and been committed to DB.
     const { data } = await services.supabase.from("jb_media_upload_staging")
       .select("status").eq("id",draftId).eq("created_by",admin.id).maybeSingle();
-    if (data?.status === "pending_review") return res.status(200).json({ status:"pending_review", draftId });
+    if (data?.status === "pending_review") return await complete({body:{draftId}},res,services,admin);
     return fail(res,404,"Resumable draft unavailable.");
   }
   let parts;
@@ -259,7 +259,7 @@ async function begin(req, res, services, admin) {
   if (multipart) {
     const { data: finished, error: finishedError } = await services.supabase
       .from("jb_media_upload_staging")
-      .select("id,storage_key,size_bytes")
+      .select("id,storage_key,size_bytes,mime_type,uploaded_at")
       .eq("created_by",admin.id).eq("album_id",albumId)
       .eq("original_filename",fileName.trim()).eq("size_bytes",fileSize)
       .eq("multipart_fingerprint",fingerprint).eq("status","pending_review")
@@ -277,7 +277,8 @@ async function begin(req, res, services, admin) {
           const head = await services.r2.send(new HeadObjectCommand({
             Bucket:services.bucket,Key:row.storage_key,
           }));
-          if (Number(head.ContentLength) === fileSize) {
+          if (row.uploaded_at && row.mime_type === type.contentType &&
+              Number(head.ContentLength) === fileSize && head.ContentType === type.contentType) {
             return res.status(200).json({
               draftId:row.id,status:"pending_review",resumed:true,
               contentType:type.contentType,
@@ -372,13 +373,11 @@ async function complete(req, res, services, admin) {
 
   const { data: row, error: readError } = await services.supabase
     .from("jb_media_upload_staging")
-    .select("id, created_by, storage_key, mime_type, size_bytes, status")
+    .select("id, created_by, storage_key, mime_type, size_bytes, status, uploaded_at")
     .eq("id", draftId).eq("created_by", admin.id).maybeSingle();
   if (readError || !row) return fail(res, 404, "Private upload draft not found.");
-  if (row.status === "pending_review") {
-    return res.status(200).json({ draftId, status: "pending_review" });
-  }
-  if (row.status !== "awaiting_upload") return fail(res, 409, "Draft cannot be completed.");
+  if (row.status !== "awaiting_upload" && row.status !== "pending_review") return fail(res, 409, "Draft cannot be completed.");
+  if (row.status === "pending_review" && !row.uploaded_at) return fail(res, 409, "Private upload confirmation timestamp is missing.");
 
   let metadata;
   try {
@@ -391,9 +390,13 @@ async function complete(req, res, services, admin) {
   }
   if (
     Number(metadata.ContentLength) !== Number(row.size_bytes) ||
-    (metadata.ContentType && metadata.ContentType !== row.mime_type)
+    metadata.ContentType !== row.mime_type
   ) {
     return fail(res, 409, "Uploaded object does not match expected file metadata.");
+  }
+
+  if (row.status === "pending_review") {
+    return res.status(200).json({ draftId, status: "pending_review" });
   }
 
   // Confirm the conditional write actually affected the expected draft.
@@ -473,7 +476,7 @@ async function thumbnailComplete(req, res, services, admin) {
   }
   if (
     Number(head.ContentLength) !== fileSize ||
-    (head.ContentType && head.ContentType !== PREVIEW_MIME)
+    head.ContentType !== PREVIEW_MIME
   ) return fail(res, 409, "Private thumbnail metadata does not match.");
 
   // A successful storage PUT alone does not confirm the database metadata write.
