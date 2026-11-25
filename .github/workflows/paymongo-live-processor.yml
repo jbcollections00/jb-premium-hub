@@ -1,0 +1,135 @@
+
+# JB PREMIUM HUB — PHASE 123J-129
+# PayMongo LIVE Webhook Processor
+#
+# SAFE BY DEFAULT
+# Scheduled processing requires:
+# JB_LIVE_SCHEDULER_ENABLED == 'true'
+#
+# Never store LIVE credentials in this file.
+
+name: PayMongo LIVE Webhook Processor
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Safe diagnostic mode"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+
+  schedule:
+    - cron: '3-58/5 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jb-paymongo-live-processor
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Manual safety check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Verify workflow installation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "LIVE scheduler workflow installed."
+          echo "Mode: DRY RUN"
+          echo "No PayMongo API calls."
+          echo "No Supabase API calls."
+          echo "No payment processing."
+          echo "No membership activation."
+
+  process-live-webhook:
+    name: Scheduled LIVE processor
+    if: >-
+      ${{
+        github.event_name == 'schedule' &&
+        vars.JB_LIVE_SCHEDULER_ENABLED == 'true'
+      }}
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    env:
+      PROCESSOR_TOKEN: ${{ secrets.JB_LIVE_WORKER_CALL_TOKEN }}
+      PROCESSOR_URL: https://kwazrebdlzdkwdhrintr.supabase.co/functions/v1/jb-paymongo-webhook-worker-live
+
+    steps:
+      - name: Validate private worker credential
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ${#PROCESSOR_TOKEN} -lt 32 ]]; then
+            echo "LIVE worker token missing." >&2
+            exit 1
+          fi
+
+      - name: Invoke LIVE webhook worker
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          status="$(curl \
+            --silent \
+            --show-error \
+            --connect-timeout 8 \
+            --max-time 35 \
+            --retry 0 \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer ${PROCESSOR_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data '{"confirm":"process-one-live-webhook"}' \
+            "${PROCESSOR_URL}")"
+
+          echo "LIVE processor HTTP status: ${status}"
+
+          if [[ "$status" != "200" ]]; then
+            echo "LIVE worker invocation failed." >&2
+            exit 1
+          fi
+
+          # The worker may return HTTP 200 for
+          # retry_scheduled or review_required.
+          # These must NOT be treated as healthy.
+
+          if ! python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as f:
+              data = json.load(f)
+
+          state = data.get("status")
+          environment = data.get("environment")
+
+          if environment != "live":
+              print("Unexpected environment.")
+              sys.exit(1)
+
+          if state not in ("empty", "completed"):
+              print("Worker requires investigation.")
+              sys.exit(1)
+
+          print("Worker status:", state)
+          PY
+          then
+            exit 1
+          fi

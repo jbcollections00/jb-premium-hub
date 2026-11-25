@@ -1,0 +1,1769 @@
+import React, { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
+import { supabase } from "../../services/supabaseClient";
+import VIPVideoPlayer from "../../components/VIPVideoPlayer";
+import AdSlot from "../../components/AdSlot";
+import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
+import { PRIVATE_MEDIA_UI_ENABLED, BRANDED_DOWNLOAD_UI_ENABLED, requestPrivateMediaUrl, requestBrandedDownloadUrl } from "../../services/privateMedia";
+import { FREE_PREVIEW_UI_ENABLED, requestFreePreviewUrl } from "../../services/freePreview";
+import { getHomeMode, shouldDisplayAds, approvedFreeCatalog } from "../../services/homeDiscovery";
+import { DEFAULT_THUMBNAIL_URL, getThumbnailDisplayUrl, handleThumbnailLoadError } from "../../services/thumbnailDisplay";
+
+const ITEMS_PER_PAGE = 50;
+const POPUNDER_SCRIPT_URL =
+  "https://deeprootedpressure.com/fb/53/10/fb5310e480b539e2e359b7186685fb7c.js";
+const POPUNDER_EVERY_N_VIDEOS = 3;
+const POPUNDER_COUNTER_KEY = "jb_standard_video_play_count";
+
+// Set to true once Cloudflare SSL status for cdn.jb-premium-hub.vip is Active
+const USE_CUSTOM_CDN = true;
+
+const getCdnUrl = (url) => {
+  if (!url) return "";
+  if (!USE_CUSTOM_CDN) return url;
+  return url.replace(/pub-[a-f0-9]+\.r2\.dev/g, "cdn.jb-premium-hub.vip");
+};
+
+// Enhanced Helper function para i-format ang duration ng video (sumusuporta hanggang Hours)
+const formatDuration = (duration) => {
+  if (!duration) return "00:00";
+  if (typeof duration === "string" && duration.includes(":")) return duration;
+  const sec = parseInt(duration, 10);
+  if (isNaN(sec) || sec <= 0) return "00:00";
+
+  const hours = Math.floor(sec / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  const remSec = sec % 60;
+
+  if (hours > 0) {
+    return `${hours}:${mins < 10 ? "0" : ""}${mins}:${remSec < 10 ? "0" : ""}${remSec}`;
+  }
+  return `${mins}:${remSec < 10 ? "0" : ""}${remSec}`;
+};
+
+export default function Home() {
+  const [mediaList, setMediaList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [mediaError, setMediaError] = useState("");
+  const mediaFetchSerialRef = useRef(0);
+  const mostWatchedFetchSerialRef = useRef(0);
+  const mostWatchedScrollerRef = useRef(null);
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const downloadLockRef = useRef(false);
+  const [privatePlayback, setPrivatePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
+  const [freePlayback, setFreePlayback] = useState({ id: "", url: "", status: "idle", error: "" });
+
+  // AutoPlay state para sa Step 2 Play Trigger
+  const [autoPlay, setAutoPlay] = useState(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("autoplay") === "true";
+    }
+    return false;
+  });
+
+  // States para sa Most Watched Videos
+  const [mostWatched, setMostWatched] = useState([]);
+  const [mostWatchedLoading, setMostWatchedLoading] = useState(true);
+  const [albums, setAlbums] = useState([]);
+  const [albumsLoading, setAlbumsLoading] = useState(false);
+  const [albumError, setAlbumError] = useState("");
+  const [selectedAlbumId, setSelectedAlbumId] = useState("");
+
+  // Ref para i-save ang eksaktong scroll position bago magbukas ng video
+  const scrollPosRef = useRef(0);
+
+  // Immediate lock para hindi mag-double insert ang media_views kapag
+  // sunod-sunod ang onPlay events bago ma-update ang React state.
+  const viewRecordedRef = useRef(false);
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (typeof window !== "undefined") {
+      const page = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
+      return isNaN(page) ? 1 : page;
+    }
+    return 1;
+  });
+
+  const [totalCount, setTotalCount] = useState(0);
+  const [userProfile, setUserProfile] = useState(null);
+  const [billingAccess, setBillingAccess] = useState(null);
+  const [billingReady, setBillingReady] = useState(false);
+
+  // States para sa Likes/Dislikes at Views
+  const [userReactions, setUserReactions] = useState({});
+  const [reactionCounts, setReactionCounts] = useState({});
+  const [viewCounts, setViewCounts] = useState({});
+  const [hasRecordedCurrentView, setHasRecordedCurrentView] = useState(false);
+
+  // Admin Viewers Modal State
+  const [showViewersModal, setShowViewersModal] = useState(false);
+  const [viewersList, setViewersList] = useState([]);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [viewersModalMedia, setViewersModalMedia] = useState(null);
+
+  // States para sa Comments at Captcha
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [captchaNum1, setCaptchaNum1] = useState(0);
+  const [captchaNum2, setCaptchaNum2] = useState(0);
+  const [captchaInput, setCaptchaInput] = useState("");
+
+  const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [redeemLoading, setRedeemLoading] = useState(false);
+
+  const membership = resolveMemberPresentation(userProfile, billingAccess);
+  const isAdmin = membership.isAdmin;
+  const isVIP = membership.tier === "vip";
+  // The checkout entitlement is authoritative for new memberships.
+  // Legacy VIP codes and admin status remain supported by the resolver.
+  const isAdFree = membership.isAdmin || membership.tier === "vip";
+  const homeMode = getHomeMode(billingReady, userProfile?.id, membership, FREE_PREVIEW_UI_ENABLED);
+  const adsEnabled = shouldDisplayAds(billingReady, userProfile?.id, membership);
+  const selectedAlbum = albums.find((album) => album.id === selectedAlbumId);
+  const canDownload = billingReady && membership.canDownload;
+  const isSelectedFreePreview = FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true && !membership.canViewAlbums;
+  const selectedCanPlay = billingReady && Boolean(userProfile?.id) &&
+    (membership.canViewAlbums || (FREE_PREVIEW_UI_ENABLED && selectedMedia?.is_free_preview === true));
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      setBillingReady(false);
+      setBillingAccess(null);
+      if (!userProfile?.id) {
+        setBillingReady(true);
+        return;
+      }
+      try {
+        const result = await getBillingAccess();
+        if (!cancelled) setBillingAccess(result);
+      } catch (error) {
+        console.error("Billing access unavailable:", error);
+      } finally {
+        if (!cancelled) setBillingReady(true);
+      }
+    };
+    refresh();
+    const onFocus = () => { if (!cancelled) refresh(); };
+    window.addEventListener("focus", onFocus);
+    return () => { cancelled = true; window.removeEventListener("focus", onFocus); };
+  }, [userProfile?.id]);
+
+  // Private playback is strictly opt-in. When enabled, NEVER fall back to a public media URL.
+  // The ticket endpoint authorizes the current user and exact video on the server.
+  useEffect(() => {
+    if (!PRIVATE_MEDIA_UI_ENABLED || !selectedMedia?.id ||
+        (selectedMedia.is_free_preview === true && !membership.canViewAlbums)) return;
+    const id = String(selectedMedia.id);
+    let cancelled = false;
+    setPrivatePlayback({ id, url: "", status: "loading", error: "" });
+
+    if (!billingReady) return () => { cancelled = true; };
+    if (!membership.canViewAlbums) {
+      setPrivatePlayback({ id, url: "", status: "denied", error: "Active membership required for playback." });
+      return () => { cancelled = true; };
+    }
+
+    requestPrivateMediaUrl(id, "play")
+      .then((url) => {
+        if (!cancelled) setPrivatePlayback({ id, url, status: "ready", error: "" });
+      })
+      .catch(() => {
+        if (!cancelled) setPrivatePlayback({ id, url: "", status: "error", error: "Unable to authorize private playback. Refresh membership and try again." });
+      });
+    return () => { cancelled = true; };
+  }, [selectedMedia?.id, billingReady, membership.canViewAlbums, membership.tier, userProfile?.id]);
+
+  // FREE accounts receive a newly signed R2 URL on every video opening.
+  // The server independently authorizes every request; replays are unlimited.
+  useEffect(() => {
+    if (!FREE_PREVIEW_UI_ENABLED || !selectedMedia?.id || selectedMedia.is_free_preview !== true || membership.canViewAlbums) {
+      setFreePlayback({ id: "", url: "", status: "idle", error: "" });
+      return;
+    }
+    const id = String(selectedMedia.id);
+    let cancelled = false;
+    setFreePlayback({ id, url: "", status: "loading", error: "" });
+    if (!billingReady || !userProfile?.id) return () => { cancelled = true; };
+    requestFreePreviewUrl(id)
+      .then((url) => { if (!cancelled) setFreePlayback({ id, url, status: "ready", error: "" }); })
+      .catch((error) => {
+        if (!cancelled) setFreePlayback({ id, url: "", status: "error",
+          error: error?.message || "Free playback is temporarily unavailable." });
+      });
+    return () => { cancelled = true; };
+  }, [selectedMedia?.id, selectedMedia?.is_free_preview,
+      billingReady, membership.canViewAlbums, userProfile?.id]);
+
+  // Body scroll management
+  useEffect(() => {
+    if (selectedMedia) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [selectedMedia]);
+
+  // Handle Auth Session Restoration
+  useEffect(() => {
+    fetchUserProfile();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await loadProfileForUser(session.user);
+      } else {
+        setUserProfile(null);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  // Album names are read only when the current member is entitled.
+  // Supabase RLS hides albums from FREE users and filters hidden albums for members.
+  useEffect(() => {
+    let cancelled = false;
+    if (homeMode !== "albums") {
+      setAlbums([]);
+      setSelectedAlbumId("");
+      setAlbumsLoading(false);
+      setAlbumError("");
+      return () => { cancelled = true; };
+    }
+    setAlbumsLoading(true);
+    setAlbumError("");
+    supabase.from("jb_media_albums")
+      .select("id, name, description, is_visible, cover_style, cover_image_url")
+      .order("name", { ascending: true })
+      .limit(200)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !Array.isArray(data)) throw new Error("ALBUMS_UNAVAILABLE");
+        setAlbums(data);
+        setSelectedAlbumId((previous) =>
+          data.some((album) => album.id === previous) ? previous : (data[0]?.id || ""));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAlbums([]);
+        setSelectedAlbumId("");
+        setAlbumError("Could not load your albums. Refresh and try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setAlbumsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [homeMode, userProfile?.id]);
+
+  useEffect(() => {
+    if (homeMode !== "albums") ++mostWatchedFetchSerialRef.current;
+    if (homeMode === "locked" ||
+        (homeMode === "albums" && (albumsLoading || !selectedAlbumId))) {
+      ++mediaFetchSerialRef.current;
+      setMediaList([]);
+      setTotalCount(0);
+      setMostWatched([]);
+      setMostWatchedLoading(false);
+      setLoading(false);
+      return;
+    }
+    fetchMedia(currentPage);
+    if (homeMode === "albums") fetchMostWatched();
+    // FREE Most Watched is derived from the same <=20 approved RPC results
+    // inside fetchMedia; never request paid-only media records as FREE.
+  }, [currentPage, homeMode, selectedAlbumId, albumsLoading, userProfile?.id]);
+
+  useEffect(() => {
+    const allIds = [
+      ...mediaList.map((m) => m.id),
+      ...mostWatched.map((m) => m.id),
+    ];
+    const uniqueIds = [...new Set(allIds)];
+
+    if (uniqueIds.length > 0) {
+      const initialViews = {};
+      [...mediaList, ...mostWatched].forEach((m) => {
+        initialViews[m.id] = m.views_count ?? m.views ?? 0;
+      });
+      setViewCounts((prev) => ({ ...initialViews, ...prev }));
+
+      fetchReactionsData(uniqueIds, userProfile?.id);
+    }
+  }, [mediaList, mostWatched, userProfile]);
+
+  useEffect(() => {
+    if (selectedMedia) {
+      fetchComments(selectedMedia.id);
+      generateCaptcha();
+      setHasRecordedCurrentView(false);
+      viewRecordedRef.current = false;
+    }
+  }, [selectedMedia]);
+
+  useEffect(() => {
+    if (mediaList.length > 0 && !selectedMedia) {
+      const params = new URLSearchParams(window.location.search);
+      const videoId = params.get("v");
+      const isAuto = params.get("autoplay") === "true";
+
+      if (videoId) {
+        const found =
+          mediaList.find((m) => String(m.id) === String(videoId)) ||
+          mostWatched.find((m) => String(m.id) === String(videoId));
+        if (found) {
+          if (isAuto) setAutoPlay(true);
+          setSelectedMedia(found);
+          setTimeout(() => {
+            const el = document.getElementById(`video-${videoId}`);
+            if (el) {
+              el.scrollIntoView({ block: "center" });
+              scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
+            }
+          }, 100);
+        }
+      }
+    }
+  }, [mediaList, mostWatched, selectedMedia]);
+
+  const generateCaptcha = () => {
+    setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
+    setCaptchaNum2(Math.floor(Math.random() * 9) + 1);
+    setCaptchaInput("");
+  };
+
+  const handleDurationUpdate = (mediaId, newDuration) => {
+    setMediaList((prev) =>
+      prev.map((item) => (item.id === mediaId ? { ...item, duration: newDuration } : item))
+    );
+    setMostWatched((prev) =>
+      prev.map((item) => (item.id === mediaId ? { ...item, duration: newDuration } : item))
+    );
+    setSelectedMedia((prev) =>
+      prev && prev.id === mediaId ? { ...prev, duration: newDuration } : prev
+    );
+  };
+
+  const loadProfileForUser = async (user) => {
+    if (!user?.id) return;
+
+    try {
+      let { data: profile, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      // A verified Auth user can be a FREE member even if a legacy profile
+      // record was deleted/missed by the signup trigger. Never UPSERT a
+      // privileged profile from the browser: memberships remain server-owned.
+      // A missing profile is always represented by the least-privileged role.
+      if (!profile) {
+        const { data: verified, error: verifyError } = await supabase.auth.getUser();
+        if (verifyError || verified?.user?.id !== user.id || verified.user.is_anonymous === true) {
+          throw new Error("Could not verify signed-in user without a profile");
+        }
+      }
+      const mergedProfile = {
+        ...(profile || {}),
+        id: user.id,
+        email: user.email || profile?.email,
+        role: profile?.role || "user",
+        account_type: profile?.account_type || "free",
+      };
+
+      setUserProfile(mergedProfile);
+    } catch (err) {
+      console.error("Profile load error:", err);
+      setUserProfile(null);
+    }
+  };
+
+  const fetchUserProfile = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadProfileForUser(session.user);
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await loadProfileForUser(user);
+      }
+    } catch (err) {
+      console.error("Profile fetch error:", err);
+    }
+  };
+
+  const fetchMostWatched = async () => {
+    const requestId = ++mostWatchedFetchSerialRef.current;
+    setMostWatchedLoading(true);
+    try {
+      // Paid/admin only: the media table continues to enforce its existing RLS.
+      const { data, error } = await supabase
+        .from("media")
+        .select("*")
+        .eq("type", "video")
+        .order("views_count", { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatched(data || []);
+    } catch (err) {
+      console.error("Most Watched unavailable:", err?.code || "UNKNOWN");
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatched([]);
+    } finally {
+      if (requestId === mostWatchedFetchSerialRef.current) setMostWatchedLoading(false);
+    }
+  };
+
+  const fetchMedia = async (page = 1) => {
+    const requestId = ++mediaFetchSerialRef.current;
+    setLoading(true);
+    setMediaList([]);
+    setMediaError("");
+    if (homeMode === "free") {
+      setMostWatched([]);
+      setMostWatchedLoading(true);
+    }
+    const from = (page - 1) * ITEMS_PER_PAGE;
+    const to = from + ITEMS_PER_PAGE - 1;
+
+    try {
+      if (homeMode === "free") {
+        // FREE only sees the authenticated max-20 metadata catalog.
+        // No paid media SELECT, private media_url or paid album query here.
+        const { data, error } = await supabase.rpc("jb_free_preview_catalog_v1");
+        if (error) throw error;
+        const approved = approvedFreeCatalog(data);
+        if (requestId !== mediaFetchSerialRef.current) return;
+        setMediaList(approved.slice(from, to + 1));
+        setTotalCount(approved.length);
+        setMostWatched([]); // FREE accounts have no Most Watched section.
+        return;
+      }
+
+      if (homeMode !== "albums" || !selectedAlbumId) {
+        throw new Error("HOME_ACCESS_UNAVAILABLE");
+      }
+
+      // Query only the selected album's published links.
+      // Both the link table and media table retain their member-level RLS.
+      const { data: links, count, error: linksError } = await supabase
+        .from("jb_media_publication_links")
+        .select("media_id", { count: "exact" })
+        .eq("album_id", selectedAlbumId)
+        .order("published_at", { ascending: false })
+        .range(from, to);
+      if (linksError || !Array.isArray(links)) throw new Error("ALBUM_MEDIA_UNAVAILABLE");
+      const ids = links.map((link) => link.media_id).filter(Boolean);
+      if (ids.length === 0) {
+        if (requestId !== mediaFetchSerialRef.current) return;
+        setMediaList([]);
+        setTotalCount(count ?? 0);
+        return;
+      }
+      const { data: videos, error: videosError } = await supabase.from("media")
+        .select("*")
+        .eq("type", "video")
+        .in("id", ids);
+      if (videosError || !Array.isArray(videos)) throw new Error("ALBUM_VIDEO_DATA_UNAVAILABLE");
+      if (requestId !== mediaFetchSerialRef.current) return;
+      const byId = new Map(videos.map((video) => [video.id, video]));
+      setMediaList(ids.map((id) => byId.get(id)).filter(Boolean));
+      setTotalCount(count ?? ids.length);
+    } catch (err) {
+      if (requestId !== mediaFetchSerialRef.current) return;
+      console.error("Home catalog unavailable:", err?.message || "UNKNOWN");
+      setMediaList([]);
+      setTotalCount(0);
+      if (homeMode === "free") setMostWatched([]);
+      setMediaError("Could not load available videos. Please refresh or try again.");
+    } finally {
+      if (requestId === mediaFetchSerialRef.current) {
+        setLoading(false);
+        if (homeMode === "free") setMostWatchedLoading(false);
+      }
+    }
+  };
+
+  const handleOpenViewers = async (e, mediaItem) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!isAdmin || !mediaItem?.id) return;
+
+    setViewersModalMedia(mediaItem);
+    setShowViewersModal(true);
+    setViewersLoading(true);
+
+    try {
+      const { data: viewsData, error: viewsErr } = await supabase
+        .from("media_views")
+        .select("created_at, user_id")
+        .eq("media_id", mediaItem.id)
+        .order("created_at", { ascending: false });
+
+      if (viewsErr) throw viewsErr;
+
+      if (viewsData && viewsData.length > 0) {
+        const userIds = [...new Set(viewsData.filter((v) => v.user_id).map((v) => v.user_id))];
+
+        let profilesMap = {};
+        if (userIds.length > 0) {
+          const { data: profilesData, error: profilesErr } = await supabase
+            .from("profiles")
+            .select("id, full_name, email, account_type")
+            .in("id", userIds);
+
+          if (profilesErr) throw profilesErr;
+
+          if (profilesData) {
+            profilesData.forEach((p) => {
+              profilesMap[p.id] = p;
+            });
+          }
+        }
+
+        const formatted = viewsData.map((v) => ({
+          created_at: v.created_at,
+          user_id: v.user_id,
+          profile: v.user_id ? profilesMap[v.user_id] : null,
+        }));
+
+        setViewersList(formatted);
+      } else {
+        setViewersList([]);
+      }
+    } catch (err) {
+      console.error("Viewers log fetch error:", err.message || err);
+      setViewersList([]);
+    } finally {
+      setViewersLoading(false);
+    }
+  };
+
+  // FREE: one provider ad attempt on each deliberate video-card click.
+  // STANDARD: retain one attempt per three first-play events.
+  // VIP/Admin/unresolved: never request a popunder.
+  // The browser/provider may still block or decline the ad; never bypass this.
+  const triggerPopunderForAdSupported = (source) => {
+    if (!adsEnabled || !userProfile?.id || typeof window === "undefined") return;
+    const isFree = membership.tier === "free";
+    if (isFree ? source !== "video-click" : source !== "first-play") return;
+
+    try {
+      if (!isFree) {
+        // Persist the Standard cadence per member across new videos.
+        const counterKey = `${POPUNDER_COUNTER_KEY}:${userProfile.id}`;
+        const currentCount = Number.parseInt(window.localStorage.getItem(counterKey) || "0", 10) || 0;
+        const nextCount = currentCount + 1;
+        if (nextCount < POPUNDER_EVERY_N_VIDEOS) {
+          window.localStorage.setItem(counterKey, String(nextCount));
+          return;
+        }
+        window.localStorage.setItem(counterKey, "0");
+      }
+
+      const existing = document.querySelector('script[data-jb-popunder="true"]');
+      if (existing) existing.remove();
+
+      const script = document.createElement("script");
+      script.src = POPUNDER_SCRIPT_URL;
+      script.async = true;
+      script.referrerPolicy = "no-referrer";
+      script.dataset.jbPopunder = "true";
+      document.body.appendChild(script);
+    } catch (err) {
+      console.error("Popunder trigger error:", err);
+    }
+  };
+
+  // Remove the popunder loader when access changes to VIP/Admin/unknown.
+  useEffect(() => {
+    if (adsEnabled) return;
+    document.querySelector('script[data-jb-popunder="true"]')?.remove();
+  }, [adsEnabled]);
+
+  const handleVideoPlay = async () => {
+    if (
+      !selectedMedia?.id ||
+      hasRecordedCurrentView ||
+      viewRecordedRef.current ||
+      !userProfile?.id
+    ) {
+      return;
+    }
+
+    viewRecordedRef.current = true;
+    setHasRecordedCurrentView(true);
+
+    // Count only a real, first play of this opened video.
+    triggerPopunderForAdSupported("first-play");
+
+    const mediaId = selectedMedia.id;
+    const currentVal =
+      viewCounts[mediaId] ??
+      selectedMedia.views_count ??
+      selectedMedia.views ??
+      0;
+
+    setViewCounts((prev) => ({
+      ...prev,
+      [mediaId]: currentVal + 1,
+    }));
+
+    try {
+      const { error } = await supabase.from("media_views").insert({
+        media_id: mediaId,
+        user_id: userProfile.id,
+      });
+
+      if (error) throw error;
+    } catch (err) {
+      console.error("Record view error:", err);
+
+      viewRecordedRef.current = false;
+      setHasRecordedCurrentView(false);
+
+      setViewCounts((prev) => ({
+        ...prev,
+        [mediaId]: currentVal,
+      }));
+    }
+  };
+
+  const fetchReactionsData = async (mediaIds, userId) => {
+    if (!mediaIds.length) return;
+
+    try {
+      const { data: reactions, error } = await supabase
+        .from("media_reactions")
+        .select("media_id, reaction_type, user_id")
+        .in("media_id", mediaIds);
+
+      if (error) throw error;
+
+      const counts = {};
+      const userMap = {};
+
+      mediaIds.forEach((id) => {
+        counts[id] = { likes: 0, dislikes: 0 };
+      });
+
+      (reactions || []).forEach((r) => {
+        if (counts[r.media_id]) {
+          if (r.reaction_type === "like") counts[r.media_id].likes += 1;
+          if (r.reaction_type === "dislike") counts[r.media_id].dislikes += 1;
+        }
+        if (userId && r.user_id === userId) {
+          userMap[r.media_id] = r.reaction_type;
+        }
+      });
+
+      setReactionCounts((prev) => ({ ...prev, ...counts }));
+      setUserReactions((prev) => ({ ...prev, ...userMap }));
+    } catch (err) {
+      console.error("Error loading reactions:", err);
+    }
+  };
+
+  const fetchComments = async (mediaId) => {
+    try {
+      const { data, error } = await supabase
+        .from("media_comments")
+        .select("*")
+        .eq("media_id", mediaId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setComments(data || []);
+    } catch (err) {
+      console.error("Fetch comments error:", err);
+      setComments([]);
+    }
+  };
+
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+
+    if (!userProfile?.id) {
+      alert("Kailangan mong mag-login o mag-register para makapag-comment!");
+      return;
+    }
+
+    if (!newComment.trim()) return;
+
+    if (parseInt(captchaInput, 10) !== captchaNum1 + captchaNum2) {
+      alert("Mali ang sagot sa Captcha! Pakisubukan ulit.");
+      generateCaptcha();
+      return;
+    }
+
+    const linkRegex = /(https?:\/\/|www\.|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})/i;
+    if (!isAdmin && linkRegex.test(newComment)) {
+      alert("Bawal maglagay ng kahit anong website link o URL sa comment section!");
+      return;
+    }
+
+    setCommentLoading(true);
+
+    try {
+      const authorName = userProfile.full_name || userProfile.email || "Member";
+      const { data, error } = await supabase
+        .from("media_comments")
+        .insert([
+          {
+            media_id: selectedMedia.id,
+            user_id: userProfile.id,
+            user_name: authorName,
+            comment: newComment.trim(),
+          },
+        ])
+        .select();
+
+      if (error) throw error;
+
+      setNewComment("");
+      generateCaptcha();
+      if (data && data.length > 0) {
+        setComments((prev) => [data[0], ...prev]);
+      } else {
+        fetchComments(selectedMedia.id);
+      }
+    } catch (err) {
+      console.error("Comment submit error:", err);
+      alert("Bumagsak ang pag-post ng comment: " + (err?.message || "Unknown error"));
+    } finally {
+      setCommentLoading(false);
+    }
+  };
+
+  const handleReaction = async (e, mediaId, targetReaction) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (!userProfile?.id) {
+      alert("Please log in to like or dislike videos!");
+      return;
+    }
+
+    const currentReaction = userReactions[mediaId] || null;
+    let newReaction = null;
+
+    if (currentReaction === targetReaction) {
+      newReaction = null;
+    } else {
+      newReaction = targetReaction;
+    }
+
+    const oldCounts = reactionCounts[mediaId] || { likes: 0, dislikes: 0 };
+
+    setUserReactions((prev) => {
+      const updated = { ...prev };
+      if (newReaction) {
+        updated[mediaId] = newReaction;
+      } else {
+        delete updated[mediaId];
+      }
+      return updated;
+    });
+
+    setReactionCounts((prev) => {
+      const currentCounts = prev[mediaId] || { likes: 0, dislikes: 0 };
+      let likes = currentCounts.likes;
+      let dislikes = currentCounts.dislikes;
+
+      if (currentReaction === "like") likes = Math.max(0, likes - 1);
+      if (currentReaction === "dislike") dislikes = Math.max(0, dislikes - 1);
+
+      if (newReaction === "like") likes += 1;
+      if (newReaction === "dislike") dislikes += 1;
+
+      return {
+        ...prev,
+        [mediaId]: { likes, dislikes },
+      };
+    });
+
+    try {
+      if (newReaction === null) {
+        const { error } = await supabase
+          .from("media_reactions")
+          .delete()
+          .eq("user_id", userProfile.id)
+          .eq("media_id", mediaId);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("media_reactions").upsert(
+          {
+            user_id: userProfile.id,
+            media_id: mediaId,
+            reaction_type: newReaction,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,media_id" }
+        );
+
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Reaction save error:", err);
+
+      setReactionCounts((prev) => ({
+        ...prev,
+        [mediaId]: oldCounts,
+      }));
+
+      setUserReactions((prev) => {
+        const restored = { ...prev };
+        if (currentReaction) {
+          restored[mediaId] = currentReaction;
+        } else {
+          delete restored[mediaId];
+        }
+        return restored;
+      });
+    }
+  };
+
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("page", newPage);
+      window.history.replaceState({}, "", url);
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handleSelectAlbum = (id) => {
+    if (homeMode !== "albums" || !albums.some((album) => album.id === id)) return;
+    setSelectedAlbumId(id);
+    setCurrentPage(1);
+    setMediaList([]);
+    setTotalCount(0);
+    setMediaError("");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("cat");
+    url.searchParams.delete("v");
+    url.searchParams.set("page", "1");
+    window.history.replaceState({}, "", url);
+    document.getElementById("jb-home-gallery")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // Open the selected video in the current tab without ad redirects.
+  const handleSelectMedia = (e, item) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // FREE cards and recommendations must belong to the approved catalog.
+    if (homeMode === "locked" || !item?.id ||
+        (homeMode === "free" && (!item.is_free_preview ||
+          ![...mediaList, ...mostWatched].some((video) => video.id === item.id)))) return;
+
+    // Only a genuine user click on an approved FREE video can attempt the ad.
+    // Never trigger on URL auto-open, page refresh, redirects, or player events.
+    if (homeMode === "free" && e?.nativeEvent?.isTrusted === true) {
+      triggerPopunderForAdSupported("video-click");
+    }
+
+    scrollPosRef.current = window.scrollY || document.documentElement.scrollTop;
+    setAutoPlay(false);
+    setSelectedMedia(item);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", item.id);
+    url.searchParams.set("page", currentPage);
+    url.searchParams.delete("cat");
+    url.searchParams.delete("step");
+    url.searchParams.delete("autoplay");
+    window.history.replaceState({}, "", url);
+  };
+
+  // Start playback in the existing modal; never redirect to a Smartlink.
+  const handleStartPlayback = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setAutoPlay(true);
+  };
+
+  const handleCloseMedia = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    const targetY = scrollPosRef.current;
+    setSelectedMedia(null);
+    setPrivatePlayback({ id: "", url: "", status: "idle", error: "" });
+    setFreePlayback({ id: "", url: "", status: "idle", error: "" });
+    setAutoPlay(false);
+    setHasRecordedCurrentView(false);
+    viewRecordedRef.current = false;
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("v");
+    url.searchParams.delete("step");
+    url.searchParams.delete("autoplay");
+    window.history.replaceState({}, "", url);
+
+    setTimeout(() => {
+      window.scrollTo(0, targetY);
+    }, 20);
+  };
+
+  const handleRedeemCode = async (e) => {
+    e.preventDefault();
+    if (!accessCodeInput.trim() || !userProfile) return;
+
+    setRedeemLoading(true);
+
+    try {
+      const { data, error } = await supabase.rpc("redeem_access_code", {
+        p_code: accessCodeInput.trim().toUpperCase(),
+      });
+
+      if (error) throw error;
+
+      if (!data?.success) {
+        alert(data?.message || "Unable to redeem this access code.");
+        return;
+      }
+
+      setUserProfile((prev) => ({
+        ...prev,
+        account_type: data.account_type || "VIP",
+        vip_until: data.expires_at || prev?.vip_until || null,
+        is_activated: true,
+      }));
+
+      setAccessCodeInput("");
+      setShowRedeemModal(false);
+
+      const expiryText = data.expires_at
+        ? new Date(data.expires_at).toLocaleDateString("en-US")
+        : "N/A";
+
+      alert(`👑 VIP ACCESS Unlocked! Valid until ${expiryText}.`);
+    } catch (err) {
+      console.error("Redeem access code error:", err);
+      alert("Failed to redeem access code: " + (err?.message || "Unknown error"));
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
+
+  // Share button shown to all users in the modal comments header
+  const handleShareSelectedMedia = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!selectedMedia?.id) return;
+
+    const shareUrl = `https://www.jb-premium-hub.vip/v/${selectedMedia.id}`;
+    const shareData = {
+      title: selectedMedia.title || "JB Premium Hub",
+      text: "Watch this video on JB Premium Hub.",
+      url: shareUrl,
+    };
+
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopiedShareLink(true);
+        window.setTimeout(() => setCopiedShareLink(false), 2000);
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        console.error("Share error:", err);
+      }
+    }
+  };
+
+  // Request an authorized branded MP4 only. Never download playback originals.
+  // UI availability is not server-side authorization.
+  const handleDownloadSelectedMedia = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!BRANDED_DOWNLOAD_UI_ENABLED || !canDownload || downloadLockRef.current || !selectedMedia?.id) return;
+
+    const mediaId = selectedMedia.id;
+    downloadLockRef.current = true;
+    setDownloadBusy(true);
+    try {
+      // The server verifies this user's current VIP/admin entitlement and
+      // signs only an already-READY, R2-verified branded MP4. Never fall back
+      // to a playback ticket or original file.
+      const signedUrl = await requestBrandedDownloadUrl(mediaId);
+
+      // Let the browser's native download manager stream the R2 file to disk.
+      // The server signs Content-Disposition: attachment with a safe .mp4
+      // filename. Do not fetch/blob the entire file into browser RAM, and do
+      // not require R2 bucket CORS for a cross-origin JS fetch.
+      // Navigating to an attachment response starts a download, not playback.
+      window.location.assign(signedUrl);
+    } catch (error) {
+      // A 409 means the branded file is still in the processing queue.
+      // Never offer the raw/original MP4 as a fallback.
+      console.error("VIP branded download request failed:", error?.message || "unavailable");
+      const message = String(error?.message || "");
+      window.alert(
+        /still being branded|not ready|processing finishes/i.test(message)
+          ? "This video is being branded. Please try downloading it after processing completes."
+          : "We couldn't start the branded download. Please try again or contact support. Do not pay again for an existing membership."
+      );
+    } finally {
+      downloadLockRef.current = false;
+      setDownloadBusy(false);
+    }
+  };
+
+  return (
+    <div className="jbh-page min-h-screen text-white">
+      <div className="max-w-7xl mx-auto">
+        {homeMode === "locked" ? (
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-8 text-center" aria-label="Member home sign-in">
+            <h1 className="text-xl font-extrabold text-white">
+              {billingReady ? "Sign in to explore videos" : "Checking membership…"}
+            </h1>
+            <p className="mt-2 text-sm text-slate-300">
+              Video recommendations are shown only after your account access is verified.
+            </p>
+            {billingReady && !userProfile?.id && (
+              <Link to="/login" className="jbh-btn mt-4 inline-flex">Sign in</Link>
+            )}
+          </section>
+        ) : (
+        <>
+        {homeMode === "free" && (
+          <section className="mb-8 flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-emerald-300/20 bg-gradient-to-r from-emerald-500/15 via-slate-900/70 to-indigo-500/15 p-6 sm:p-7" aria-label="Free to Watch videos">
+            <div className="max-w-xl">
+              <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-emerald-300">Free to Watch</span>
+              <h2 className="mt-2 text-xl font-extrabold text-white sm:text-2xl">Watch selected videos for free.</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">Watch these videos as often as you like. Explore membership options whenever you're ready for the full collection.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={() => document.getElementById("jb-home-gallery")?.scrollIntoView({ behavior: "smooth" })} className="jbh-btn">Explore free videos</button>
+              <Link to="/subscribe" className="jbh-btn-quiet">View plans</Link>
+            </div>
+          </section>
+        )}
+        {/* Paid members and admins only: FREE users see Free to Watch, never Most Watched. */}
+        {/* MOST WATCHED VIDEOS SHOWCASE SECTION */}
+        {homeMode === "albums" && (
+        <div className="jbh-surface relative mb-10 overflow-hidden p-5 sm:p-7">
+          <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-indigo-500/10 blur-3xl"></div>
+          <div className="pointer-events-none absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl"></div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-indigo-400/25 bg-indigo-500/15 text-xl text-indigo-200">
+                🔥
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-xl md:text-2xl font-black text-white tracking-wide">
+                    {homeMode === "free" ? "Most Watched — Free" : "Most Watched"}
+                  </h2>
+                  <span className="rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
+                    Trending
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Popular right now
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {userProfile && (
+                <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 px-3 py-2 rounded-xl text-xs">
+                  <span className="text-slate-500 font-semibold">Account:</span>
+                  <span
+                    className={`font-black uppercase text-[11px] ${
+                      isAdmin ? "text-purple-400" : isVIP ? "text-amber-400" : "text-blue-400"
+                    }`}
+                  >
+                    {isAdmin ? "🛡️ Admin" : isVIP ? "👑 VIP" : membership.tier === "standard" ? "👤 Standard" : "🔒 Free"}
+                  </span>
+                </div>
+              )}
+              {userProfile && !isAdmin && !isVIP && (
+                <>
+                  <Link
+                    to="/subscribe"
+                    className="jbh-btn text-xs"
+                  >
+                    Explore plans
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowRedeemModal(true)}
+                    className="text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 bg-slate-900/80 text-xs font-semibold px-3 py-2.5 rounded-xl transition-colors"
+                  >
+                    Redeem code
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {mostWatchedLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 py-4">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <div key={n} className="bg-slate-950/80 border border-slate-800/80 rounded-2xl h-44 animate-pulse"></div>
+              ))}
+            </div>
+          ) : mostWatched.length > 0 ? (
+            <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3" aria-label="Most Watched carousel">
+              {mostWatched.length > 1 && (
+              <button type="button" aria-label="Previous Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: -460, behavior: "smooth" })}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-2xl font-bold text-white shadow-md transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:h-11 sm:w-11">
+                <span aria-hidden="true">‹</span>
+              </button>
+              )}
+            <div ref={mostWatchedScrollerRef} aria-label="Most Watched videos" className="relative z-10 flex min-w-0 flex-1 gap-4 overflow-x-auto scroll-smooth pb-2 pt-1 scrollbar-none snap-x snap-mandatory">
+              {mostWatched.map((item, index) => {
+                const rank = index + 1;
+                const badgeStyle =
+                  rank === 1
+                    ? "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 text-black shadow-amber-500/40"
+                    : rank === 2
+                    ? "bg-gradient-to-r from-slate-200 to-slate-400 text-black shadow-slate-300/30"
+                    : rank === 3
+                    ? "bg-gradient-to-r from-amber-700 to-amber-900 text-white shadow-amber-800/30"
+                    : "bg-slate-950/90 text-slate-300 border border-slate-800";
+
+                return (
+                  <div
+                    key={`top-${item.id}`}
+                    onClick={(e) => handleSelectMedia(e, item)}
+                    className="min-w-[190px] sm:min-w-[210px] md:min-w-[230px] max-w-[230px] bg-slate-950 border border-slate-800/80 hover:border-amber-500/60 rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl hover:shadow-amber-500/10 transition-all duration-300 cursor-pointer group snap-start flex flex-col justify-between shrink-0 hover:-translate-y-1"
+                  >
+                    <div>
+                      <div className="aspect-video bg-black relative overflow-hidden flex items-center justify-center">
+
+                        <div className={`absolute top-2 left-2 z-10 px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg ${badgeStyle}`}>
+                          #{rank} {rank === 1 ? "🔥" : ""}
+                        </div>
+
+                        <div className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
+                          {formatDuration(item.duration)}
+                        </div>
+
+                        {item.thumbnail_url ? (
+                          <img
+                            src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
+                            onError={handleThumbnailLoadError}
+                            alt={item.title}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                        ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
+                          <video
+                            src={`${getCdnUrl(item.media_url)}#t=1`}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                            preload="metadata"
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
+                            {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
+                          </div>
+                        )}
+
+    
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                          <div className="w-10 h-10 bg-indigo-500 group-hover:bg-indigo-400 text-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-300">
+                            <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3">
+                        <h4 className="text-white font-bold text-xs break-words group-hover:text-amber-400 transition-colors">
+                          {item.title}
+                        </h4>
+                        <div className="mt-2">
+                          <span
+                            onClick={(e) => isAdmin && handleOpenViewers(e, item)}
+                            className={`text-xs text-slate-400 ${isAdmin ? "hover:underline" : ""}`}
+                            title={isAdmin ? "Click to view watch logs (Admin)" : ""}
+                          >
+                            👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+              {mostWatched.length > 1 && (
+              <button type="button" aria-label="Next Most Watched videos"
+                onClick={() => mostWatchedScrollerRef.current?.scrollBy({ left: 460, behavior: "smooth" })}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-300/50 bg-slate-950/90 text-2xl font-bold text-white shadow-md transition hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 sm:h-11 sm:w-11">
+                <span aria-hidden="true">›</span>
+              </button>
+              )}
+            </div>
+          ) : (
+            <div className="p-6 bg-slate-950/40 border border-slate-800/60 rounded-2xl text-center text-slate-500 text-xs">
+              Featured videos will appear here.
+            </div>
+          )}
+        </div>
+
+        )}
+        {/* Member albums: text-only selectable tabs BELOW Most Watched. */}
+        {homeMode === "albums" && (
+          <section className="mb-8" aria-label="Member Albums">
+            {albumsLoading ? (
+              <p className="py-3 text-sm text-slate-400" role="status">Loading albums...</p>
+            ) : albumError ? (
+              <p role="alert" className="py-3 text-sm text-rose-200">{albumError}</p>
+            ) : albums.length === 0 ? (
+              <p className="py-3 text-sm text-slate-400">No albums available yet.</p>
+            ) : (
+              <div role="tablist" aria-label="Albums" className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-700/70">
+                {albums.map((album) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    key={album.id}
+                    aria-selected={selectedAlbumId === album.id}
+                    aria-controls="jb-home-gallery"
+                    onClick={() => handleSelectAlbum(album.id)}
+                    className={`relative border-b-2 px-1 pb-3 pt-2 text-sm font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 ${
+                      selectedAlbumId === album.id
+                        ? "border-indigo-400 text-white"
+                        : "border-transparent text-slate-400 hover:border-slate-500 hover:text-slate-100"
+                    }`}
+                  >
+                    {album.name}
+                    {isAdmin && !album.is_visible && <span className="ml-2 text-xs font-normal text-amber-300">(Hidden)</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* VAULT MEDIA LIST HEADER */}
+        <div id="jb-home-gallery" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 scroll-mt-24">
+          <h1 className="text-xl md:text-2xl font-bold text-white">
+            {homeMode === "free" ? "Free to Watch" : selectedAlbum?.name || "Album Videos"}
+          </h1>
+          <span className="text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl self-start sm:self-auto">
+            Showing {mediaList.length} of <strong className="text-indigo-300">{totalCount}</strong> videos
+          </span>
+        </div>
+
+        <AdSlot position="middle" enabled={adsEnabled} />
+
+        {/* MAIN VIDEO GRID */}
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+          </div>
+        ) : mediaError ? (
+          <div role="alert" className="text-center py-16 bg-slate-900/40 rounded-2xl border border-rose-400/30">
+            <p className="font-semibold text-rose-200">{mediaError}</p>
+            <button type="button" onClick={() => fetchMedia(currentPage)} className="mt-4 rounded-xl border border-white/20 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Try again</button>
+          </div>
+        ) : mediaList.length === 0 ? (
+          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+            <p className="text-slate-400">{homeMode === "free"
+              ? "Wala pang napiling Free to Watch videos. Maghihintay muna tayo ng pagpili ng admin."
+              : "Wala pang published videos sa album na ito."}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {mediaList.map((item) => (
+              <div
+                key={item.id}
+                id={`video-${item.id}`}
+                onClick={(e) => handleSelectMedia(e, item)}
+                className="group cursor-pointer bg-slate-900 border border-slate-800/80 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="aspect-video bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                    {item.thumbnail_url ? (
+                      <img
+                        src={getThumbnailDisplayUrl(item.thumbnail_url, item.id)}
+                            onError={handleThumbnailLoadError}
+                        alt={item.title}
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                    ) : item.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership.canViewAlbums ? (
+                      <video
+                        src={`${getCdnUrl(item.media_url)}#t=1`}
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                        preload="metadata"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-semibold">
+                        {PRIVATE_MEDIA_UI_ENABLED ? <img src={DEFAULT_THUMBNAIL_URL} onError={handleThumbnailLoadError} alt="JB Collections" className="max-w-[65%] max-h-[65%] object-contain opacity-75" /> : "Preview unavailable"}
+                      </div>
+                    )}
+                    <span className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md bg-black/85 px-2 py-1 text-[11px] font-semibold text-white shadow-md">
+                      {formatDuration(item.duration)}
+                    </span>
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+                      <div className="w-12 h-12 bg-indigo-600/90 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <svg className="w-6 h-6 text-white fill-current ml-0.5" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <h3 className="text-base font-semibold leading-snug text-white break-words whitespace-normal group-hover:text-red-400 transition-colors">
+                      {item.title}
+                    </h3>
+                    <div className="mt-2">
+                      <span
+                        onClick={(e) => isAdmin && handleOpenViewers(e, item)}
+                        className={`text-xs text-slate-400 ${isAdmin ? "hover:underline" : ""}`}
+                        title={isAdmin ? "Click to view watch logs (Admin)" : ""}
+                      >
+                        👁️ {viewCounts[item.id] ?? item.views_count ?? item.views ?? 0} views
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* PAGINATION */}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap justify-center items-center gap-3 mt-10 mb-6">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1 || loading}
+              className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer transition-all"
+            >
+              ← Previous
+            </button>
+
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3.5 py-1.5 rounded-xl">
+              <span className="text-xs text-slate-400 font-semibold">Page</span>
+              <select
+                value={currentPage}
+                onChange={(e) => handlePageChange(Number(e.target.value))}
+                className="bg-slate-950 border border-slate-800 text-white text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:border-red-500 cursor-pointer"
+              >
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
+                  <option key={pg} value={pg}>
+                    {pg}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-400 font-semibold">
+                of <strong className="text-white">{totalPages}</strong>
+              </span>
+            </div>
+
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages || loading}
+              className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-red-600/50 text-xs font-bold rounded-xl text-white disabled:opacity-40 cursor-pointer transition-all"
+            >
+              Next →
+            </button>
+          </div>
+        )}
+        </>
+        )}
+
+      </div>
+
+      {/* VIDEO PLAYER MODAL */}
+      {selectedMedia && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-2 md:p-6"
+          onClick={handleCloseMedia}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800/80 w-full max-w-5xl max-h-[95vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 md:px-6 md:py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900 shrink-0">
+              <div className="flex flex-col pr-4">
+                <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-[.12em] md:text-xs">
+                  Now playing
+                </span>
+                <h2 className="text-sm md:text-lg font-bold text-white break-words mt-0.5">
+                  {selectedMedia.title}
+                </h2>
+              </div>
+              <button
+                onClick={handleCloseMedia}
+                className="w-9 h-9 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl flex items-center justify-center transition-all cursor-pointer font-bold shrink-0 border border-slate-700/50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:#6366f1_#0f172a] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-slate-950 [&::-webkit-scrollbar-thumb]:bg-indigo-500 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-indigo-400">
+              <div className="relative flex w-full min-h-[220px] items-center justify-center bg-black p-2 sm:p-3 md:min-h-[340px]">
+                
+                {/* STEP 2 CLICK-TO-PLAY OVERLAY FOR AD-SUPPORTED USERS */}
+                {!isAdFree && !autoPlay && selectedCanPlay && (
+                  <div
+                    onClick={handleStartPlayback}
+                    className="absolute inset-0 z-30 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center cursor-pointer group transition-all p-4 text-center"
+                  >
+                    <div className="w-20 h-20 bg-red-600 group-hover:bg-red-500 text-white rounded-full flex items-center justify-center shadow-2xl group-hover:scale-110 transition-all duration-300 border-2 border-white/20">
+                      <svg className="w-10 h-10 fill-current ml-1" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                    <p className="mt-4 text-white font-black text-base md:text-xl tracking-wide drop-shadow-md">
+                      Click to Play Video
+                    </p>
+                    <span className="mt-2 text-xs text-slate-300 font-medium bg-slate-900/80 px-4 py-1.5 rounded-full border border-slate-700/80 shadow-md">
+                      ▶ Tap button to start video playback
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex h-full w-full max-w-4xl items-center justify-center [&_video]:max-w-full [&_video]:object-contain [&_video]:bg-black">
+                  {!selectedCanPlay ? (
+                    <div className="flex w-full flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-slate-950 p-8 text-center text-slate-100">
+                      <span className="text-4xl" aria-hidden="true">🔒</span>
+                      <h3 className="text-xl font-bold">Unlock the full media library</h3>
+                      <p className="max-w-md text-sm leading-relaxed text-slate-300">
+                        This video is for members. Watch selected Free to Watch videos or choose a plan to access the full collection.
+                      </p>
+                      <Link to="/subscribe" onClick={() => setSelectedMedia(null)} className="jbh-btn">Explore membership plans</Link>
+                    </div>
+                  ) : ((isSelectedFreePreview && freePlayback.id === selectedMedia.id && freePlayback.url) ||
+                    (!isSelectedFreePreview && (!PRIVATE_MEDIA_UI_ENABLED ||
+                      (privatePlayback.id === selectedMedia.id && privatePlayback.url)))) ? (
+                  <VIPVideoPlayer
+                    key={selectedMedia.id}
+                    mediaId={selectedMedia.id}
+                    currentDuration={selectedMedia.duration}
+                    mainVideoUrl={isSelectedFreePreview ? freePlayback.url : PRIVATE_MEDIA_UI_ENABLED ? privatePlayback.url : getCdnUrl(selectedMedia.media_url)}
+                    isAdFree={billingReady ? !adsEnabled : false}
+                    accountType={userProfile?.account_type}
+                    vipUntil={userProfile?.vip_until}
+                    userProfile={userProfile}
+                    onPlay={handleVideoPlay}
+                    onDurationUpdate={handleDurationUpdate}
+                    autoPlay={autoPlay}
+                  />
+                  ) : (
+                    <div role="status" className="w-full min-h-64 flex items-center justify-center p-6 text-center text-sm text-slate-300" aria-live="polite">
+                      {isSelectedFreePreview
+                        ? (freePlayback.id === selectedMedia.id && freePlayback.error
+                          ? freePlayback.error : "Authorizing Free to Watch playback...")
+                        : (privatePlayback.id === selectedMedia.id && privatePlayback.error
+                          ? privatePlayback.error : "Checking private video access...")}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {isSelectedFreePreview && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-indigo-400/20 bg-indigo-500/10 px-4 py-4 md:px-6">
+                  <div>
+                    <p className="text-sm font-bold text-white">Enjoying Free to Watch?</p>
+                    <p className="mt-1 text-xs text-slate-300">Replay selected free videos whenever you like, or unlock the full library.</p>
+                  </div>
+                  <Link to="/subscribe" onClick={() => setSelectedMedia(null)} className="jbh-btn text-sm">See membership plans</Link>
+                </div>
+              )}
+              <div className="px-4 py-3 md:px-6 border-t border-b border-slate-800/80 bg-slate-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span
+                    onClick={(e) => isAdmin && handleOpenViewers(e, selectedMedia)}
+                    className={`text-xs text-slate-400 font-semibold bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
+                      isAdmin ? "hover:text-red-400 hover:border-red-500/50 cursor-pointer" : ""
+                    }`}
+                    title={isAdmin ? "Click to view user watch logs (Admin)" : ""}
+                  >
+                    👁️ {viewCounts[selectedMedia.id] ?? selectedMedia.views_count ?? selectedMedia.views ?? 0} Total Views {isAdmin && "🔍 (Log)"}
+                  </span>
+                  {selectedMedia.description && !selectedMedia.description.includes("Auto-synced") && (
+                    <p className="text-slate-400 text-xs md:text-sm line-clamp-2">{selectedMedia.description}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={(e) => handleReaction(e, selectedMedia.id, "like")}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      userReactions[selectedMedia.id] === "like"
+                        ? "bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-600/20"
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700"
+                    }`}
+                  >
+                    <span>👍 Like</span>
+                    <span className="bg-black/40 px-2 py-0.5 rounded-md text-[10px]">
+                      {reactionCounts[selectedMedia.id]?.likes || 0}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={(e) => handleReaction(e, selectedMedia.id, "dislike")}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      userReactions[selectedMedia.id] === "dislike"
+                        ? "bg-red-600 text-white border-red-500 shadow-lg shadow-red-600/20"
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700"
+                    }`}
+                  >
+                    <span>👎 Dislike</span>
+                    <span className="bg-black/40 px-2 py-0.5 rounded-md text-[10px]">
+                      {reactionCounts[selectedMedia.id]?.dislikes || 0}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="px-4 py-5 md:px-6 bg-slate-900/90">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>💬 Comments</span>
+                    <span className="text-xs text-slate-400">({comments.length})</span>
+                  </h3>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleShareSelectedMedia}
+                      className="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                      title="Share video"
+                    >
+                      <span>📤</span>
+                      <span>{copiedShareLink ? "Copied!" : "Share"}</span>
+                    </button>
+
+                    {canDownload && (
+                      <div className="flex flex-col items-start gap-1">
+                        <button
+                          type="button"
+                          onClick={handleDownloadSelectedMedia}
+                          disabled={downloadBusy || !BRANDED_DOWNLOAD_UI_ENABLED}
+                          aria-disabled={!BRANDED_DOWNLOAD_UI_ENABLED}
+                          className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-3 py-2 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                          title={BRANDED_DOWNLOAD_UI_ENABLED
+                            ? "Save an approved branded video to your device (VIP / Admin)"
+                            : "Downloads are temporarily unavailable"}
+                        >
+                          <span>📥</span>
+                          <span>{!BRANDED_DOWNLOAD_UI_ENABLED ? "Unavailable"
+                            : downloadBusy ? "Downloading..." : "Download"}</span>
+                        </button>
+                        {!BRANDED_DOWNLOAD_UI_ENABLED && (
+                          <span role="status" className="text-xs text-slate-300 max-w-56">
+                            Downloads are temporarily unavailable. VIP playback and ad-free access remain available.
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {userProfile ? (
+                  <form onSubmit={handleAddComment} className="flex flex-col gap-3 mb-6 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+                    <textarea
+                      rows={2}
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Isulat ang iyong komento... (Bawal ang website links/URLs)"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-red-500 resize-none"
+                    />
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
+                        <span className="text-xs text-amber-400 font-bold">
+                          🛡 Security: {captchaNum1} + {captchaNum2} =
+                        </span>
+                        <input
+                          type="number"
+                          value={captchaInput}
+                          onChange={(e) => setCaptchaInput(e.target.value)}
+                          placeholder="Sagot"
+                          className="w-16 bg-slate-950 border border-slate-700 text-center text-xs text-white font-bold rounded-lg px-2 py-1 focus:outline-none focus:border-red-500"
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={commentLoading}
+                        className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
+                      >
+                        {commentLoading ? "Posting..." : "Post Comment"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl text-center mb-6">
+                    <p className="text-xs text-slate-400">
+                      🔒 Kailangan mong <strong className="text-white">Mag-login o Mag-register</strong> para makapag-comment.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {comments.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic py-2">Wala pang komento. Maging una sa pag-comment!</p>
+                  ) : (
+                    comments.map((c) => (
+                      <div key={c.id} className="p-3.5 bg-slate-950/60 border border-slate-800/80 rounded-xl">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-bold text-slate-200">{c.user_name || "User"}</span>
+                          <span className="text-[10px] text-slate-500">
+                            {c.created_at ? new Date(c.created_at).toLocaleDateString() : ""}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 break-words leading-relaxed">{c.comment}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN VIEWERS LOG MODAL */}
+      {showViewersModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowViewersModal(false)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full relative shadow-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setShowViewersModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <span>👁️</span> Video Viewers Log (Admin Only)
+            </h3>
+            <p className="text-xs text-slate-400 mb-4 break-words border-b border-slate-800 pb-2">
+              {viewersModalMedia?.title}
+            </p>
+
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-800/60 pr-1">
+              {viewersLoading ? (
+                <div className="text-center py-8 text-xs text-slate-400">Loading viewer accounts...</div>
+              ) : viewersList.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-500 italic">No user views recorded yet for this video.</div>
+              ) : (
+                viewersList.map((vw, idx) => (
+                  <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-slate-200">
+                        {vw.profile?.full_name || vw.profile?.email || (vw.user_id ? `User ID: ${vw.user_id.slice(0, 8)}...` : "Anonymous Guest")}
+                      </div>
+                      {vw.profile?.email && (
+                        <div className="text-[10px] text-slate-500 font-mono">{vw.profile.email}</div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase ${
+                        vw.profile?.account_type === "vip" ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-slate-800 text-slate-400"
+                      }`}>
+                        {vw.profile?.account_type || "Guest"}
+                      </span>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {vw.created_at ? new Date(vw.created_at).toLocaleString() : "N/A"}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REDEEM CODE MODAL */}
+      {showRedeemModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 max-w-md w-full text-center relative shadow-2xl">
+            <button
+              onClick={() => setShowRedeemModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+
+            <div className="w-14 h-14 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-3 border border-red-500/30 text-2xl">
+              🔑
+            </div>
+            <h3 className="text-xl font-bold text-white mb-1">Redeem Access Code</h3>
+            <p className="text-slate-400 text-xs mb-6">
+              Enter your VIP Access Code to unlock ad-free viewing and downloads.
+            </p>
+
+            <form onSubmit={handleRedeemCode} className="flex flex-col gap-3">
+              <input
+                type="text"
+                value={accessCodeInput}
+                onChange={(e) => setAccessCodeInput(e.target.value)}
+                placeholder="e.g. VIP-86TTQM"
+                className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white uppercase text-center font-mono font-bold tracking-widest focus:outline-none focus:border-red-500"
+              />
+
+              <button
+                type="submit"
+                disabled={redeemLoading}
+                className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-red-600/20"
+              >
+                {redeemLoading ? "Redeeming..." : "Redeem Code Now ➔"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

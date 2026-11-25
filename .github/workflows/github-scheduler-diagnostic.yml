@@ -1,0 +1,71 @@
+
+# ======================================================
+# JB PREMIUM HUB — PHASE 123J-60
+# GITHUB SCHEDULER REGISTRATION DIAGNOSTIC
+#
+# SAFE:
+# - No PayMongo API calls
+# - No Supabase requests
+# - No secrets
+# - No payment processing
+# ======================================================
+
+name: JB Scheduler Diagnostic
+
+on:
+  schedule:
+    # UTC; every 10 minutes, away from minute 0.
+    - cron: '11-51/10 * * * *'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jb-scheduler-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  scheduler-diagnostic:
+    name: Verify GitHub Scheduler
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Print diagnostic information
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          set -euo pipefail
+
+          echo "======================================"
+          echo "JB PREMIUM HUB - SCHEDULER DIAGNOSTIC"
+          echo "======================================"
+
+          echo "Workflow: $WORKFLOW_NAME"
+          echo "Event: $EVENT_NAME"
+          echo "Branch: $GIT_REF"
+          echo "Run ID: $RUN_ID"
+          echo "Attempt: $RUN_ATTEMPT"
+          echo "Schedule: ${SCHEDULE:-manual}"
+
+          echo "UTC time:"
+          date -u '+%Y-%m-%d %H:%M:%S UTC'
+
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            echo "RESULT: AUTOMATIC_SCHEDULER_TRIGGERED"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "RESULT: MANUAL_DIAGNOSTIC_TRIGGERED"
+          else
+            echo "RESULT: UNEXPECTED_EVENT"
+            exit 1
+          fi
+
+          echo "No payment operations performed."

@@ -1,0 +1,32 @@
+name: JB Phase 344 Dashboard Membership Cards (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/admin/AdminDashboard.jsx'
+      - 'supabase/migrations/20261122193000_jb_admin_account_tier_counts_v1.sql'
+      - 'scripts/tests/test-phase344-dashboard-membership-cards.mjs'
+      - '.github/workflows/jb-phase344-dashboard-cards.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Dashboard membership tests
+        run: node --test scripts/tests/test-phase344-dashboard-membership-cards.mjs
+      - name: Media and payment smoke regressions
+        run: |
+          node --test scripts/tests/test-phase343-media-library-bulk-delete.mjs
+          node --test scripts/tests/test-phase341-media-management.mjs
+      - name: Production frontend compilation
+        run: npm run build

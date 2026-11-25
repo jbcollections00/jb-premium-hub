@@ -1,0 +1,389 @@
+name: JB PayMongo Subscribe UI Review (NO DEPLOY)
+on:
+  pull_request:
+    paths:
+      - 'src/App.jsx'
+      - 'src/components/layout/ProtectedRoute.jsx'
+      - 'src/pages/public/Login.jsx'
+      - 'src/pages/public/Home.jsx'
+      - 'src/services/thumbnailDisplay.js'
+      - '.github/tests/thumbnail-display.test.mjs'
+      - 'src/services/freePreview.js'
+      - 'supabase/functions/jb-free-preview-ticket/**'
+      - '.github/tests/free-preview-worker-contract.test.ts'
+      - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
+      - 'supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql'
+      - 'src/components/VIPVideoPlayer.jsx'
+      - 'src/components/AdSlot.jsx'
+      - 'src/components/SocialBar.jsx'
+      - 'src/pages/public/Messages.jsx'
+      - 'src/pages/legal/SupportPage.jsx'
+      - 'src/components/layout/Header.jsx'
+      - 'src/components/layout/Footer.jsx'
+      - 'src/components/layout/MainLayout.jsx'
+      - 'src/components/VIPVideoPlayer.jsx'
+      - 'src/services/billingAccess.js'
+      - 'src/pages/public/Subscribe.jsx'
+      - 'src/pages/public/BuyVip.jsx'
+      - 'src/pages/public/Profile.jsx'
+      - 'src/pages/admin/AdminDashboard.jsx'
+      - 'src/pages/admin/AdminBillingTab.jsx'
+      - 'supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql'
+      - 'src/pages/admin/AdminLogin.jsx'
+      - 'src/pages/admin/AdminMembershipModal.jsx'
+      - 'src/pages/admin/AdminUsersTab.jsx'
+      - 'src/pages/admin/AdminMessagesTab.jsx'
+      - 'src/pages/admin/SupportTicketsTab.jsx'
+      - 'src/pages/admin/AccessCodesTab.jsx'
+      - 'src/pages/admin/AdminMediaTab.jsx'
+      - 'src/pages/admin/adminWorkspace.css'
+      - 'supabase/migrations/20261114190000_jb_billing_my_history_v1.sql'
+      - 'package-lock.json'
+      - '.github/workflows/jb-subscribe-ui-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-subscribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify reuse of thumbnail URLs and logo fallbacks
+        run: node --test .github/tests/thumbnail-display.test.mjs
+      - name: Check route and default-off checkout
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const app = readFileSync('src/App.jsx', 'utf8');
+          const page = readFileSync('src/pages/public/Subscribe.jsx', 'utf8');
+          assert.match(app, /path="\/subscribe" element=\{<Subscribe \/>\}/);
+          assert.match(page, /VITE_JB_LIVE_CHECKOUT_UI_ENABLED === 'true'/);
+          // LIVE button must not be shown to non-tester accounts during controlled rollout.
+          assert.match(page, /VITE_JB_LIVE_CHECKOUT_UI_MODE/);
+          assert.match(page, /VITE_JB_LIVE_CHECKOUT_TESTER_USER_ID/);
+          assert.match(page, /CHECKOUT_UI_MODE === 'tester'/);
+          assert.match(page, /user\?\.id\?\.toLowerCase\(\) === TESTER_UI_USER_ID/);
+          assert.match(page, /CHECKOUT_UI_MODE === 'public'/);
+          assert.doesNotMatch(page, /checkout_debug/);
+          assert.doesNotMatch(page, /Read-only checkout diagnostics/);
+          assert.doesNotMatch(page, /QA ONLY/);
+          assert.match(page, /One-time payment/);
+          assert.match(page, /const SITE_ORIGIN = 'https:\/\/www\.jb-premium-hub\.vip'/);
+          assert.match(page, /window\.location\.origin === SITE_ORIGIN/);
+          assert.match(page, /disabled=\{!checkoutUiEnabled/);
+          assert.match(page, /jb_billing_my_access/);
+          assert.match(page, /function formatEntitlement\(raw\)/);
+          assert.match(page, /entitlement\.canDownload/);
+          assert.match(page, /entitlement\.expiry/);
+          assert.doesNotMatch(page, /JSON\.stringify\(access, null, 2\)/);
+          assert.match(page, /jb-paymongo-checkout-live/);
+          // Ensure TEST checkout is opt-in and isolated from LIVE.
+          assert.match(page, /VITE_JB_TEST_CHECKOUT_UI_ENABLED === 'true'/);
+          assert.match(page, /jb-billing-checkout-test/);
+          assert.match(page, /if \(!testCheckoutUiEnabled \|\| busy \|\| !user\) return;/);
+          assert.match(page, /data\?\.environment !== 'test'/);
+          assert.match(page, /outcome === 'test-return'/);
+          assert.match(page, /outcome === 'test-cancel'/);
+          // The old manual payment page must no longer accept receipt uploads.
+          // Public-site polish: no obsolete branding or internal support errors.
+          const homePage = readFileSync('src/pages/public/Home.jsx','utf8');
+          const homeRules = readFileSync('src/services/homeDiscovery.js','utf8');
+          const messagesPage = readFileSync('src/pages/public/Messages.jsx','utf8');
+          const supportPage = readFileSync('src/pages/legal/SupportPage.jsx','utf8');
+          const header = readFileSync('src/components/layout/Header.jsx','utf8');
+          const footer = readFileSync('src/components/layout/Footer.jsx','utf8');
+          assert.ok(homePage.includes('shouldDisplayAds'));
+          assert.ok(homePage.includes('triggerPopunderForAdSupported'));
+          // Visible timeline must remain available even when native controls hide.
+          const videoPlayer = readFileSync('src/components/VIPVideoPlayer.jsx', 'utf8');
+          assert.match(videoPlayer,/Video timeline — seek to a time/);
+          assert.match(videoPlayer,/type="range"/);
+          assert.match(videoPlayer,/onTimeUpdate=/);
+          assert.match(videoPlayer,/onLoadedMetadata=\{handleLoadedMetadata\}/);
+          assert.match(videoPlayer,/controls=\{hasStarted\}/);
+          assert.match(videoPlayer,/onPlay=\{handleVideoPlay\}/);
+          assert.match(videoPlayer,/max-h-\[52dvh\]/);
+          assert.doesNotMatch(homePage,/\[&_video\]:max-h-\[70vh\]/);
+          assert.ok(homePage.includes('const adsEnabled = shouldDisplayAds'));
+          assert.ok(homePage.includes('if (!adsEnabled'));
+          assert.match(homePage,/POPUNDER_EVERY_N_VIDEOS = 3/);
+          assert.doesNotMatch(homePage,/triggerPopunderEveryFiveVideos/);
+          // Phase 315: selection limit and server-authorized free playback.
+          const freeService = readFileSync('src/services/freePreview.js','utf8');
+          const freeIssuer = readFileSync('supabase/functions/jb-free-preview-ticket/index.ts','utf8');
+          const ticketCode = readFileSync('supabase/functions/jb-free-preview-ticket/ticket.ts','utf8');
+          const freeSql = readFileSync('supabase/migrations/20261115120000_jb_free_preview_v1.sql','utf8');
+          const mediaAdmin = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
+          assert.match(mediaAdmin,/jb_set_media_free_preview_v1/);
+          assert.match(mediaAdmin,/FREE_PREVIEW_MAX = 20/);
+          assert.match(mediaAdmin,/!FREE_PREVIEW_UI_ENABLED \|\| Boolean\(freePreviewUpdatingId\)/);
+          assert.match(mediaAdmin,/Make free/);
+          assert.ok(homePage.includes('homeMode === "free"'));
+          assert.ok(homePage.includes('approvedFreeCatalog(data)'));
+          assert.match(homePage,/requestFreePreviewUrl\(id\)/);
+          const catalogSql = readFileSync('supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql','utf8');
+          assert.match(catalogSql,/SECURITY DEFINER/);
+          assert.match(catalogSql,/m\.is_free_preview IS TRUE/);
+          assert.match(catalogSql,/REVOKE ALL ON FUNCTION public\.jb_free_preview_catalog_v1\(\) FROM PUBLIC, anon/);
+          assert.match(homePage,/supabase\.rpc\("jb_free_preview_catalog_v1"\)/);
+          assert.match(homePage,/!membership\.canViewAlbums/);
+          assert.ok(homeRules.includes('hasOwnProperty.call(item, "media_url")'));
+          assert.ok(homePage.includes('Could not load available videos'));
+          assert.match(homePage,/Unlock the full media library/);
+          assert.match(homePage,/!selectedCanPlay \?/);
+          assert.match(homePage,/item\.media_url && !PRIVATE_MEDIA_UI_ENABLED && billingReady && membership\.canViewAlbums/);
+          assert.ok(freeService.includes('PRIVATE_MEDIA_UI_ENABLED'));
+          assert.ok(freeService.includes('VITE_JB_FREE_PREVIEW_UI_ENABLED'));
+          assert.ok(homePage.includes('getHomeMode(billingReady'));
+          assert.ok(homePage.includes('homeMode === "albums"'));
+          assert.ok(freeService.includes('jb-free-preview-ticket'));
+          assert.ok(freeService.includes('"/v/"') || freeService.includes('"/v/" + mediaId'));
+          assert.ok(freeService.includes('PRIVATE_WORKER_ORIGIN'));
+          assert.ok(freeIssuer.includes("JB_FREE_PREVIEW_TICKETS_ENABLED"));
+          assert.ok(freeIssuer.includes("JB_FREE_PREVIEW_PRIVATE_CDN_CONFIRMED"));
+          assert.ok(freeIssuer.includes("JB_PRIVATE_MEDIA_HMAC_SECRET"));
+          assert.ok(freeIssuer.includes('admin.auth.getUser(bearer[1])'));
+          assert.ok(freeIssuer.includes("video.is_free_preview !== true"));
+          assert.ok(freeIssuer.includes("data.action !== 'play'"));
+          assert.ok(freeIssuer.includes("signTicket(signingSecret"));
+          assert.ok(freeIssuer.includes("'/v/' + mediaId + '/play'"));
+          assert.ok(!freeIssuer.includes("GetObjectCommand"));
+          assert.ok(!freeIssuer.includes("R2_SECRET_ACCESS_KEY"));
+          assert.ok(ticketCode.includes("crypto.subtle.sign('HMAC'"));
+          assert.ok(ticketCode.includes("encoder.encode(body)"));
+          assert.match(freeSql,/ADD COLUMN IF NOT EXISTS is_free_preview boolean NOT NULL DEFAULT false/);
+          assert.match(freeSql,/pg_advisory_xact_lock\(315, 20\)/);
+          assert.match(freeSql,/v_count >= 20/);
+          assert.match(freeSql,/public\.is_current_user_admin\(\)/);
+          assert.match(freeSql,/REVOKE ALL ON FUNCTION public\.jb_set_media_free_preview_v1/);
+                    const nativeAd = readFileSync('src/components/AdSlot.jsx','utf8');
+          const socialAd = readFileSync('src/components/SocialBar.jsx','utf8');
+          const mainLayout = readFileSync('src/components/layout/MainLayout.jsx','utf8');
+          assert.match(nativeAd,/sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
+          assert.doesNotMatch(nativeAd,/allow-same-origin/);
+          assert.match(nativeAd,/Number\.isFinite\(event\.data\.height\)/);
+          assert.ok(mainLayout.includes('shouldDisplayAds'));
+          assert.match(mainLayout,/location\.pathname === "\/home" && showSocialBar/);
+          assert.match(socialAd,/if \(!enabled \|\| typeof document === "undefined"\) return/);
+          assert.ok(homePage.includes('isAdFree={billingReady ? !adsEnabled : false}'));
+          assert.doesNotMatch(homePage,/Video Vault|Watch this video on JB Premium Hub Vault|If the Console shows a CORS\/network error/);
+          assert.doesNotMatch(messagesPage,/JB Vault Admin/);
+          assert.match(messagesPage,/JB Premium Hub/);
+          assert.match(supportPage,/jbh-field/);
+          assert.match(supportPage,/jbh-btn/);
+          assert.match(header,/src="\/jb-logo.png"/);
+          assert.match(footer,/src="\/jb-logo.png"/);
+                    const legacy = readFileSync('src/pages/public/BuyVip.jsx', 'utf8');
+          const profile = readFileSync('src/pages/public/Profile.jsx', 'utf8');
+          assert.match(legacy, /<Navigate to=\{/);
+          assert.match(legacy, /\/subscribe/);
+          assert.doesNotMatch(legacy, /support_tickets|Ownbank_QR|handleSubmitPayment/);
+          assert.match(profile, /navigate\(\s*"\/subscribe"/);
+          // Admin visual redesign must keep the existing admin navigation and auth guards.
+          const admin = readFileSync('src/pages/admin/AdminDashboard.jsx', 'utf8');
+          for (const id of ['dashboard','users','billing','messages','tickets','codes','upload']) {
+            assert.ok(admin.includes("id: '" + id + "'"), 'Missing visible admin tab: ' + id);
+          }
+          for (const id of ['events','chat-reports','chat-analytics']) {
+            assert.ok(!admin.includes("id: '" + id + "'"), 'Hidden admin tab must stay off navigation: ' + id);
+          }
+          // Hidden workflows remain in code for optional later restoration.
+          assert.match(admin,/activeTab === 'events'/);
+          assert.match(admin,/activeTab === 'chat-reports'/);
+          assert.match(admin,/activeTab === 'chat-analytics'/);
+          assert.match(admin,/onClick=\{handleAdminLogout\}/);
+          assert.match(admin,/supabase\.auth\.signOut\(\)/);
+          assert.doesNotMatch(admin,/const isAdmin = localStorage\.getItem/);
+          assert.match(admin,/import AdminBillingTab from/);
+          assert.match(admin,/activeTab === 'billing'/);
+          assert.match(admin,/activeTab === 'dashboard'/);
+          // Phase 344: actual active membership entitlements, not legacy profile labels.
+          assert.match(admin,/const registeredProfileCount = users.filter/);
+          assert.match(admin,/supabase\.rpc\('jb_admin_account_tier_counts_v1'\)/);
+          assert.match(admin,/Account membership tiers/);
+          assert.match(admin,/label: 'Free Account Users'/);
+          assert.match(admin,/label: 'Standard Account Users'/);
+          assert.match(admin,/label: 'VIP Account Users'/);
+          assert.doesNotMatch(admin,/label: 'Regular profiles'|label: 'Admin profiles'/);
+          assert.match(admin,/src="\/jb-logo\.png"/);
+          assert.match(admin,/jbh-admin-kpi/);
+          assert.match(admin,/jbh-admin-hero/);
+          assert.doesNotMatch(admin,/name: 'Guest profiles'|label: 'Guest profiles'|Guest Activity|VIP Upgrade Conversion Rate|Standard Users/);
+          assert.equal((admin.match(/onClick=\{handleAdminLogout\}/g)||[]).length, 1);
+          const adminCss = readFileSync('src/pages/admin/adminWorkspace.css','utf8');
+          for (const path of [
+            'AdminUsersTab.jsx','AdminMessagesTab.jsx','SupportTicketsTab.jsx',
+            'AccessCodesTab.jsx','AdminMediaTab.jsx'
+          ]) {
+            const text = readFileSync('src/pages/admin/' + path,'utf8');
+            assert.match(text,/jbh-admin-page/,'Missing premium admin page: ' + path);
+          }
+          assert.match(admin,/import '\.\/adminWorkspace\.css'/);
+          assert.match(adminCss,/jbh-admin-page-head/);
+          assert.match(adminCss,/jbh-admin-panel/);
+          assert.match(adminCss,/jbh-admin-input/);
+          assert.match(adminCss,/jbh-admin-primary/);
+          assert.match(adminCss,/jbh-admin-dialog/);
+          const adminLogin = readFileSync('src/pages/admin/AdminLogin.jsx','utf8');
+          assert.match(adminLogin,/src="\/jb-logo.png"/);
+          assert.match(adminLogin,/signInWithPassword/);
+          const modal = readFileSync('src/pages/admin/AdminMembershipModal.jsx','utf8');
+          assert.match(modal,/jbh-admin-dialog/);
+          assert.match(modal,/jb_admin_membership_grant/);
+          const media = readFileSync('src/pages/admin/AdminMediaTab.jsx','utf8');
+          assert.match(media,/handleBulkUploadToCloudflare/);
+          assert.match(media,/createR2UploadUrl/);
+          assert.match(media,/handleDeleteMedia/);
+          const support = readFileSync('src/pages/admin/SupportTicketsTab.jsx','utf8');
+          assert.match(support,/handleSendReply/);
+          const messages = readFileSync('src/pages/admin/AdminMessagesTab.jsx','utf8');
+          assert.match(messages,/handleSendMessage/);
+          const billing = readFileSync('src/pages/admin/AdminBillingTab.jsx','utf8');
+          const billingSql = readFileSync('supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql','utf8');
+          assert.match(billing,/jb_billing_admin_overview_v1/);
+          assert.match(billing,/data\.read_only !== true/);
+          assert.match(billing,/paid_gross_centavos/);
+          assert.match(billing,/pending_checkouts/);
+          assert.match(billing,/members\.available === true/);
+          assert.doesNotMatch(billing,/\.from\('jb_billing_orders'\)/);
+          assert.match(billingSql,/SECURITY DEFINER/);
+          assert.match(billingSql,/SET search_path = ''/);
+          assert.match(billingSql,/public\.is_current_user_admin\(\)/);
+          assert.match(billingSql,/auth\.uid\(\)/);
+          assert.match(billingSql,/REVOKE ALL ON FUNCTION.*FROM PUBLIC/);
+          assert.match(billingSql,/GRANT EXECUTE ON FUNCTION.*TO authenticated/);
+          assert.match(billingSql,/o\.provider_environment = 'live'/);
+          assert.match(billingSql,/o\.status = 'paid' AND o\.paymongo_payment_id IS NOT NULL/);
+          assert.match(billingSql,/coverage\.dated_link_count = coverage\.paid_count/);
+          assert.doesNotMatch(billingSql,/SUPABASE_SERVICE_ROLE_KEY|PAYMONGO_SECRET_KEY/);
+
+                    const guard = readFileSync('src/components/layout/ProtectedRoute.jsx', 'utf8');
+          const login = readFileSync('src/pages/public/Login.jsx', 'utf8');
+          assert.match(guard, /state=\{\{ from: location\.pathname/);
+          assert.match(login, /location\.state\?\.from/);
+          assert.match(login, /navigate\(safeDestination, \{ replace: true \}\)/);
+          console.log('Subscription route, fail-closed checkout, and return-after-login verified');
+          NODE
+      - name: Verify entitlement resolver behavior (NO NETWORK)
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const code = readFileSync('src/services/billingAccess.js','utf8');
+          const start = code.indexOf('export function normalizeBillingAccess');
+          const end = code.indexOf('export async function getBillingAccess');
+          const fragment = code.slice(start,end).replace('export function','function');
+          const second = code.slice(code.indexOf('export function getLegacyPrivileges')).replaceAll('export function','function');
+          const testModule = 'data:text/javascript,' + encodeURIComponent(fragment + second + '\nexport {normalizeBillingAccess, resolveMemberPresentation};');
+          const {normalizeBillingAccess, resolveMemberPresentation} = await import(testModule);
+          const future = new Date(Date.now()+86400000).toISOString();
+          const past = new Date(Date.now()-86400000).toISOString();
+          const free = normalizeBillingAccess([{tier:'free',can_view_albums:false,can_download:false,show_ads:false,access_expires_at:null}]);
+          const standard = normalizeBillingAccess([{tier:'standard',can_view_albums:true,can_download:false,show_ads:true,access_expires_at:future}]);
+          const vip = normalizeBillingAccess([{tier:'vip',can_view_albums:true,can_download:true,show_ads:false,access_expires_at:future}]);
+          assert.equal(free.canDownload,false);
+          assert.equal(standard.showAds,true);
+          assert.equal(vip.canDownload,true);
+          assert.equal(resolveMemberPresentation({role:'admin'},free).isAdmin,true);
+          assert.equal(resolveMemberPresentation({account_type:'vip',vip_until:future},free).canDownload,true);
+          assert.equal(resolveMemberPresentation({account_type:'standard'},standard).tier,'standard');
+          assert.equal(resolveMemberPresentation({account_type:'standard'},vip).tier,'vip');
+          assert.throws(()=>normalizeBillingAccess([{tier:'vip',can_view_albums:true,can_download:true,show_ads:false,access_expires_at:past}]));
+          assert.throws(()=>normalizeBillingAccess([{tier:'vip',can_view_albums:true,can_download:true,show_ads:true,access_expires_at:future}]));
+          assert.throws(()=>normalizeBillingAccess([]));
+          const home = readFileSync('src/pages/public/Home.jsx','utf8');
+          const layout = readFileSync('src/components/layout/MainLayout.jsx','utf8');
+          const player = readFileSync('src/components/VIPVideoPlayer.jsx','utf8');
+          assert.match(home,/getBillingAccess\(\)/);
+          assert.match(home,/membership\.canDownload/);
+          assert.match(home,/to="\/subscribe"/);
+          assert.match(home,/onClick=\{\(\) => setShowRedeemModal\(true\)\}/);
+          assert.match(home,/Redeem Code/);
+          assert.match(layout,/getBillingAccess\(\)/);
+          // Prevent premature third-party ad script injection on VIP or account pages.
+          assert.match(layout,/location\.pathname === "\/home" && showSocialBar/);
+          assert.match(layout,/shouldDisplayAds/);
+          assert.doesNotMatch(layout,/setShowSocialBar\(\s*true\s*\)/);
+          // Payment history is auth-scoped, read-only, and excludes secrets.
+          const profile = readFileSync('src/pages/public/Profile.jsx','utf8');
+          const historySql = readFileSync('supabase/migrations/20261114190000_jb_billing_my_history_v1.sql','utf8');
+          assert.match(profile,/jb_billing_my_history_v1/);
+          assert.match(historySql,/o\.user_id = \(SELECT auth\.uid\(\)\)/);
+          assert.match(historySql,/o\.provider_environment = 'live'/);
+          assert.match(historySql,/SECURITY DEFINER/);
+          assert.match(historySql,/REVOKE ALL ON FUNCTION.*FROM PUBLIC/);
+          assert.match(historySql,/GRANT EXECUTE ON FUNCTION.*TO authenticated/);
+          assert.doesNotMatch(historySql,/PAYMONGO_LIVE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY/);
+          assert.match(player,/typeof isAdFreeProp === "boolean"/);
+          console.log('PASS: membership entitlement parsing and integration checks');
+          NODE
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Set up Deno for private ticket compatibility tests
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck Free to Watch Supabase Edge Function
+        run: deno check --no-config supabase/functions/jb-free-preview-ticket/index.ts
+      - name: Test HMAC tickets against original Cloudflare Worker
+        run: deno test --no-config --no-check .github/tests/free-preview-worker-contract.test.ts
+      - name: Build
+        run: npm run build
+      - name: Package Phase 315 complete replacement files
+        run: |
+          mkdir -p delivery
+          zip -q delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip \
+            docs/PHASE_315_FREE_TO_WATCH.md \
+            supabase/migrations/20261115120000_jb_free_preview_v1.sql \
+            src/pages/admin/AdminMediaTab.jsx \
+            src/pages/public/Home.jsx \
+            src/services/freePreview.js \
+            src/components/VIPVideoPlayer.jsx \
+            supabase/config.toml \
+            supabase/functions/jb-free-preview-ticket/index.ts \
+            supabase/functions/jb-free-preview-ticket/ticket.ts \
+            .github/tests/free-preview-worker-contract.test.ts
+          unzip -t delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
+      - name: Upload Phase 315 source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JB-Phase315-Free-to-Watch-Full-Replacement
+          path: delivery/JB_Premium_Hub_Phase315_Free_to_Watch.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Package complete Admin replacement files
+        run: |
+          mkdir -p delivery
+          zip -q delivery/JB_Premium_Hub_Admin_Phase313B_Full_Replacement.zip \
+            docs/PHASE_313B_ADMIN_PREMIUM_README.md \
+            src/index.css \
+            public/jb-logo.png \
+            src/pages/admin/adminWorkspace.css \
+            src/pages/admin/AdminDashboard.jsx \
+            src/pages/admin/AdminBillingTab.jsx \
+            supabase/migrations/20261114233000_jb_billing_admin_overview_v1.sql \
+            src/pages/admin/AdminUsersTab.jsx \
+            src/pages/admin/AdminMessagesTab.jsx \
+            src/pages/admin/SupportTicketsTab.jsx \
+            src/pages/admin/AccessCodesTab.jsx \
+            src/pages/admin/AdminMediaTab.jsx \
+            src/pages/admin/AdminMembershipModal.jsx \
+            src/pages/admin/AdminLogin.jsx
+          unzip -t delivery/JB_Premium_Hub_Admin_Phase313B_Full_Replacement.zip
+      - name: Upload complete admin code ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JB-Premium-Admin-Phase313B-Full-Replacement
+          path: delivery/JB_Premium_Hub_Admin_Phase313B_Full_Replacement.zip
+          if-no-files-found: error
+          retention-days: 30

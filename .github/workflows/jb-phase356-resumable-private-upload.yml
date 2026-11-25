@@ -1,0 +1,22 @@
+name: Phase 356 Resumable Private R2 Upload (NO DEPLOY)
+on:
+  push:
+    branches:
+      - feature/phase353-automatic-branding-queue
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Resumable R2 upload contracts
+        run: node --test scripts/tests/test-phase356-resumable-private-upload.mjs
+      - name: Vite production build (NO DEPLOY)
+        run: npm run build

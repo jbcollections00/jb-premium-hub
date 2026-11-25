@@ -1,0 +1,33 @@
+name: JB Phase 345 Users Membership Tier Display (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/admin/AdminUsersTab.jsx'
+      - 'supabase/migrations/20261122200000_jb_admin_user_membership_tiers_v1.sql'
+      - 'scripts/tests/test-phase345-users-membership-tiers.mjs'
+      - '.github/workflows/jb-phase345-users-tiers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  admin-users:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Phase 345 membership row and filter tests
+        run: node --test scripts/tests/test-phase345-users-membership-tiers.mjs
+      - name: Dashboard and media regression tests
+        run: |
+          node --test scripts/tests/test-phase344-dashboard-membership-cards.mjs
+          node --test scripts/tests/test-phase343-media-library-bulk-delete.mjs
+      - name: Vite production build
+        run: npm run build

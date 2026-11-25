@@ -1,0 +1,27 @@
+name: JB PayMongo LIVE Webhook Regression (OFFLINE ONLY)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/jb-paymongo-webhook-regression.yml'
+      - 'scripts/paymongo-ci/webhook-receiver-regression.mjs'
+      - 'supabase/functions/jb-paymongo-webhook-live/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  webhook-offline-regression:
+    name: Offline synthetic receiver tests (NO NETWORK, NO DEPLOY)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run offline regression against checked-in LIVE receiver
+        run: node scripts/paymongo-ci/webhook-receiver-regression.mjs

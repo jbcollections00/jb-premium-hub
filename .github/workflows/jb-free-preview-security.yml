@@ -1,0 +1,49 @@
+name: JB Free Preview — PostgreSQL Security (NO DEPLOY)
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20261115120000_jb_free_preview_v1.sql'
+      - 'supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql'
+      - '.github/tests/free-preview-catalog-assertions.sql'
+      - '.github/tests/free-preview-fixture.sql'
+      - '.github/tests/free-preview-assertions.sql'
+      - '.github/workflows/jb-free-preview-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  free-preview-sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: free_preview_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d free_preview_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: local-ci-only
+      PGDATABASE: free_preview_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create fake media and user records
+        run: psql -v ON_ERROR_STOP=1 -f .github/tests/free-preview-fixture.sql
+      - name: Apply actual Free Preview migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261115120000_jb_free_preview_v1.sql
+      - name: Verify 20-slot cap and roles
+        run: psql -v ON_ERROR_STOP=1 -f .github/tests/free-preview-assertions.sql
+      - name: Apply authenticated Free preview catalog migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql
+      - name: Verify metadata only, FREE discovery and anon denial
+        run: psql -v ON_ERROR_STOP=1 -f .github/tests/free-preview-catalog-assertions.sql

@@ -1,0 +1,22 @@
+name: Phase 358 Native Banner (NO DEPLOY)
+on:
+  push:
+    branches:
+      - feature/phase353-automatic-branding-queue
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Native ads sandbox and no-fill contracts
+        run: node --test scripts/tests/test-phase358-native-banner.mjs
+      - name: Compile frontend (NO DEPLOY)
+        run: npm run build

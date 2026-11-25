@@ -1,0 +1,676 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Search, AlertCircle, Send, RefreshCw, User, 
+  ShieldAlert, ExternalLink, Image as ImageIcon, Zap, Trash2, FileText, ArrowLeft
+} from 'lucide-react';
+
+export default function SupportTicketsTab({ supabase }) {
+  const [tickets, setTickets] = useState([]);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [replyText, setReplyText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Private receipt preview state
+  const [proofImageUrl, setProofImageUrl] = useState(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // Quick Response Templates
+  const QUICK_TEMPLATES = [
+    { id: 'thank_you', label: 'Thank you & follow-up', text: 'Thank you for contacting JB Premium Hub support. We have reviewed your message and will share an update once your request has been resolved.' },
+    { id: 'vip_benefits', label: 'Membership benefits', text: 'Standard includes one month of media access with advertisements and no downloads. VIP includes one month of access without advertisements and with downloads. PayMongo membership access begins automatically only after payment has been verified.' },
+    { id: 'request_receipt', label: 'Payment status check', text: 'Thank you for reaching out about your payment. Please include the checkout reference and approximate payment date. Our team will check the verified PayMongo payment status. Please do not submit another payment while your first payment is being reviewed.' }
+
+  ];
+
+  useEffect(() => {
+    fetchTickets();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (selectedTicket) {
+      fetchMessages(selectedTicket.id);
+    }
+  }, [selectedTicket]);
+
+  useEffect(() => {
+    loadReceiptPreview(selectedTicket);
+  }, [selectedTicket, supabase]);
+
+  const fetchTickets = async () => {
+    if (!supabase) {
+      setError('Supabase client is missing.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const { data, error: fetchError } = await supabase
+        .from('support_tickets')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+      setTickets(data || []);
+    } catch (err) {
+      setError(err.message || 'Failed to fetch support tickets.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMessages = async (ticketId) => {
+    if (!supabase) return;
+
+    try {
+      setMessagesLoading(true);
+      const { data, error: fetchError } = await supabase
+        .from('ticket_messages')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (fetchError) {
+        if (fetchError.message?.includes('schema cache') || fetchError.code === '42P01') {
+          setMessages([]);
+          return;
+        }
+        throw fetchError;
+      }
+      setMessages(data || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load conversation history.');
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  const handleSendReply = async (e) => {
+    e.preventDefault();
+    if (!replyText.trim() || !selectedTicket) return;
+    if (!supabase) return;
+
+    try {
+      setSubmitting(true);
+      const newMessage = {
+        ticket_id: selectedTicket.id,
+        sender_type: 'admin',
+        message: replyText.trim(),
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error: sendError } = await supabase
+        .from('ticket_messages')
+        .insert([newMessage])
+        .select()
+        .single();
+
+      if (sendError) throw sendError;
+
+      await supabase
+        .from('support_tickets')
+        .update({ updated_at: new Date().toISOString(), status: 'in_progress' })
+        .eq('id', selectedTicket.id);
+
+      setMessages((prev) => [...prev, data]);
+      setReplyText('');
+      fetchTickets();
+    } catch (err) {
+      setError(err.message || 'Failed to send reply.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (ticketId, newStatus) => {
+    if (!supabase) return;
+
+    try {
+      const { error: updateError } = await supabase
+        .from('support_tickets')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      if (updateError) throw updateError;
+
+      setTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
+      );
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket((prev) => ({ ...prev, status: newStatus }));
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to update status.');
+    }
+  };
+
+  const handleDeleteTicket = async (ticketId) => {
+    if (!ticketId || !supabase) return;
+
+    const confirmed = window.confirm(
+      "Sigurado ka bang gusto mong burahin ang ticket na ito?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+
+      await supabase
+        .from('ticket_messages')
+        .delete()
+        .eq('ticket_id', ticketId);
+
+      const { error: deleteError } = await supabase
+        .from('support_tickets')
+        .delete()
+        .eq('id', ticketId);
+
+      if (deleteError) throw deleteError;
+
+      const updatedTickets = tickets.filter((t) => t.id !== ticketId);
+      setTickets(updatedTickets);
+
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket(null);
+        setMessages([]);
+        setReplyText('');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to delete ticket.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleBackToTickets = () => {
+    setSelectedTicket(null);
+    setMessages([]);
+    setReplyText('');
+    setProofImageUrl(null);
+    setError(null);
+  };
+
+  const filteredTickets = useMemo(() => {
+    return tickets.filter((ticket) => {
+      const userIdent = (ticket.email || ticket.name || ticket.user_email || '').toLowerCase();
+      const matchesSearch = userIdent.includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [tickets, searchQuery, statusFilter]);
+
+  // Legacy helper: older tickets may still contain a direct URL in the message.
+  const extractUrlFromText = (text) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+(?:\.jpg|\.jpeg|\.png|\.webp|\/storage\/v1\/object\/public\/[^\s]+))/i;
+    const match = text.match(urlRegex);
+    return match ? match[0] : null;
+  };
+
+  // Receipts are now stored in a private Storage bucket.
+  // New tickets store the private object path, not a public URL.
+  const loadReceiptPreview = async (ticket) => {
+    setProofImageUrl(null);
+
+    if (!ticket || !supabase) return;
+
+    const storedValue =
+      ticket.receipt_url ||
+      ticket.attachment_url ||
+      ticket.proof_url ||
+      null;
+
+    // Support old tickets that may still contain a direct public URL.
+    if (!storedValue) {
+      const legacyUrl = extractUrlFromText(ticket.message);
+      setProofImageUrl(legacyUrl);
+      return;
+    }
+
+    if (/^https?:\/\//i.test(storedValue)) {
+      setProofImageUrl(storedValue);
+      return;
+    }
+
+    try {
+      setReceiptLoading(true);
+
+      const { data, error: signedUrlError } = await supabase.storage
+        .from('receipts')
+        .createSignedUrl(storedValue, 600);
+
+      if (signedUrlError) throw signedUrlError;
+
+      setProofImageUrl(data?.signedUrl || null);
+    } catch (err) {
+      console.error('Failed to create signed receipt URL:', err);
+      setError(err.message || 'Failed to load the private receipt image.');
+      setProofImageUrl(null);
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
+
+  return (
+    <section className="jbh-admin-page jbh-admin-panel flex min-h-[650px] flex-col overflow-hidden">
+
+      {!selectedTicket ? (
+        <>
+          {/* =========================
+              TICKET LIST VIEW
+             ========================= */}
+          <div className="jbh-admin-page-head rounded-none border-0 border-b p-5 sm:p-7">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div>
+                <h2>Support tickets</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Select a ticket to open the full conversation.
+                </p>
+              </div>
+
+              <button
+                onClick={fetchTickets}
+                className="jbh-admin-secondary flex items-center gap-2 self-start px-4 py-2.5 text-xs font-semibold lg:self-auto"
+                title="Refresh List"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search user email or name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="jbh-admin-input w-full py-2.5 pl-10 pr-4 text-sm"
+                />
+              </div>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="min-w-44 px-3 py-2.5 text-sm"
+              >
+                <option value="all">All Statuses</option>
+                <option value="open">Open</option>
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mx-4 mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 font-bold hover:text-red-300"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {loading ? (
+              <div className="py-16 text-center text-slate-500 text-sm">
+                Loading support tickets...
+              </div>
+            ) : filteredTickets.length === 0 ? (
+              <div className="py-16 text-center text-slate-500 text-sm">
+                No support tickets found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {filteredTickets.map((ticket) => {
+                  const displayName =
+                    ticket.email ||
+                    ticket.name ||
+                    ticket.user_email ||
+                    `User #${ticket.id}`;
+
+                  const status = ticket.status || 'pending';
+
+                  return (
+                    <button
+                      type="button"
+                      key={ticket.id}
+                      onClick={() => setSelectedTicket(ticket)}
+                      className="jbh-admin-feature-card group p-5 text-left transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-slate-400">
+                            <User className="w-4 h-4" />
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-100 truncate">
+                              {displayName}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate mt-0.5">
+                              {ticket.subject || 'Support Ticket'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md bg-slate-800 text-slate-400 shrink-0">
+                          {status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-slate-800/70 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>
+                          {ticket.created_at
+                            ? new Date(ticket.created_at).toLocaleString()
+                            : 'No date'}
+                        </span>
+                        <span className="text-indigo-400 group-hover:text-indigo-300 font-semibold">
+                          Open →
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* =========================
+              FULL TICKET VIEW
+             ========================= */}
+          <div className="jbh-admin-page-head flex shrink-0 flex-col gap-3 rounded-none border-0 border-b p-5">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleBackToTickets}
+                className="inline-flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Tickets
+              </button>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedTicket.status || 'pending'}
+                  onChange={(e) =>
+                    handleUpdateStatus(selectedTicket.id, e.target.value)
+                  }
+                  className="bg-slate-900 border border-slate-700 text-xs rounded-lg px-3 py-2 text-slate-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="pending">Mark Pending</option>
+                  <option value="open">Mark Open</option>
+                  <option value="in_progress">Mark In Progress</option>
+                  <option value="resolved">Mark Resolved</option>
+                  <option value="closed">Mark Closed</option>
+                </select>
+
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => handleDeleteTicket(selectedTicket.id)}
+                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:border-rose-500/50 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Delete Ticket"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deleting ? 'Deleting...' : 'Delete'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-slate-100">
+                {selectedTicket.subject || 'Support Ticket'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                User:{' '}
+                <span className="text-indigo-400 font-medium">
+                  {selectedTicket.email ||
+                    selectedTicket.name ||
+                    selectedTicket.user_email ||
+                    'Registered User'}
+                </span>
+                <span className="mx-2">•</span>
+                Submitted:{' '}
+                {selectedTicket.created_at
+                  ? new Date(selectedTicket.created_at).toLocaleString()
+                  : 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mx-4 mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center justify-between text-sm shrink-0">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 font-bold hover:text-red-300"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
+            {/* Submitted ticket details */}
+            {selectedTicket.message && (
+              <div className="p-4 bg-slate-900/90 border border-indigo-500/30 rounded-xl space-y-2">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4" />
+                    Submitted Reference Details
+                  </span>
+
+                  <span className="text-[11px] text-slate-500">
+                    {selectedTicket.created_at
+                      ? new Date(selectedTicket.created_at).toLocaleTimeString(
+                          [],
+                          { hour: '2-digit', minute: '2-digit' }
+                        )
+                      : ''}
+                  </span>
+                </div>
+
+                <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                  {selectedTicket.message}
+                </div>
+              </div>
+            )}
+
+            {/* Private receipt */}
+            {receiptLoading ? (
+              <div className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
+                Loading secure receipt preview...
+              </div>
+            ) : proofImageUrl ? (
+              <div className="p-4 bg-slate-900/90 border border-amber-500/30 rounded-xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4" />
+                    Uploaded Payment Receipt Screenshot
+                  </span>
+
+                  <a
+                    href={proofImageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    Open Original Image
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="rounded-lg overflow-hidden border border-slate-800 bg-black/60 p-3 flex justify-center">
+                  <img
+                    src={proofImageUrl}
+                    alt="Payment Proof Receipt"
+                    className="max-h-[520px] w-auto max-w-full object-contain rounded-md"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-900/40 border border-slate-800/60 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-500" />
+                Walang nakitang resibo o larawan sa ticket na ito.
+              </div>
+            )}
+
+            {/* Conversation */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-white">
+                  Conversation
+                </h4>
+                <span className="text-[11px] text-slate-500">
+                  {messages.length} message{messages.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {messagesLoading ? (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  Loading ticket conversation...
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="p-5 text-center text-slate-500 text-xs italic bg-slate-900/40 border border-slate-800 rounded-xl">
+                  No admin replies sent yet. Send a reply below.
+                </div>
+              ) : (
+                messages.map((msg) => {
+                  const isAdmin = msg.sender_type === 'admin';
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col max-w-[90%] md:max-w-[75%] ${
+                        isAdmin
+                          ? 'ml-auto items-end'
+                          : 'mr-auto items-start'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-400">
+                        {isAdmin ? (
+                          <ShieldAlert className="w-3 h-3 text-indigo-400" />
+                        ) : (
+                          <User className="w-3 h-3 text-slate-400" />
+                        )}
+
+                        <span className="font-medium text-slate-300">
+                          {isAdmin
+                            ? 'Support Admin'
+                            : selectedTicket.email || 'User'}
+                        </span>
+
+                        <span>•</span>
+
+                        <span>
+                          {new Date(msg.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`p-3.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          isAdmin
+                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
+                            : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
+                        }`}
+                      >
+                        {msg.message}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Reply area */}
+          <form
+            onSubmit={handleSendReply}
+            className="jbh-admin-muted-panel shrink-0 space-y-3 rounded-none border-0 border-t p-5"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1 shrink-0">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                Quick Reply:
+              </span>
+
+              <select
+                onChange={(e) => {
+                  const template = QUICK_TEMPLATES.find(
+                    (t) => t.id === e.target.value
+                  );
+
+                  if (template) {
+                    setReplyText(template.text);
+                  }
+
+                  e.target.value = '';
+                }}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-indigo-300 focus:outline-none focus:border-indigo-500 cursor-pointer flex-1"
+              >
+                <option value="">
+                  Select an automated response template...
+                </option>
+
+                {QUICK_TEMPLATES.map((tmpl) => (
+                  <option key={tmpl.id} value={tmpl.id}>
+                    {tmpl.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <textarea
+                rows={3}
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Type official support response or choose a Quick Reply above..."
+                className="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+
+              <button
+                type="submit"
+                disabled={submitting || !replyText.trim()}
+                className="jbh-admin-primary flex shrink-0 items-center justify-center gap-2 px-6 py-3 text-sm font-semibold disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" />
+                <span>{submitting ? 'Sending...' : 'Send'}</span>
+              </button>
+            </div>
+          </form>
+        </>
+      )}
+    </section>
+  );
+}

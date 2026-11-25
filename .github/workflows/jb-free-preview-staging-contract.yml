@@ -1,0 +1,23 @@
+name: JB Free Preview Staging — Contract Tests (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/jb-free-preview-ticket/**'
+      - '.github/tests/free-preview-staging-contract.test.ts'
+      - '.github/workflows/jb-free-preview-staging-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Verify staging key and play-only signed-ticket contract
+        run: deno test --allow-read .github/tests/free-preview-staging-contract.test.ts

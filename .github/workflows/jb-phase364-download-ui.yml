@@ -1,0 +1,34 @@
+name: Phase 364 VIP Download Availability UI (Offline)
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/public/Home.jsx'
+      - 'src/services/privateMedia.js'
+      - 'scripts/tests/test-phase364-vip-download-availability.mjs'
+      - '.github/workflows/jb-phase364-download-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify download availability UI and fail-closed behavior
+        run: node --test scripts/tests/test-phase364-vip-download-availability.mjs
+      - name: Syntax-check client service
+        run: node --check src/services/privateMedia.js
+      - run: npm run build

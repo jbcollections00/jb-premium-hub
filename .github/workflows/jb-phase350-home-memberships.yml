@@ -1,0 +1,38 @@
+name: JB Phase 350 Home Membership Layout (NO DEPLOY)
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/public/Home.jsx'
+      - 'src/services/homeDiscovery.js'
+      - 'src/services/billingAccess.js'
+      - 'scripts/tests/test-phase350-home-memberships.mjs'
+      - 'scripts/tests/test-phase339-home-published-thumbnails.mjs'
+      - '.github/workflows/jb-phase350-home-memberships.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  home-member-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Phase 350 membership Home and ads tests
+        run: node --test scripts/tests/test-phase350-home-memberships.mjs
+      - name: Phase 339 Home thumbnail regression
+        run: node --test scripts/tests/test-phase339-home-published-thumbnails.mjs
+      - name: Free preview and private media backend contracts
+        run: |
+          test -f supabase/functions/jb-free-preview-ticket/index.ts
+          test -f supabase/migrations/20261115180000_jb_free_preview_catalog_v1.sql
+      - name: Phase 347 private R2 cleanup regression
+        run: node --test scripts/tests/test-phase347-r2-automatic-cleanup.mjs
+      - name: Production Vite build
+        run: npm run build
