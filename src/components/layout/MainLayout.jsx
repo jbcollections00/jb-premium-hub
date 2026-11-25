@@ -5,6 +5,7 @@ import { supabase } from "../../services/supabaseClient";
 import { getBillingAccess, resolveMemberPresentation } from "../../services/billingAccess";
 import { shouldDisplayAds } from "../../services/homeDiscovery";
 import Header from "./Header";
+import ModeratorSafetyLink from "./ModeratorSafetyLink";
 import Footer from "./Footer";
 import SocialBar from "../SocialBar";
 
@@ -114,6 +115,7 @@ export default function MainLayout() {
       {showMediaAd && <SocialBar enabled />}
       <div>
         <Header />
+        {location.pathname === "/profile" && <ModeratorSafetyLink />}
         <main className="w-full min-w-0 flex-1">
           <Outlet />
         </main>

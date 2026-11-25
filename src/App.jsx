@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Link, Navigate, Route, Routes } from 'react-router-dom';
 
 import MainLayout from './components/layout/MainLayout';
 import EventPopup from './components/EventPopup';
@@ -17,6 +17,8 @@ import Contest from './pages/public/Contest';
 import LeaderboardPage from './pages/public/LeaderboardPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
+import ModeratorSafetyReporting from './pages/moderator/ModeratorSafetyReporting';
+import AdminSafetyEscalations from './pages/admin/AdminSafetyEscalations';
 
 import TermsPage from './pages/legal/TermsPage';
 import PrivacyPage from './pages/legal/PrivacyPage';
@@ -61,9 +63,15 @@ export default function App() {
           </Route>
         </Route>
 
+        {/* Safety reporting is separate from media and membership access. */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/moderator/safety" element={<ModeratorSafetyReporting />} />
+        </Route>
+
         {/* Admin route keeps its original guard. */}
         <Route element={<ProtectedRoute adminOnly={true} />}>
-          <Route path="/admin-vault-secret" element={<AdminDashboard />} />
+          <Route path="/admin-vault-secret" element={<><div className="bg-slate-900 px-4 py-3 text-white"><Link className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 font-semibold" to="/admin/safety-escalations">Safety Escalations</Link></div><AdminDashboard /></>} />
+          <Route path="/admin/safety-escalations" element={<AdminSafetyEscalations />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/home" replace />} />
