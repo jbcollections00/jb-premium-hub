@@ -1,569 +1,339 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../../services/supabaseClient';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "../../services/supabaseClient";
 
+const PER_PAGE = 50;
+const TABS = [
+  { key: "VIP", label: "VIP Codes" },
+  { key: "STANDARD", label: "Standard Codes" },
+  { key: "EXPIRED", label: "Expired / History" },
+];
+const expDate = (code) => {
+  if (code.expires_at) {
+    const date = new Date(code.expires_at);
+    if (Number.isFinite(date.valueOf())) return date;
+  }
+  if (code.is_used && code.used_at) {
+    const date = new Date(code.used_at);
+    if (Number.isFinite(date.valueOf())) {
+      return new Date(date.valueOf() + (code.duration_days || 30) * 86400000);
+    }
+  }
+  return null;
+};
+function stateOf(code, now) {
+  const expiry = expDate(code);
+  if (code.is_used) {
+    if (!expiry) return "UNKNOWN";
+    return expiry.getTime() <= now ? "EXPIRED" : "REDEEMED";
+  }
+  if (expiry && expiry.getTime() <= now) return "EXPIRED";
+  return "AVAILABLE";
+}
+const textDate = (date) => date ? date.toLocaleString("en-PH") : "Unknown";
+function fromRow(row) {
+  const plan = String(row.type || "").toUpperCase();
+  return plan === "STANDARD" ? "STANDARD" : plan === "VIP" ? "VIP" : "UNKNOWN";
+}
+function loadAll(table, select, order = "created_at", max = 10000) {
+  return (async () => {
+    const result = [];
+    for (let offset = 0; offset < max; offset += 1000) {
+      const { data, error } = await supabase.from(table).select(select)
+        .order(order, { ascending: false }).range(offset, offset + 999);
+      if (error) throw error;
+      result.push(...(data || []));
+      if (!data || data.length < 1000) return result;
+    }
+    throw new Error("Too many records to display safely. Use a paged backend.");
+  })();
+}
 export default function AccessCodesTab() {
   const [codes, setCodes] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [type, setType] = useState("VIP");
+  const [activeTab, setActiveTab] = useState("VIP");
+  const [filter, setFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [customCode, setCustomCode] = useState("");
+  const [sendTo, setSendTo] = useState("");
+  const [selectedCode, setSelectedCode] = useState(null);
+  const [modalQuery, setModalQuery] = useState("");
+  const [modalUser, setModalUser] = useState("");
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState("");
+  const [errorText, setErrorText] = useState("");
+  const [now, setNow] = useState(Date.now());
 
-  const [customCode, setCustomCode] = useState('');
-  const [directSendUser, setDirectSendUser] = useState('');
-  const [generating, setGenerating] = useState(false);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('ALL');
-
-  const [selectedCodeForSend, setSelectedCodeForSend] = useState(null);
-  const [targetUserId, setTargetUserId] = useState('');
-  const [modalUserSearch, setModalUserSearch] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    const { data: codesData } = await supabase
-      .from('access_codes')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (codesData) setCodes(codesData);
-
-    const { data: usersData, error: usersError } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, account_type, role, created_at')
-      .not('email', 'is', null)
-      .order('created_at', { ascending: false });
-
-    if (usersError) {
-      console.error('Failed to load registered users:', usersError);
-      setUsers([]);
-    } else {
-      const registeredUsers = (usersData || []).filter((u) => {
-        const role = (u.role || '').toLowerCase();
-        const accountType = (u.account_type || '').toLowerCase();
-
-        return (
-          Boolean(u.id && u.email) &&
-          role !== 'admin' &&
-          accountType !== 'admin'
-        );
-      });
-
-      setUsers(registeredUsers);
-    }
-
-    setLoading(false);
-  };
-
-
-  const handleGenerateCode = async (e) => {
-    e.preventDefault();
-
-    if (directSendUser && !users.some((u) => u.id === directSendUser)) {
-      alert('Invalid recipient. Please select a registered non-admin user.');
-      return;
-    }
-
-    setGenerating(true);
-
+    setErrorText("");
     try {
-      const requestedCode = customCode.trim()
-        ? customCode.trim().toUpperCase()
-        : null;
+      const [newCodes, profiles] = await Promise.all([
+        loadAll("access_codes", "id,code,type,is_used,used_by,used_at,expires_at,created_at,duration_days"),
+        loadAll("profiles", "id,email,full_name,account_type,role,created_at"),
+      ]);
+      setCodes(newCodes);
+      setUsers(profiles.filter((u) =>
+        u.id && u.email && String(u.role || "").toLowerCase() !== "admin" &&
+        String(u.account_type || "").toLowerCase() !== "admin"
+      ));
+    } catch (error) {
+      setErrorText(error.message || "Could not load access codes.");
+      setCodes([]);
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => { setPage(1); }, [activeTab, filter, search]);
 
-      const codeDuration = 30;
+  const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const counts = useMemo(() => ({
+    VIP: codes.filter((c) => fromRow(c) === "VIP" && stateOf(c, now) !== "EXPIRED").length,
+    STANDARD: codes.filter((c) => fromRow(c) === "STANDARD" && stateOf(c, now) !== "EXPIRED").length,
+    EXPIRED: codes.filter((c) => stateOf(c, now) === "EXPIRED").length,
+    AVAILABLE: codes.filter((c) => stateOf(c, now) === "AVAILABLE").length,
+  }), [codes, now]);
+  const filtered = useMemo(() => codes.filter((code) => {
+    const state = stateOf(code, now);
+    const matchesTab = activeTab === "EXPIRED" ? state === "EXPIRED"
+      : fromRow(code) === activeTab && state !== "EXPIRED";
+    const matchesFilter = filter === "ALL" || filter === state;
+    const q = search.toLowerCase().trim();
+    const recipient = usersById.get(code.used_by);
+    const matchesSearch = !q || [code.code, recipient?.email, recipient?.full_name, code.used_by]
+      .some((value) => String(value || "").toLowerCase().includes(q));
+    return matchesTab && matchesFilter && matchesSearch;
+  }), [codes, now, activeTab, filter, search, usersById]);
+  const visible = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
 
-      const { data: createdCode, error: codeErr } = await supabase.rpc(
-        'admin_create_vip_access_code',
-        {
-          p_custom_code: requestedCode,
-          p_duration_days: codeDuration,
-        }
-      );
-
-      if (codeErr) throw codeErr;
-
-      const newCodeData = Array.isArray(createdCode)
-        ? createdCode[0]
-        : createdCode;
-
-      const finalCode = newCodeData?.code;
-
-      if (!finalCode) {
-        throw new Error('VIP code was created but no code value was returned.');
-      }
-
-      if (directSendUser) {
-        const selectedUserObj = users.find((u) => u.id === directSendUser);
-        const userEmail = selectedUserObj?.email || 'Registered User';
-
-        const sendErr = await sendMessageToUser(
-          directSendUser,
-          finalCode,
-          codeDuration
-        );
-
-        if (sendErr) {
-          alert(
-            `Code generated (${finalCode}), but failed to send message: ${sendErr.message}`
-          );
-        } else {
-          alert(
-            `✅ VIP Code generated (${finalCode}) and sent directly to ${userEmail}!`
-          );
+  async function notifyUser(userId, code, plan, days) {
+    const { error } = await supabase.from("admin_messages").insert({
+      user_id: userId, send_to_all: false,
+      title: "Your " + plan + " access code",
+      message: "Here is your " + plan + " access code (" + days +
+        " days):\n\n" + code + "\n\nRedeem it on your Profile page.",
+      is_read: false,
+    });
+    if (error) throw error;
+  }
+  async function generate(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (sendTo && !usersById.has(sendTo)) {
+      setErrorText("Choose a registered non-admin recipient."); return;
+    }
+    setBusy(true); setErrorText(""); setStatus("");
+    try {
+      const { data, error } = await supabase.rpc("jb_admin_create_access_code_v1", {
+        p_type: type, p_duration_days: 30, p_custom_code: customCode.trim() || null,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row?.code) throw new Error("Code generation did not return a code.");
+      if (sendTo) {
+        try {
+          await notifyUser(sendTo, row.code, type, 30);
+          setStatus(type + " code " + row.code + " created and sent successfully.");
+        } catch (sendError) {
+          setStatus(type + " code " + row.code + " created, but message delivery failed: " + sendError.message);
         }
       } else {
-        alert(`✅ VIP Access Code (${finalCode}) successfully generated!`);
+        setStatus(type + " access code " + row.code + " created.");
       }
-
-      setCustomCode('');
-      setDirectSendUser('');
-      await fetchData();
-    } catch (err) {
-      const message =
-        err?.code === '23505'
-          ? 'That VIP access code already exists. Please use a different code.'
-          : err?.message || 'Unable to generate VIP access code.';
-
-      alert('Error generating code: ' + message);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const sendMessageToUser = async (userId, code, days = 30) => {
-    const durationLabel = `${days} Days Duration`;
-    const title = `🔑 Your VIP Access Code`;
-    const message = `Hello! Here is your new VIP Access Code (${durationLabel}):\n\nCode: ${code}\n\nPlease copy this code and redeem it on your Profile page to activate your VIP membership. Enjoy!`;
-
-    const { error } = await supabase.from('admin_messages').insert([
-      {
-        user_id: userId,
-        send_to_all: false,
-        title: title,
-        message: message,
-        is_read: false,
-      },
-    ]);
-
-    return error;
-  };
-
-  const handleSendExistingCode = async (e) => {
-    e.preventDefault();
-    if (!selectedCodeForSend || !targetUserId) {
-      alert('Please select a target user.');
-      return;
-    }
-
-    if (!users.some((u) => u.id === targetUserId)) {
-      alert('Invalid recipient. Please select a registered non-admin user.');
-      return;
-    }
-
-    if (selectedCodeForSend.is_used) {
-      alert('This access code has already been redeemed.');
-      return;
-    }
-
-    setSendingMessage(true);
-    const err = await sendMessageToUser(
-      targetUserId,
-      selectedCodeForSend.code,
-      selectedCodeForSend.duration_days || 30
-    );
-
-    if (err) {
-      alert('Failed to send code: ' + err.message);
-    } else {
-      const uObj = users.find((u) => u.id === targetUserId);
-      alert(`✅ Code ${selectedCodeForSend.code} successfully sent to ${uObj?.email || uObj?.full_name || 'User'}!`);
-      setSelectedCodeForSend(null);
-      setTargetUserId('');
-      setModalUserSearch('');
-    }
-    setSendingMessage(false);
-  };
-
-  // 🛠️ ADMIN RPC: FIX MISSING USED-AT DATE
-  const handleFixMissingDate = async (codeId) => {
+      setCustomCode(""); setSendTo(""); setActiveTab(type);
+      await refresh();
+    } catch (error) { setErrorText(error.message || "Code generation failed."); }
+    finally { setBusy(false); }
+  }
+  async function removeUnused(row) {
+    if (busy || stateOf(row, Date.now()) !== "AVAILABLE") return;
+    if (!window.confirm("Permanently delete UNUSED " + fromRow(row) + " code " +
+      row.code + "? Redeemed codes cannot be deleted.")) return;
+    setBusy(true); setErrorText(""); setStatus("");
     try {
-      const { error } = await supabase.rpc('admin_fix_vip_code_used_at', {
-        p_code_id: codeId,
+      const { data, error } = await supabase.rpc("jb_admin_delete_unused_access_code_v1", {
+        p_code_id: row.id,
       });
-
-      if (error) throw error;
-
-      alert('✅ Successfully set timestamp! Dynamic countdown is now active.');
-      await fetchData();
-    } catch (err) {
-      alert('Failed to update date: ' + (err?.message || 'Unknown error'));
-    }
-  };
-
-  const handleDeleteCode = async (codeId) => {
-    if (!confirm('Are you sure you want to delete this access code?')) return;
-
+      if (error || data !== true) throw error || new Error("Delete was not confirmed.");
+      setStatus("Unused code deleted successfully.");
+      await refresh();
+    } catch (error) { setErrorText(error?.message || "Delete failed."); }
+    finally { setBusy(false); }
+  }
+  async function sendExisting(event) {
+    event.preventDefault();
+    if (busy || !selectedCode || !usersById.has(modalUser) ||
+        stateOf(selectedCode, Date.now()) !== "AVAILABLE") return;
+    setBusy(true); setErrorText(""); setStatus("");
     try {
-      const { error } = await supabase.rpc('admin_delete_vip_access_code', {
-        p_code_id: codeId,
-      });
-
-      if (error) throw error;
-
-      await fetchData();
-    } catch (err) {
-      alert('Delete failed: ' + (err?.message || 'Unknown error'));
-    }
-  };
-
-  const getExpDate = (c) => {
-    const duration = c.duration_days || 30;
-    if (c.expires_at) {
-      const d = new Date(c.expires_at);
-      if (!isNaN(d.getTime())) return d;
-    }
-    if (c.used_at) {
-      const d = new Date(c.used_at);
-      if (!isNaN(d.getTime())) {
-        return new Date(d.getTime() + duration * 24 * 60 * 60 * 1000);
-      }
-    }
-    return null;
-  };
-
-  const getRemainingTime = (c) => {
-    const expDate = getExpDate(c);
-    if (!expDate) return 'ACTIVE';
-
-    const diff = expDate - new Date();
-    if (diff <= 0) return 'EXPIRED';
-
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-    const mins = Math.floor((diff / 1000 / 60) % 60);
-
-    if (days > 0) return `${days}D ${hours}H LEFT`;
-    if (hours > 0) return `${hours}H ${mins}M LEFT`;
-    return `${mins}M LEFT`;
-  };
-
-  const filteredModalUsers = users.filter((u) => {
-    const query = modalUserSearch.toLowerCase();
-    const email = u.email ? u.email.toLowerCase() : '';
-    const name = u.full_name ? u.full_name.toLowerCase() : '';
-    const id = u.id ? u.id.toLowerCase() : '';
-    return email.includes(query) || name.includes(query) || id.includes(query);
-  });
-
-  const vipCodesOnly = codes.filter((c) => {
-    const type = (c.type || '').toUpperCase();
-    const codeStr = (c.code || '').toUpperCase();
-    return type === 'VIP' || codeStr.includes('VIP');
-  });
-
-  const totalCodesCount = vipCodesOnly.length;
-  const availableCodesCount = vipCodesOnly.filter((c) => !c.is_used).length;
-
-  const activeSubsCount = vipCodesOnly.filter((c) => {
-    if (!c.is_used) return false;
-    const expDate = getExpDate(c);
-    return !expDate || expDate > new Date();
-  }).length;
-
-  const expiredCodesCount = vipCodesOnly.filter((c) => {
-    if (!c.is_used) return false;
-    const expDate = getExpDate(c);
-    return expDate && expDate <= new Date();
-  }).length;
-
-  const filteredCodes = vipCodesOnly.filter((c) => {
-    const expDate = getExpDate(c);
-    const isExpired = c.is_used && expDate && expDate <= new Date();
-    const isActive = c.is_used && (!expDate || expDate > new Date());
-
-    const matchesSearch =
-      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.used_by && c.used_by.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    let matchesStatus = true;
-    if (filterStatus === 'AVAILABLE') matchesStatus = !c.is_used;
-    if (filterStatus === 'ACTIVE') matchesStatus = isActive;
-    if (filterStatus === 'EXPIRED') matchesStatus = isExpired;
-
-    return matchesSearch && matchesStatus;
-  });
+      await notifyUser(modalUser, selectedCode.code, fromRow(selectedCode),
+        selectedCode.duration_days || 30);
+      setStatus("Code sent to " + usersById.get(modalUser).email + ".");
+      setSelectedCode(null); setModalUser(""); setModalQuery("");
+    } catch (error) { setErrorText(error.message || "Could not send code."); }
+    finally { setBusy(false); }
+  }
+  const foundUsers = users.filter((u) => {
+    const q = modalQuery.toLowerCase();
+    return !q || String(u.email || "").toLowerCase().includes(q) ||
+      String(u.full_name || "").toLowerCase().includes(q);
+  }).slice(0, 100);
 
   return (
-    <div className="jbh-admin-page space-y-6">
+    <section className="jbh-admin-page space-y-5">
       <header className="jbh-admin-page-head">
         <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-100">Member benefits</p>
         <h1 className="mt-2">Access codes</h1>
-        <p className="mt-2 text-sm">Create and manage complimentary VIP codes. PayMongo purchases activate separately and automatically.</p>
+        <p className="mt-2 text-sm">Issue 30-day complimentary VIP or Standard codes. PayMongo-paid subscriptions remain separate. Redeemed and expired codes are preserved for audit history.</p>
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="jbh-admin-stat p-4 sm:p-5">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Total VIP Codes</p>
-          <p className="text-2xl font-black text-white mt-1">{totalCodesCount}</p>
-        </div>
-        <div className="jbh-admin-stat p-4 sm:p-5">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Available (Unused)</p>
-          <p className="text-2xl font-black text-emerald-400 mt-1">{availableCodesCount}</p>
-        </div>
-        <div className="jbh-admin-stat p-4 sm:p-5">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Active code grants</p>
-          <p className="text-2xl font-black text-amber-400 mt-1">{activeSubsCount}</p>
-        </div>
-        <div className="jbh-admin-stat p-4 sm:p-5">
-          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">Expired VIP</p>
-          <p className="text-2xl font-black text-rose-400 mt-1">{expiredCodesCount}</p>
-        </div>
+        {[
+          ["VIP", counts.VIP, "text-amber-300"],
+          ["Standard", counts.STANDARD, "text-sky-300"],
+          ["Available", counts.AVAILABLE, "text-emerald-300"],
+          ["Expired", counts.EXPIRED, "text-rose-300"],
+        ].map(([label, value, color]) => (
+          <div key={label} className="jbh-admin-stat p-4">
+            <p className="text-xs font-bold text-slate-300">{label}</p>
+            <p className={"text-2xl font-black mt-1 " + color}>{value}</p>
+          </div>
+        ))}
       </div>
 
-      <form onSubmit={handleGenerateCode} className="jbh-admin-panel space-y-5 p-5 sm:p-6">
-        <h2 className="text-base font-extrabold text-white">Create or send a VIP code</h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-          <div className="sm:col-span-2">
-            <div className="w-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold rounded-xl px-3 py-2.5 text-xs flex items-center justify-center select-none">
-              👑 VIP Code
-            </div>
-          </div>
-
-          <div className="sm:col-span-2">
-            <div className="w-full bg-gray-800 border border-gray-700 text-amber-300 font-semibold rounded-xl px-3 py-2.5 text-xs flex items-center justify-center select-none">
-              📅 30 Days
-            </div>
-          </div>
-
-          <div className="sm:col-span-3">
-            <input
-              type="text"
-              value={customCode}
-              onChange={(e) => setCustomCode(e.target.value)}
-              placeholder="Custom code (optional)"
-              className="jbh-admin-input w-full px-3 py-3 font-mono text-sm uppercase"
-            />
-          </div>
-
-          <div className="sm:col-span-3">
-            <select
-              value={directSendUser}
-              onChange={(e) => setDirectSendUser(e.target.value)}
-              className="jbh-admin-input w-full px-3 py-3 text-sm"
-            >
-              <option value="">Send to a member (optional)</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.email} ({u.account_type || 'standard'})
-                </option>
-              ))}
+      <form onSubmit={generate} className="jbh-admin-panel space-y-3 p-4 sm:p-5">
+        <h2 className="text-base font-bold">Generate / send access code</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <label className="text-xs font-bold">Membership type
+            <select value={type} onChange={(e) => setType(e.target.value)}
+              className="jbh-admin-input mt-2 w-full p-3 text-sm">
+              <option value="VIP">VIP · 30 days</option>
+              <option value="STANDARD">Standard · 30 days</option>
             </select>
-          </div>
-
-          <div className="sm:col-span-2">
-            <button
-              type="submit"
-              disabled={generating}
-              className="jbh-admin-primary w-full text-sm disabled:opacity-50"
-            >
-              {generating ? 'Generating…' : 'Generate code'}
-            </button>
-          </div>
+          </label>
+          <label className="text-xs font-bold">Custom code (optional)
+            <input value={customCode} onChange={(e) => setCustomCode(e.target.value)}
+              placeholder={type + "-XXXXXXXX"} maxLength={64}
+              className="jbh-admin-input mt-2 w-full p-3 font-mono text-sm uppercase"/>
+          </label>
+          <label className="text-xs font-bold xl:col-span-2">Send directly to member (optional)
+            <select value={sendTo} onChange={(e) => setSendTo(e.target.value)}
+              className="jbh-admin-input mt-2 w-full p-3 text-sm">
+              <option value="">Create code only</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
+            </select>
+          </label>
+          <button type="submit" disabled={busy} className="jbh-admin-primary mt-auto min-h-11 text-sm disabled:opacity-50">
+            {busy ? "Working..." : "Generate code"}
+          </button>
         </div>
       </form>
 
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search code or user ID..."
-          className="jbh-admin-input w-full px-4 py-3 text-sm sm:w-80"
-        />
+      {errorText && <div role="alert" className="rounded-xl border border-rose-400/50 bg-rose-900/20 p-3 text-sm text-rose-200">{errorText}</div>}
+      {status && <div role="status" className="rounded-xl border border-sky-400/50 bg-sky-900/20 p-3 text-sm text-sky-100">{status}</div>}
 
-        <div className="flex gap-2 w-full sm:w-auto">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2.5 text-sm"
-          >
-            <option value="ALL">All Status</option>
-            <option value="AVAILABLE">Available (Unused)</option>
-            <option value="ACTIVE">Active Subs</option>
-            <option value="EXPIRED">Expired VIP</option>
-          </select>
-        </div>
+      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Access code categories">
+        {TABS.map((tab) => <button type="button" role="tab"
+          aria-selected={activeTab === tab.key} key={tab.key}
+          onClick={() => { setActiveTab(tab.key); setFilter("ALL"); }}
+          className={"rounded-xl border px-4 py-2.5 text-sm font-bold " +
+            (activeTab === tab.key
+              ? "border-sky-300 bg-sky-600/30 text-white"
+              : "border-slate-600 bg-slate-800/60 text-slate-300 hover:text-white")}>
+          {tab.label} ({counts[tab.key]})
+        </button>)}
       </div>
 
-      {loading ? (
-        <div className="p-12 text-center text-gray-500 text-xs">Loading VIP access codes...</div>
-      ) : filteredCodes.length === 0 ? (
-        <div className="jbh-admin-empty text-sm">
-          No VIP access codes found matching your query.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredCodes.map((c) => {
-            const expDate = getExpDate(c);
-            const isExpired = c.is_used && expDate && expDate <= new Date();
-            const isActive = c.is_used && (!expDate || expDate > new Date());
-            const remainingText = c.is_used ? getRemainingTime(c) : 'NOT USED YET';
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search code, name or email..."
+          className="jbh-admin-input w-full p-3 text-sm sm:flex-1"/>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}
+          className="jbh-admin-input w-full p-3 text-sm sm:w-52">
+          <option value="ALL">All status</option>
+          {activeTab !== "EXPIRED" && <option value="AVAILABLE">Available</option>}
+          {activeTab !== "EXPIRED" && <option value="REDEEMED">Redeemed / active</option>}
+          {activeTab !== "EXPIRED" && <option value="UNKNOWN">Review dates</option>}
+          {activeTab === "EXPIRED" && <option value="EXPIRED">Expired only</option>}
+        </select>
+        <button type="button" onClick={refresh} disabled={busy || loading}
+          className="rounded-lg border border-slate-500 px-4 py-2 text-sm font-bold disabled:opacity-40">Refresh</button>
+      </div>
 
-            const usedByUser = users.find((u) => u.id === c.used_by);
-
+      {loading ? <p role="status" className="p-8 text-center text-sm">Loading access codes...</p>
+        : visible.length === 0 ? <p className="jbh-admin-empty p-6">No matching access codes.</p>
+        : <div className="space-y-3">
+          {visible.map((c) => {
+            const state = stateOf(c, now);
+            const member = usersById.get(c.used_by);
             return (
-              <div
-                key={c.id}
-                className="jbh-admin-feature-card flex flex-col justify-between gap-4 p-4 transition-all sm:flex-row sm:items-center"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-black text-sm text-amber-400 tracking-wider">{c.code}</span>
-                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20">
-                      VIP (30D)
+              <div key={c.id} className="jbh-admin-feature-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-bold text-amber-300">{c.code}</span>
+                    <span className="rounded-full border border-slate-500 px-2 py-0.5 text-[10px] font-bold">
+                      {fromRow(c)} ({c.duration_days || 30}D)
                     </span>
                   </div>
-
-                  <p className="text-[11px] text-gray-400">
-                    {c.is_used ? (
-                      <span>
-                        Redeemed by:{' '}
-                        <strong className="text-gray-200">
-                          {usedByUser?.email || usedByUser?.full_name || c.used_by}
-                        </strong>
-                      </span>
-                    ) : (
-                      <span className="text-emerald-400 font-bold">🟢 Available for redemption</span>
-                    )}
+                  <p className="break-all text-xs text-slate-300">
+                    {c.is_used ? "Redeemed by: " + (member?.email || member?.full_name || c.used_by || "Unknown")
+                      : "Not redeemed"}
                   </p>
+                  <p className="text-xs text-slate-400">Expires: {textDate(expDate(c))}</p>
                 </div>
-
-                <div className="flex items-center gap-3 self-end sm:self-auto">
-                  {!c.is_used && (
-                    <button
-                      onClick={() => {
-                        setSelectedCodeForSend(c);
-                        setTargetUserId('');
-                        setModalUserSearch('');
-                      }}
-                      className="bg-sky-600/20 hover:bg-sky-600/30 text-sky-400 border border-sky-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-                    >
-                      📩 Send Code
-                    </button>
-                  )}
-
-                  {isActive && remainingText === 'ACTIVE' && (
-                    <button
-                      onClick={() => handleFixMissingDate(c.id)}
-                      className="bg-amber-600/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 font-bold text-[11px] px-3 py-1.5 rounded-xl transition-all cursor-pointer"
-                      title="Click to set start date for countdown"
-                    >
-                      ⏱️ Fix Date
-                    </button>
-                  )}
-
-                  {isActive && remainingText !== 'ACTIVE' && (
-                    <span className="bg-sky-950 text-sky-400 border border-sky-800 font-mono text-[11px] font-bold px-3 py-1.5 rounded-xl">
-                      ⏳ {remainingText}
-                    </span>
-                  )}
-
-                  {isExpired && (
-                    <span className="bg-rose-950 text-rose-400 border border-rose-900/50 text-[11px] font-bold px-3 py-1.5 rounded-xl">
-                      🔴 EXPIRED
-                    </span>
-                  )}
-
-                  <button
-                    onClick={() => handleDeleteCode(c.id)}
-                    className="p-2 bg-gray-800 hover:bg-rose-900/40 text-gray-400 hover:text-rose-400 rounded-xl transition-all cursor-pointer border border-gray-700/50"
-                    title="Delete Code"
-                  >
-                    🗑️
-                  </button>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <span className={"rounded-lg px-3 py-1.5 text-xs font-bold " +
+                    (state === "EXPIRED" ? "bg-rose-900/40 text-rose-200" :
+                     state === "AVAILABLE" ? "bg-emerald-900/40 text-emerald-200" :
+                     state === "UNKNOWN" ? "bg-amber-900/40 text-amber-200" :
+                     "bg-sky-900/40 text-sky-200")}>{state}</span>
+                  {state === "AVAILABLE" && <>
+                    <button type="button" disabled={busy}
+                      onClick={() => { setSelectedCode(c); setModalUser(""); setModalQuery(""); }}
+                      className="rounded-lg border border-sky-500 px-3 py-2 text-xs font-bold text-sky-200 disabled:opacity-40">Send</button>
+                    <button type="button" disabled={busy} onClick={() => removeUnused(c)}
+                      className="rounded-lg border border-rose-500 px-3 py-2 text-xs font-bold text-rose-200 disabled:opacity-40">Delete unused</button>
+                  </>}
                 </div>
               </div>
             );
           })}
-        </div>
-      )}
+        </div>}
 
-      {selectedCodeForSend && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-          <div className="jbh-admin-dialog w-full max-w-md space-y-4 rounded-2xl border p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>📩</span> Send Access Code
-            </h3>
-            <p className="text-xs text-gray-400">
-              Send code <strong className="text-amber-400 font-mono">{selectedCodeForSend.code}</strong> directly to user's inbox.
-            </p>
+      {pages > 1 && <div className="flex items-center justify-between gap-3 text-sm">
+        <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}
+          className="rounded-lg border border-slate-500 px-4 py-2 disabled:opacity-30">Previous</button>
+        <span>Page {page} of {pages}</span>
+        <button type="button" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}
+          className="rounded-lg border border-slate-500 px-4 py-2 disabled:opacity-30">Next</button>
+      </div>}
 
-            <form onSubmit={handleSendExistingCode} className="space-y-4">
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  1. Search User:
-                </label>
-                <input
-                  type="text"
-                  value={modalUserSearch}
-                  onChange={(e) => setModalUserSearch(e.target.value)}
-                  placeholder="Type registered user email, name, or user ID..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
-                  2. Select Recipient ({filteredModalUsers.length} found):
-                </label>
-                <div className="w-full bg-gray-800 border border-gray-700 rounded-xl max-h-48 overflow-y-auto p-1.5 space-y-1">
-                  {filteredModalUsers.length === 0 ? (
-                    <div className="text-gray-500 p-3 text-xs text-center font-medium">
-                      No user matches your search...
-                    </div>
-                  ) : (
-                    filteredModalUsers.map((u) => (
-                      <button
-                        type="button"
-                        key={u.id}
-                        onClick={() => setTargetUserId(u.id)}
-                        className={`w-full text-left p-2.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                          targetUserId === u.id 
-                            ? 'bg-blue-600 text-white font-bold shadow-md' 
-                            : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                        }`}
-                      >
-                        {u.email} ({u.account_type || 'standard'})
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCodeForSend(null)}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={sendingMessage || !targetUserId}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white text-xs font-bold rounded-xl cursor-pointer shadow-lg shadow-blue-600/20"
-                >
-                  {sendingMessage ? 'Sending...' : 'Send Code 📩'}
-                </button>
-              </div>
-            </form>
+      {selectedCode && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+        <form onSubmit={sendExisting} className="jbh-admin-dialog w-full max-w-lg space-y-4 rounded-2xl border p-5">
+          <h2 className="text-lg font-bold">Send {fromRow(selectedCode)} code</h2>
+          <p className="break-all font-mono text-sm text-amber-300">{selectedCode.code}</p>
+          <input value={modalQuery} onChange={(e) => setModalQuery(e.target.value)}
+            placeholder="Search member email or name..." className="jbh-admin-input w-full p-3 text-sm"/>
+          <label className="block text-sm">Recipient
+            <select required value={modalUser} onChange={(e) => setModalUser(e.target.value)}
+              className="jbh-admin-input mt-2 w-full p-3 text-sm">
+              <option value="">Select member ({foundUsers.length} displayed)</option>
+              {foundUsers.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
+            </select>
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setSelectedCode(null)} className="rounded-lg border px-4 py-2 text-sm">Cancel</button>
+            <button type="submit" disabled={busy || !modalUser}
+              className="jbh-admin-primary px-4 py-2 text-sm disabled:opacity-40">Send code</button>
           </div>
-        </div>
-      )}
-    </div>
+        </form>
+      </div>}
+    </section>
   );
 }
